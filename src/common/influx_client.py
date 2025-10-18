@@ -7,6 +7,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 
 from .config import get_config
 from .logger import setup_logger
+from .config_validator import ConfigValidator, ConfigValidationError
 
 
 logger = setup_logger(__name__)
@@ -33,6 +34,14 @@ class InfluxClient:
         )
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
         self.query_api = self.client.query_api()
+
+        # Log environment configuration on initialization
+        env_messages = ConfigValidator.check_environment(config)
+        for msg in env_messages:
+            if "WARNING" in msg or "PRODUCTION" in msg:
+                logger.warning(msg)
+            else:
+                logger.info(msg)
 
     def write_point(
         self,
@@ -61,6 +70,23 @@ class InfluxClient:
 
             if bucket is None:
                 bucket = self.config.influxdb_bucket_temperatures
+
+            # VALIDATE WRITE BEFORE EXECUTING
+            try:
+                strict_mode = ConfigValidator.get_strict_mode()
+                warning = ConfigValidator.validate_write(
+                    bucket=bucket,
+                    fields=fields,
+                    strict_mode=strict_mode
+                )
+
+                if warning:
+                    logger.warning(warning)
+
+            except ConfigValidationError as e:
+                logger.error(f"Configuration validation failed: {e}")
+                logger.error("Write operation blocked for safety!")
+                return False
 
             point = influxdb_client.Point(measurement)
 
