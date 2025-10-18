@@ -34,6 +34,58 @@ class InfluxClient:
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
         self.query_api = self.client.query_api()
 
+    def write_point(
+        self,
+        measurement: str,
+        fields: Dict[str, float],
+        tags: Optional[Dict[str, str]] = None,
+        timestamp: Optional[datetime.datetime] = None,
+        bucket: Optional[str] = None
+    ) -> bool:
+        """
+        Write a single data point to InfluxDB
+
+        Args:
+            measurement: Measurement name
+            fields: Dictionary of field name -> value
+            tags: Optional dictionary of tag name -> value
+            timestamp: Timestamp for data point (default: now)
+            bucket: Bucket name (default: temperatures bucket)
+
+        Returns:
+            True if successful
+        """
+        try:
+            if timestamp is None:
+                timestamp = datetime.datetime.utcnow()
+
+            if bucket is None:
+                bucket = self.config.influxdb_bucket_temperatures
+
+            point = influxdb_client.Point(measurement)
+
+            if tags:
+                for tag_name, tag_value in tags.items():
+                    point = point.tag(tag_name, tag_value)
+
+            for field_name, value in fields.items():
+                point = point.field(field_name, float(value))
+
+            point = point.time(timestamp)
+
+            self.write_api.write(
+                bucket=bucket,
+                org=self.config.influxdb_org,
+                record=point
+            )
+
+            logger.debug(f"Written {measurement} data at {timestamp}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Exception when writing {measurement} to InfluxDB: {e}")
+            return False
+
     def write_temperatures(
         self,
         temperature_data: Dict[str, Dict[str, float]],
