@@ -1,0 +1,71 @@
+# Home Automation Configuration
+
+heating:
+  # Heating curve: temperature (C) -> hours to heat per day
+  curve:
+    -20: 12
+    0: 8
+    16: 4
+
+  # EVU off (hot water heating blocked) configuration
+  evuoff_threshold_price: 0.20  # EUR/kWh
+  evuoff_max_continuous_hours: 4
+  evuoff_max_hours_per_day: 18  # 24 - heating_hours - 2
+
+data_collection:
+  weather:
+    interval_minutes: 60
+    data_dir: /opt/home-automation/data/weather_data
+    retention_days: 7
+
+  temperature:
+    interval_minutes: 1
+    retry_attempts: 20
+    identical_readings_required: 3
+    backup_identical_readings: 2
+    # Exclude faulty sensors by last 2 chars of ID
+    exclude_sensors:
+      - "e9"
+
+  spot_prices:
+    # Run at 13:59, 14:29, 14:59, 15:29
+    check_schedules:
+      - "59 13,14,15 * * *"
+      - "29 14,15 * * *"
+
+  energy_meters:
+    interval_minutes: 5
+    checkwatt_enabled: true
+
+scheduling:
+  # When to generate tomorrow's heating program
+  generate_program_time: "16:05"
+
+  # How often to execute the program
+  execute_program_interval_minutes: 15
+
+  # Other periodic tasks
+  mlp_evu_cycle_interval_hours: 2
+
+# Temperature sensor ID to display name mapping
+sensor_mapping:
+  "28-xxxxx8a": "Hilla"
+  "28-xxxxc1": "Niila"
+  "28-xxxx6a": "Savupiippu"
+  "28-xxxx3e": "Valto"
+  "28-xxxxa0": "PaaMH"
+  "28-xxxxc2": "Pukuhuone"
+  "28-xxxx44": "Kirjasto"
+  "28-xxxxf0": "Eteinen"
+  "28-xxxx4a": "Keittio"
+  "28-xxxxc9": "Tyohuone"
+  "28-xxxxaa": "Leffahuone"
+  "28-xxxxe6": "Kayttovesi ylh"
+  "28-xxxx66": "Kayttovesi alh"
+  "28-xxxx02": "Ulkolampo"
+  "shelly-180": "Autotalli"
+  "shelly-181": "PaaMH2"
+  "shelly-190": "PaaMH3"
+  "shelly-191": "YlakertaKH"
+  "shelly-192": "KeskikerrosKH"
+  "shelly-193": "AlakertaKH"
