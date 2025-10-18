@@ -125,13 +125,13 @@ Phase 1 is now 100% complete with git repository initialized and pushed to GitHu
 
 ## Phase 2 - Refactor Existing Code (Week 1-2)
 
-**Current Status:** 25% complete (1/4 modules refactored)
+**Current Status:** 50% complete (2/4 modules refactored)
 
 ### Priority: Refactor data collection modules
 
 **Order of refactoring:**
 1. ✅ Temperature collection (wibatemp.py → src/data_collection/temperature.py)
-2. ⏳ Weather data (get_weather.py → src/data_collection/weather.py)
+2. ✅ Weather data (get_weather.py → src/data_collection/weather.py)
 3. ⏳ Spot prices (spot_price_getter.py → src/data_collection/spot_prices.py)
 4. ⏳ CheckWatt data (checkwatt_dataloader.py → src/data_collection/energy_meters.py)
 
@@ -168,6 +168,31 @@ python tests/integration/test_influx_connection.py
 
 # Dry-run on actual hardware
 python collect_temperatures.py --dry-run --verbose
+```
+
+### ✅ Weather Data Collection - COMPLETE
+
+**Completed:**
+- [x] Refactored [src/data_collection/weather.py](src/data_collection/weather.py)
+- [x] Added type hints and comprehensive docstrings
+- [x] Removed all hardcoded credentials and location data
+- [x] Implemented structured logging
+- [x] Created 8 unit tests (all passing)
+- [x] Added --dry-run, --verbose, and --save-file flags
+- [x] Created [collect_weather.py](collect_weather.py) wrapper
+- [x] Integrated with FMI API for weather forecasts
+- [x] Fetches 200 forecast points (15-min intervals, ~50 hours)
+
+**Testing:**
+```bash
+# Unit tests (safe, mocked API calls)
+pytest tests/unit/test_weather.py -v
+
+# Dry-run (makes real API call, doesn't write to DB)
+python collect_weather.py --dry-run --verbose
+
+# With file backup
+python collect_weather.py --dry-run --save-file
 ```
 
 ### Example: Temperature Collection Refactor
