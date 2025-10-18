@@ -230,18 +230,19 @@ def collect_temperatures() -> Dict[str, Dict[str, float]]:
 
 
 def write_temperatures_to_influx(
-    temperature_status: Dict[str, Dict[str, float]]
+    temperature_status: Dict[str, Dict[str, float]],
+    dry_run: bool = False
 ) -> bool:
     """Write temperature data to InfluxDB.
 
     Args:
         temperature_status: Temperature data from collect_temperatures()
+        dry_run: If True, only log what would be written without actually writing
 
     Returns:
         True if successful, False otherwise
     """
     config = get_config()
-    influx = InfluxClient(config)
 
     try:
         # Prepare temperature fields
@@ -255,8 +256,20 @@ def write_temperatures_to_influx(
             logger.warning("No valid temperature fields to write")
             return False
 
-        # Write to InfluxDB
         timestamp = datetime.datetime.utcnow()
+
+        if dry_run:
+            logger.info(
+                f"[DRY-RUN] Would write {len(temp_fields)} temperatures to InfluxDB:"
+            )
+            for field_name, value in temp_fields.items():
+                logger.info(f"[DRY-RUN]   {field_name}: {value} C")
+            logger.info(f"[DRY-RUN] Timestamp: {timestamp}")
+            logger.info(f"[DRY-RUN] Bucket: {config.influxdb_bucket_temperatures}")
+            return True
+
+        # Write to InfluxDB
+        influx = InfluxClient(config)
         success = influx.write_point(
             measurement="temperatures",
             fields=temp_fields,
@@ -279,7 +292,32 @@ def write_temperatures_to_influx(
 
 def main():
     """Main entry point for temperature collection."""
-    logger.info("Starting temperature collection")
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Collect temperatures from 1-wire sensors'
+    )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Collect temperatures but do not write to InfluxDB'
+    )
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose debug logging'
+    )
+
+    args = parser.parse_args()
+
+    if args.verbose:
+        import logging
+        logger.setLevel(logging.DEBUG)
+
+    if args.dry_run:
+        logger.info("Starting temperature collection (DRY-RUN mode)")
+    else:
+        logger.info("Starting temperature collection")
 
     try:
         temperature_status = collect_temperatures()
@@ -288,10 +326,16 @@ def main():
             logger.warning("No temperatures collected")
             return 1
 
-        success = write_temperatures_to_influx(temperature_status)
+        success = write_temperatures_to_influx(
+            temperature_status,
+            dry_run=args.dry_run
+        )
 
         if success:
-            logger.info("Temperature collection completed successfully")
+            if args.dry_run:
+                logger.info("Temperature collection DRY-RUN completed successfully")
+            else:
+                logger.info("Temperature collection completed successfully")
             return 0
         else:
             logger.error("Temperature collection failed")
