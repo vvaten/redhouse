@@ -125,15 +125,15 @@ Phase 1 is now 100% complete with git repository initialized and pushed to GitHu
 
 ## Phase 2 - Refactor Existing Code (Week 1-2)
 
-**Current Status:** 50% complete (2/4 modules refactored)
+**Current Status:** ✅ 100% COMPLETE! All 4 modules refactored!
 
 ### Priority: Refactor data collection modules
 
 **Order of refactoring:**
 1. ✅ Temperature collection (wibatemp.py → src/data_collection/temperature.py)
 2. ✅ Weather data (get_weather.py → src/data_collection/weather.py)
-3. ⏳ Spot prices (spot_price_getter.py → src/data_collection/spot_prices.py)
-4. ⏳ CheckWatt data (checkwatt_dataloader.py → src/data_collection/energy_meters.py)
+3. ✅ Spot prices (spot_price_getter.py → src/data_collection/spot_prices.py)
+4. ✅ CheckWatt data (checkwatt_dataloader.py → src/data_collection/checkwatt.py)
 
 **Refactoring Checklist for Each Module:**
 - [x] Remove hardcoded credentials (use config)
@@ -194,6 +194,58 @@ python collect_weather.py --dry-run --verbose
 # With file backup
 python collect_weather.py --dry-run --save-file
 ```
+
+### ✅ Spot Prices Collection - COMPLETE
+
+**Completed:**
+- [x] Refactored [src/data_collection/spot_prices.py](src/data_collection/spot_prices.py)
+- [x] Added type hints and comprehensive docstrings
+- [x] Removed all hardcoded credentials
+- [x] Implemented structured logging
+- [x] Created 9 unit tests (all passing)
+- [x] Added --dry-run and --verbose flags
+- [x] Created [collect_spot_prices.py](collect_spot_prices.py) wrapper
+- [x] Fetches 192 quarter-hourly prices (15-min intervals, 48 hours)
+- [x] Calculates final prices with VAT, margins, and transfer costs
+- [x] Supports day/night transfer pricing
+
+**Testing:**
+```bash
+# Unit tests (safe, mocked API calls)
+pytest tests/unit/test_spot_prices.py -v
+
+# Dry-run (makes real API call, doesn't write to DB)
+python collect_spot_prices.py --dry-run
+```
+
+### ✅ CheckWatt Data Collection - COMPLETE
+
+**Completed:**
+- [x] Refactored [src/data_collection/checkwatt.py](src/data_collection/checkwatt.py)
+- [x] Added type hints and comprehensive docstrings
+- [x] Removed all hardcoded credentials (including Basic auth!)
+- [x] Implemented structured logging
+- [x] Created 9 unit tests (all passing)
+- [x] Added --dry-run, --verbose, --last-hour flags
+- [x] Created [collect_checkwatt.py](collect_checkwatt.py) wrapper
+- [x] Fetches 6 data streams: Battery SoC, Charge, Discharge, Import, Export, Solar
+- [x] 1-minute interval data points
+- [x] Respectful API usage (--last-hour by default)
+
+**Testing:**
+```bash
+# Unit tests (safe, mocked API calls)
+pytest tests/unit/test_checkwatt.py -v
+
+# Dry-run (makes real API call, doesn't write to DB)
+python collect_checkwatt.py --dry-run --last-hour
+```
+
+**⚠️ Important Note:**
+CheckWatt data is fetched from non-public internal APIs. Monitor for API changes:
+- [ ] **TODO**: Add alert if CheckWatt API response format changes
+- [ ] **TODO**: Add retry logic with exponential backoff
+- [ ] **TODO**: Consider rate limiting to be extra respectful
 
 ### Example: Temperature Collection Refactor
 
