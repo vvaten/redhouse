@@ -33,6 +33,9 @@ ENV/
 
 # Environment and secrets
 .env
+.env.prod
+.env.test
+.env.backup
 *.log
 *.log.*
 
