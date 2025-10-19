@@ -1,4 +1,5 @@
 """Logging utilities for home automation system"""
+
 import logging
 import logging.handlers
 from pathlib import Path
@@ -44,18 +45,23 @@ def setup_logger(
 
     # File handler (if log_file specified)
     if log_file:
-        log_dir = Path(config.log_dir)
-        log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            log_dir = Path(config.log_dir)
+            log_dir.mkdir(parents=True, exist_ok=True)
 
-        log_path = log_dir / log_file
+            log_path = log_dir / log_file
 
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_path, maxBytes=config.log_max_bytes, backupCount=config.log_backup_count
-        )
-        file_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_path, maxBytes=config.log_max_bytes, backupCount=config.log_backup_count
+            )
+            file_formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+            file_handler.setFormatter(file_formatter)
+            logger.addHandler(file_handler)
+        except (PermissionError, OSError) as e:
+            # In CI or restricted environments, log directory may not be writable
+            # Continue with console-only logging
+            logger.warning(f"Could not create log file {log_file}: {e}. Using console logging only.")
 
     return logger

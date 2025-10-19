@@ -1,4 +1,5 @@
 """InfluxDB client wrapper for home automation system"""
+
 import datetime
 from typing import Any, Optional
 

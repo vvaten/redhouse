@@ -1,4 +1,5 @@
 """Configuration management for home automation system"""
+
 import os
 from pathlib import Path
 from typing import Any
