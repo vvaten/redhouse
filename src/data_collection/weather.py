@@ -10,6 +10,7 @@ from fmiopendata.wfs import download_stored_query
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
+from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__, "weather.log")
@@ -151,7 +152,7 @@ def write_weather_to_influx(
 
     if dry_run:
         logger.info(f"[DRY-RUN] Would write {len(weather_data)} weather forecast points")
-        for timestamp in sorted(list(weather_data.keys()))[:3]:  # Show first 3
+        for timestamp in sorted(weather_data.keys())[:3]:  # Show first 3
             fields = weather_data[timestamp]
             logger.info(f"[DRY-RUN]   {timestamp}: {len(fields)} fields")
             for field_name, value in list(fields.items())[:3]:  # Show first 3 fields
@@ -208,6 +209,18 @@ def collect_weather() -> dict[datetime.datetime, dict[str, float]]:
     if not weather_data:
         logger.error("No weather data collected")
         return {}
+
+    # Log raw data to JSON for backup (with 1 week retention)
+    json_logger = JSONDataLogger("weather")
+    # Convert datetime keys to strings for JSON serialization
+    weather_data_serializable = {
+        timestamp.isoformat(): fields for timestamp, fields in weather_data.items()
+    }
+    json_logger.log_data(
+        weather_data_serializable,
+        metadata={"latlon": latlon, "num_timestamps": len(weather_data)},
+    )
+    json_logger.cleanup_old_logs()
 
     logger.info(f"Successfully collected {len(weather_data)} forecast timestamps")
     return weather_data

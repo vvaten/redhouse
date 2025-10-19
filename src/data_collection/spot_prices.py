@@ -12,6 +12,7 @@ import pytz
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
+from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__, "spot_prices.log")
@@ -290,8 +291,16 @@ async def collect_spot_prices(dry_run: bool = False) -> int:
         logger.error("Failed to fetch spot prices from API")
         return 1
 
-    # Save raw data to file
+    # Save raw data to file (legacy backup)
     save_spot_prices_to_file(spot_prices_raw)
+
+    # Log raw data to JSON for backup (with 1 week retention)
+    json_logger = JSONDataLogger("spot_prices")
+    json_logger.log_data(
+        spot_prices_raw,
+        metadata={"num_prices": len(spot_prices_raw), "api_url": SPOT_PRICE_API_URL},
+    )
+    json_logger.cleanup_old_logs()
 
     # Process prices
     processed_spot_prices = process_spot_prices(spot_prices_raw, config)

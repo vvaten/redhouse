@@ -11,6 +11,7 @@ import influxdb_client
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
+from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__, "checkwatt.log")
@@ -329,6 +330,18 @@ async def collect_checkwatt_data(
     if not json_data:
         logger.error("Failed to fetch CheckWatt data")
         return 1
+
+    # Log raw data to JSON for backup (with 1 week retention)
+    json_logger = JSONDataLogger("checkwatt")
+    json_logger.log_data(
+        json_data,
+        metadata={
+            "start_date": start_date,
+            "end_date": end_date,
+            "meter_count": len(json_data.get("Meters", [])),
+        },
+    )
+    json_logger.cleanup_old_logs()
 
     # Validate response format
     if len(json_data) != 4:

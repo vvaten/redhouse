@@ -9,6 +9,7 @@ from typing import Optional
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
+from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__, "temperature.log")
@@ -217,6 +218,15 @@ def collect_temperatures() -> dict[str, dict[str, float]]:
 
         if temp is not None:
             temperature_status[meter_id] = {"temp": temp, "updated": time.time()}
+
+    # Log raw data to JSON for backup (30 days retention for local sensor data)
+    json_logger = JSONDataLogger("temperature")
+    json_logger.retention_days = 30
+    json_logger.log_data(
+        temperature_status,
+        metadata={"num_sensors": len(temperature_status), "timestamp": time.time()},
+    )
+    json_logger.cleanup_old_logs()
 
     logger.info(f"Successfully read {len(temperature_status)} temperatures")
     return temperature_status
