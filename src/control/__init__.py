@@ -1,1 +1,1 @@
-"""Control modules for heating and load management"""
+"""Heating and load control modules."""
