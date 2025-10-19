@@ -4,25 +4,25 @@
 import datetime
 import json
 import os
-from typing import Dict, Optional
+from typing import Optional
 
 from fmiopendata.wfs import download_stored_query
 
 from src.common.config import get_config
-from src.common.logger import setup_logger
 from src.common.influx_client import InfluxClient
+from src.common.logger import setup_logger
 
-logger = setup_logger(__name__, 'weather.log')
+logger = setup_logger(__name__, "weather.log")
 
 # FMI query parameters
 FMI_QUERY = "fmi::forecast::harmonie::surface::point::multipointcoverage"
 FMI_TIMESTEP = "15"  # 15 minute intervals
 
 # Fields to exclude from storage
-EXCLUDED_FIELDS = ['Geopotential height']
+EXCLUDED_FIELDS = ["Geopotential height"]
 
 
-def fetch_weather_forecast(latlon: str) -> Dict[datetime.datetime, Dict[str, float]]:
+def fetch_weather_forecast(latlon: str) -> dict[datetime.datetime, dict[str, float]]:
     """
     Fetch weather forecast from FMI API.
 
@@ -36,8 +36,7 @@ def fetch_weather_forecast(latlon: str) -> Dict[datetime.datetime, Dict[str, flo
 
     try:
         weather_data = download_stored_query(
-            FMI_QUERY,
-            [f"latlon={latlon}", f"timestep={FMI_TIMESTEP}"]
+            FMI_QUERY, [f"latlon={latlon}", f"timestep={FMI_TIMESTEP}"]
         )
 
         if not weather_data or not weather_data.data:
@@ -78,9 +77,7 @@ def fetch_weather_forecast(latlon: str) -> Dict[datetime.datetime, Dict[str, flo
                 if isinstance(field_data, dict) and "value" in field_data:
                     processed_data[timestamp][field_name] = field_data["value"]
                 else:
-                    logger.warning(
-                        f"Unexpected data format for field {field_name}: {field_data}"
-                    )
+                    logger.warning(f"Unexpected data format for field {field_name}: {field_data}")
 
         logger.info(f"Processed {len(processed_data)} weather forecast timestamps")
         return processed_data
@@ -91,8 +88,8 @@ def fetch_weather_forecast(latlon: str) -> Dict[datetime.datetime, Dict[str, flo
 
 
 def save_weather_to_file(
-    weather_data: Dict[datetime.datetime, Dict[str, float]],
-    base_dir: str = "/var/log/home-automation/weather_data"
+    weather_data: dict[datetime.datetime, dict[str, float]],
+    base_dir: str = "/var/log/home-automation/weather_data",
 ) -> Optional[str]:
     """
     Save weather data to JSON file for backup/debugging.
@@ -122,7 +119,7 @@ def save_weather_to_file(
             json_data[epoch] = fields
 
         # Write to file
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(json_data, f, indent=2)
 
         logger.info(f"Saved weather data to {filepath}")
@@ -134,8 +131,7 @@ def save_weather_to_file(
 
 
 def write_weather_to_influx(
-    weather_data: Dict[datetime.datetime, Dict[str, float]],
-    dry_run: bool = False
+    weather_data: dict[datetime.datetime, dict[str, float]], dry_run: bool = False
 ) -> bool:
     """
     Write weather forecast data to InfluxDB.
@@ -188,7 +184,7 @@ def write_weather_to_influx(
         return False
 
 
-def collect_weather() -> Dict[datetime.datetime, Dict[str, float]]:
+def collect_weather() -> dict[datetime.datetime, dict[str, float]]:
     """
     Main function to collect weather forecast data.
 
@@ -198,7 +194,7 @@ def collect_weather() -> Dict[datetime.datetime, Dict[str, float]]:
     config = get_config()
 
     # Get lat/lon from config (must be configured in .env)
-    latlon = config.get('weather_latlon')
+    latlon = config.get("weather_latlon")
 
     if not latlon:
         logger.error("WEATHER_LATLON not configured in .env file!")
@@ -221,29 +217,20 @@ def main():
     """Main entry point for weather collection."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description='Collect weather forecast from FMI'
-    )
+    parser = argparse.ArgumentParser(description="Collect weather forecast from FMI")
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Collect data but do not write to InfluxDB'
+        "--dry-run", action="store_true", help="Collect data but do not write to InfluxDB"
     )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging")
     parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose debug logging'
-    )
-    parser.add_argument(
-        '--save-file',
-        action='store_true',
-        help='Save weather data to JSON file for backup'
+        "--save-file", action="store_true", help="Save weather data to JSON file for backup"
     )
 
     args = parser.parse_args()
 
     if args.verbose:
         import logging
+
         logger.setLevel(logging.DEBUG)
 
     if args.dry_run:
@@ -279,10 +266,12 @@ def main():
     except Exception as e:
         logger.error(f"Unhandled exception in weather collection: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

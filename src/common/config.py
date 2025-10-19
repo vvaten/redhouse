@@ -1,8 +1,9 @@
 """Configuration management for home automation system"""
 import os
-import yaml
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
+
+import yaml
 from dotenv import load_dotenv
 
 
@@ -30,7 +31,7 @@ class Config:
 
         self._yaml_config = {}
         if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
+            with open(config_path) as f:
                 self._yaml_config = yaml.safe_load(f) or {}
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -45,13 +46,13 @@ class Config:
             Configuration value
         """
         # Try environment variable first (uppercase)
-        env_key = key.upper().replace('.', '_')
+        env_key = key.upper().replace(".", "_")
         env_value = os.getenv(env_key)
         if env_value is not None:
             return env_value
 
         # Try YAML config
-        keys = key.split('.')
+        keys = key.split(".")
         value = self._yaml_config
         for k in keys:
             if isinstance(value, dict) and k in value:
@@ -63,85 +64,85 @@ class Config:
     # InfluxDB configuration
     @property
     def influxdb_url(self) -> str:
-        return self.get('INFLUXDB_URL', 'http://localhost:8086')
+        return self.get("INFLUXDB_URL", "http://localhost:8086")
 
     @property
     def influxdb_token(self) -> str:
-        return self.get('INFLUXDB_TOKEN', '')
+        return self.get("INFLUXDB_TOKEN", "")
 
     @property
     def influxdb_org(self) -> str:
-        return self.get('INFLUXDB_ORG', 'area51')
+        return self.get("INFLUXDB_ORG", "area51")
 
     @property
     def influxdb_bucket_temperatures(self) -> str:
-        return self.get('INFLUXDB_BUCKET_TEMPERATURES', 'temperatures')
+        return self.get("INFLUXDB_BUCKET_TEMPERATURES", "temperatures")
 
     @property
     def influxdb_bucket_weather(self) -> str:
-        return self.get('INFLUXDB_BUCKET_WEATHER', 'weather')
+        return self.get("INFLUXDB_BUCKET_WEATHER", "weather")
 
     @property
     def influxdb_bucket_spotprice(self) -> str:
-        return self.get('INFLUXDB_BUCKET_SPOTPRICE', 'spotprice')
+        return self.get("INFLUXDB_BUCKET_SPOTPRICE", "spotprice")
 
     @property
     def influxdb_bucket_emeters(self) -> str:
-        return self.get('INFLUXDB_BUCKET_EMETERS', 'emeters')
+        return self.get("INFLUXDB_BUCKET_EMETERS", "emeters")
 
     @property
     def influxdb_bucket_checkwatt(self) -> str:
-        return self.get('INFLUXDB_BUCKET_CHECKWATT', 'checkwatt_full_data')
+        return self.get("INFLUXDB_BUCKET_CHECKWATT", "checkwatt_full_data")
 
     # Weather configuration
     @property
     def weather_latlon(self) -> str:
-        return self.get('WEATHER_LATLON', '60.1699,24.9384')
+        return self.get("WEATHER_LATLON", "60.1699,24.9384")
 
     # Hardware configuration
     @property
     def pump_i2c_bus(self) -> int:
-        return int(self.get('PUMP_I2C_BUS', 1))
+        return int(self.get("PUMP_I2C_BUS", 1))
 
     @property
     def pump_i2c_address(self) -> int:
-        addr = self.get('PUMP_I2C_ADDRESS', '0x10')
+        addr = self.get("PUMP_I2C_ADDRESS", "0x10")
         return int(addr, 16) if isinstance(addr, str) else addr
 
     @property
     def shelly_relay_url(self) -> str:
-        return self.get('SHELLY_RELAY_URL', 'http://192.168.1.5')
+        return self.get("SHELLY_RELAY_URL", "http://192.168.1.5")
 
     # Heating configuration
     @property
-    def heating_curve(self) -> Dict[int, float]:
-        curve = self.get('heating.curve', {-20: 12, 0: 8, 16: 4})
+    def heating_curve(self) -> dict[int, float]:
+        curve = self.get("heating.curve", {-20: 12, 0: 8, 16: 4})
         return {int(k): float(v) for k, v in curve.items()}
 
     @property
     def evuoff_threshold_price(self) -> float:
-        return float(self.get('heating.evuoff_threshold_price', 0.20))
+        return float(self.get("heating.evuoff_threshold_price", 0.20))
 
     @property
     def evuoff_max_continuous_hours(self) -> int:
-        return int(self.get('heating.evuoff_max_continuous_hours', 4))
+        return int(self.get("heating.evuoff_max_continuous_hours", 4))
 
     # Logging configuration
     @property
     def log_level(self) -> str:
-        return self.get('LOG_LEVEL', 'INFO')
+        return self.get("LOG_LEVEL", "INFO")
 
     @property
     def log_dir(self) -> str:
-        return self.get('LOG_DIR', '/var/log/home-automation')
+        return self.get("LOG_DIR", "/var/log/home-automation")
 
     @property
     def log_max_bytes(self) -> int:
-        return int(self.get('LOG_MAX_BYTES', 10485760))
+        return int(self.get("LOG_MAX_BYTES", 10485760))
 
     @property
     def log_backup_count(self) -> int:
-        return int(self.get('LOG_BACKUP_COUNT', 5))
+        return int(self.get("LOG_BACKUP_COUNT", 5))
 
 
 # Global config instance

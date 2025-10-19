@@ -5,25 +5,25 @@ import asyncio
 import datetime
 import json
 import os
-from typing import Dict, List, Optional
+from typing import Optional
 
 import aiohttp
 import pytz
 
 from src.common.config import get_config
-from src.common.logger import setup_logger
 from src.common.influx_client import InfluxClient
+from src.common.logger import setup_logger
 
-logger = setup_logger(__name__, 'spot_prices.log')
+logger = setup_logger(__name__, "spot_prices.log")
 
 # API endpoint
-SPOT_PRICE_API_URL = 'https://api.spot-hinta.fi/TodayAndDayForward'
+SPOT_PRICE_API_URL = "https://api.spot-hinta.fi/TodayAndDayForward"
 
 # Status file to track latest uploaded price
-STATUS_FILE = 'spot_price_getter_status.json'
+STATUS_FILE = "spot_price_getter_status.json"
 
 
-async def fetch_spot_prices_from_api() -> Optional[List[Dict]]:
+async def fetch_spot_prices_from_api() -> Optional[list[dict]]:
     """
     Fetch spot prices from spot-hinta.fi API.
 
@@ -52,10 +52,7 @@ async def fetch_spot_prices_from_api() -> Optional[List[Dict]]:
         return None
 
 
-def process_spot_prices(
-    spot_prices_raw: List[Dict],
-    config
-) -> List[Dict]:
+def process_spot_prices(spot_prices_raw: list[dict], config) -> list[dict]:
     """
     Process raw spot price data and calculate final prices.
 
@@ -70,12 +67,12 @@ def process_spot_prices(
 
     # Get pricing parameters from config (all required!)
     required_params = [
-        'spot_value_added_tax',
-        'spot_sellers_margin',
-        'spot_production_buyback_margin',
-        'spot_transfer_day_price',
-        'spot_transfer_night_price',
-        'spot_transfer_tax_price'
+        "spot_value_added_tax",
+        "spot_sellers_margin",
+        "spot_production_buyback_margin",
+        "spot_transfer_day_price",
+        "spot_transfer_night_price",
+        "spot_transfer_tax_price",
     ]
 
     for param in required_params:
@@ -83,12 +80,12 @@ def process_spot_prices(
             logger.error(f"Required configuration parameter {param.upper()} not set!")
             raise ValueError(f"Missing required config: {param.upper()}")
 
-    value_added_tax = float(config.get('spot_value_added_tax'))
-    sellers_margin = float(config.get('spot_sellers_margin'))
-    production_buyback_margin = float(config.get('spot_production_buyback_margin'))
-    transfer_day_price = float(config.get('spot_transfer_day_price'))
-    transfer_night_price = float(config.get('spot_transfer_night_price'))
-    transfer_tax_price = float(config.get('spot_transfer_tax_price'))
+    value_added_tax = float(config.get("spot_value_added_tax"))
+    sellers_margin = float(config.get("spot_sellers_margin"))
+    production_buyback_margin = float(config.get("spot_production_buyback_margin"))
+    transfer_day_price = float(config.get("spot_transfer_day_price"))
+    transfer_night_price = float(config.get("spot_transfer_night_price"))
+    transfer_tax_price = float(config.get("spot_transfer_tax_price"))
 
     processed_spot_prices = []
 
@@ -97,35 +94,36 @@ def process_spot_prices(
             data = {}
 
             # Parse datetime
-            entry_datetime = datetime.datetime.fromisoformat(hour_entry['DateTime'])
+            entry_datetime = datetime.datetime.fromisoformat(hour_entry["DateTime"])
 
             # Handle DST transition (2022-10-30 specific fix from original code)
-            if entry_datetime.isoformat() == '2022-10-30T03:00:00+02:00':
+            if entry_datetime.isoformat() == "2022-10-30T03:00:00+02:00":
                 offset = 3600
             else:
                 offset = 0
 
             # Calculate epoch timestamp
-            data['epoch_timestamp'] = int(entry_datetime.timestamp()) + offset
+            data["epoch_timestamp"] = int(entry_datetime.timestamp()) + offset
 
             # Store datetime in various formats
-            data['datetime_utc'] = datetime.datetime.utcfromtimestamp(
-                data['epoch_timestamp']
-            ).replace(tzinfo=pytz.utc).isoformat()
-            data['datetime_local'] = entry_datetime.isoformat()
+            data["datetime_utc"] = (
+                datetime.datetime.utcfromtimestamp(data["epoch_timestamp"])
+                .replace(tzinfo=pytz.utc)
+                .isoformat()
+            )
+            data["datetime_local"] = entry_datetime.isoformat()
 
             # Price without tax (c/kWh)
-            data['price'] = hour_entry['PriceNoTax']
+            data["price"] = hour_entry["PriceNoTax"]
 
             # Selling price (production buyback)
-            data['price_sell'] = round(
-                hour_entry['PriceNoTax'] - 0.01 * production_buyback_margin,
-                4
+            data["price_sell"] = round(
+                hour_entry["PriceNoTax"] - 0.01 * production_buyback_margin, 4
             )
 
             # Price with VAT
-            price_with_tax = round(value_added_tax * hour_entry['PriceNoTax'], 4)
-            data['price_withtax'] = price_with_tax
+            price_with_tax = round(value_added_tax * hour_entry["PriceNoTax"], 4)
+            data["price_withtax"] = price_with_tax
 
             # Determine transfer price (night vs day rate)
             if entry_datetime.hour >= 22 or entry_datetime.hour < 7:
@@ -134,13 +132,8 @@ def process_spot_prices(
                 transfer_price = transfer_day_price
 
             # Total price including all fees and taxes
-            data['price_total'] = round(
-                price_with_tax + 0.01 * (
-                    sellers_margin +
-                    transfer_price +
-                    transfer_tax_price
-                ),
-                6
+            data["price_total"] = round(
+                price_with_tax + 0.01 * (sellers_margin + transfer_price + transfer_tax_price), 6
             )
 
             processed_spot_prices.append(data)
@@ -153,10 +146,7 @@ def process_spot_prices(
     return processed_spot_prices
 
 
-def save_spot_prices_to_file(
-    spot_prices_raw: List[Dict],
-    filename: str = 'spot.json'
-) -> bool:
+def save_spot_prices_to_file(spot_prices_raw: list[dict], filename: str = "spot.json") -> bool:
     """
     Save raw spot price data to JSON file for backup.
 
@@ -168,7 +158,7 @@ def save_spot_prices_to_file(
         True if successful
     """
     try:
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             json.dump(spot_prices_raw, f, indent=2)
         logger.info(f"Saved spot prices to {filename}")
         return True
@@ -178,8 +168,7 @@ def save_spot_prices_to_file(
 
 
 async def write_spot_prices_to_influx(
-    processed_spot_prices: List[Dict],
-    dry_run: bool = False
+    processed_spot_prices: list[dict], dry_run: bool = False
 ) -> Optional[int]:
     """
     Write processed spot prices to InfluxDB.
@@ -201,15 +190,14 @@ async def write_spot_prices_to_influx(
         logger.info(f"[DRY-RUN] Would write {len(processed_spot_prices)} spot price entries")
         for entry in processed_spot_prices[:3]:  # Show first 3
             logger.info(
-                f"[DRY-RUN]   {entry['datetime_utc']}: "
-                f"{entry['price_total']:.4f} c/kWh"
+                f"[DRY-RUN]   {entry['datetime_utc']}: " f"{entry['price_total']:.4f} c/kWh"
             )
         if len(processed_spot_prices) > 3:
             logger.info(f"[DRY-RUN]   ... and {len(processed_spot_prices) - 3} more")
         logger.info(f"[DRY-RUN] Bucket: {config.influxdb_bucket_spotprice}")
 
         # Return latest timestamp for dry-run
-        latest = max(entry['epoch_timestamp'] for entry in processed_spot_prices)
+        latest = max(entry["epoch_timestamp"] for entry in processed_spot_prices)
         return latest
 
     try:
@@ -220,11 +208,9 @@ async def write_spot_prices_to_influx(
         success = influx.write_spot_prices(processed_spot_prices)
 
         if success:
-            latest_timestamp = max(
-                entry['epoch_timestamp'] for entry in processed_spot_prices
-            )
+            latest_timestamp = max(entry["epoch_timestamp"] for entry in processed_spot_prices)
             earliest_dt = datetime.datetime.utcfromtimestamp(
-                min(entry['epoch_timestamp'] for entry in processed_spot_prices)
+                min(entry["epoch_timestamp"] for entry in processed_spot_prices)
             )
             latest_dt = datetime.datetime.utcfromtimestamp(latest_timestamp)
 
@@ -242,11 +228,11 @@ async def write_spot_prices_to_influx(
         return None
 
 
-def load_status() -> Dict:
+def load_status() -> dict:
     """Load status from status file."""
     try:
         if os.path.exists(STATUS_FILE):
-            with open(STATUS_FILE, 'r') as f:
+            with open(STATUS_FILE) as f:
                 return json.load(f)
         else:
             logger.info("No status file found, starting fresh")
@@ -259,7 +245,7 @@ def load_status() -> Dict:
 def save_status(latest_epoch_timestamp: int) -> bool:
     """Save status to status file."""
     try:
-        with open(STATUS_FILE, 'w') as f:
+        with open(STATUS_FILE, "w") as f:
             json.dump({"latest_epoch_timestamp": latest_epoch_timestamp}, f)
         logger.info(f"Saved status: latest_epoch_timestamp={latest_epoch_timestamp}")
         return True
@@ -316,8 +302,7 @@ async def collect_spot_prices(dry_run: bool = False) -> int:
 
     # Write to InfluxDB
     latest_uploaded_price_epoch = await write_spot_prices_to_influx(
-        processed_spot_prices,
-        dry_run=dry_run
+        processed_spot_prices, dry_run=dry_run
     )
 
     if latest_uploaded_price_epoch is None:
@@ -332,8 +317,7 @@ async def collect_spot_prices(dry_run: bool = False) -> int:
         return 0
     else:
         logger.warning(
-            "Uploaded prices but didn't get tomorrow's data yet. "
-            "Will try again later."
+            "Uploaded prices but didn't get tomorrow's data yet. " "Will try again later."
         )
         return 1
 
@@ -342,24 +326,17 @@ def main():
     """Main entry point for spot price collection."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description='Collect electricity spot prices'
-    )
+    parser = argparse.ArgumentParser(description="Collect electricity spot prices")
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Collect prices but do not write to InfluxDB'
+        "--dry-run", action="store_true", help="Collect prices but do not write to InfluxDB"
     )
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose debug logging'
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging")
 
     args = parser.parse_args()
 
     if args.verbose:
         import logging
+
         logger.setLevel(logging.DEBUG)
 
     if args.dry_run:
@@ -374,10 +351,12 @@ def main():
     except Exception as e:
         logger.error(f"Unhandled exception in spot price collection: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

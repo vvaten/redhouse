@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 """Temperature data collection from 1-wire DS18B20 sensors."""
 
+import datetime
 import os
 import time
-import datetime
 from statistics import median
-from typing import Dict, List, Optional
+from typing import Optional
 
 from src.common.config import get_config
-from src.common.logger import setup_logger
 from src.common.influx_client import InfluxClient
+from src.common.logger import setup_logger
 
-logger = setup_logger(__name__, 'temperature.log')
+logger = setup_logger(__name__, "temperature.log")
 
 # Sensor ID mapping to human-readable names
 SENSOR_NAMES = {
@@ -34,21 +34,21 @@ SENSOR_NAMES = {
     "190": "PaaMH3",
     "191": "YlakertaKH",
     "192": "KeskikerrosKH",
-    "193": "AlakertaKH"
+    "193": "AlakertaKH",
 }
 
 # Global state for previous temperature readings
-_previous_temps: Dict[str, float] = {}
+_previous_temps: dict[str, float] = {}
 
 
-def get_temperature_meter_ids() -> List[str]:
+def get_temperature_meter_ids() -> list[str]:
     """Get list of available 1-wire temperature sensor IDs.
 
     Returns:
         List of sensor device IDs from /sys/bus/w1/devices/
     """
     try:
-        result = os.popen('ls /sys/bus/w1/devices 2> /dev/null').read()
+        result = os.popen("ls /sys/bus/w1/devices 2> /dev/null").read()
         return result.split()
     except Exception as e:
         logger.error(f"Failed to get temperature meter IDs: {e}")
@@ -70,12 +70,12 @@ def get_temperature(meter_id: str) -> Optional[float]:
     """
     global _previous_temps
 
-    device_path = f'/sys/bus/w1/devices/{meter_id}/w1_slave'
+    device_path = f"/sys/bus/w1/devices/{meter_id}/w1_slave"
     if not os.path.isfile(device_path):
         logger.warning(f"Device file not found: {device_path}")
         return None
 
-    temperatures: Dict[str, int] = {}
+    temperatures: dict[str, int] = {}
     tries = 0
     tries_max = 20
     upper_threshold = 100
@@ -90,13 +90,13 @@ def get_temperature(meter_id: str) -> Optional[float]:
         while tries < tries_max and temperature is None:
             tries += 1
 
-            with open(device_path, 'r') as f:
+            with open(device_path) as f:
                 file_contents = f.read()
 
             lines = file_contents.split("\n")
 
             if "YES" in lines[0]:
-                value_str = lines[1][(lines[1].index('=') + 1):]
+                value_str = lines[1][(lines[1].index("=") + 1) :]
                 temp_celsius = float(int(value_str) / 1000.0)
 
                 if temp_celsius > upper_threshold:
@@ -144,18 +144,14 @@ def get_temperature(meter_id: str) -> Optional[float]:
     if temperature is not None:
         # DS18B20 valid range
         if not (-55 <= temperature <= 125):
-            logger.warning(
-                f"Sensor {meter_id} reading {temperature} out of valid range"
-            )
+            logger.warning(f"Sensor {meter_id} reading {temperature} out of valid range")
             return None
 
         # Suspicious values (common error codes)
         if temperature == 85 or temperature == 0:
             prev_temp = _previous_temps.get(meter_id)
             if prev_temp != temperature or prev_temp is None:
-                logger.warning(
-                    f"Sensor {meter_id} suspicious reading: {temperature}"
-                )
+                logger.warning(f"Sensor {meter_id} suspicious reading: {temperature}")
                 return None
 
         _previous_temps[meter_id] = temperature
@@ -174,11 +170,11 @@ def convert_internal_id_to_influxid(internal_id: str) -> Optional[str]:
     Returns:
         Human-readable sensor name, or None if not found
     """
-    if str(internal_id)[:2] == '28':
+    if str(internal_id)[:2] == "28":
         conversion_id = internal_id[-2:]
-    elif str(internal_id)[:6] == 'shelly':
+    elif str(internal_id)[:6] == "shelly":
         conversion_id = internal_id[-3:]
-    elif str(internal_id)[-4:-1] == '-19':
+    elif str(internal_id)[-4:-1] == "-19":
         conversion_id = internal_id[-3:]
     else:
         logger.warning(f"Unknown internal_id type: {internal_id}")
@@ -194,7 +190,7 @@ def convert_internal_id_to_influxid(internal_id: str) -> Optional[str]:
         return None
 
 
-def collect_temperatures() -> Dict[str, Dict[str, float]]:
+def collect_temperatures() -> dict[str, dict[str, float]]:
     """Collect temperatures from all available 1-wire sensors.
 
     Returns:
@@ -220,18 +216,14 @@ def collect_temperatures() -> Dict[str, Dict[str, float]]:
         temp = get_temperature(meter_id)
 
         if temp is not None:
-            temperature_status[meter_id] = {
-                "temp": temp,
-                "updated": time.time()
-            }
+            temperature_status[meter_id] = {"temp": temp, "updated": time.time()}
 
     logger.info(f"Successfully read {len(temperature_status)} temperatures")
     return temperature_status
 
 
 def write_temperatures_to_influx(
-    temperature_status: Dict[str, Dict[str, float]],
-    dry_run: bool = False
+    temperature_status: dict[str, dict[str, float]], dry_run: bool = False
 ) -> bool:
     """Write temperature data to InfluxDB.
 
@@ -250,7 +242,7 @@ def write_temperatures_to_influx(
         for temp_id, temp_data in temperature_status.items():
             influx_id = convert_internal_id_to_influxid(temp_id)
             if influx_id is not None:
-                temp_fields[influx_id] = float(temp_data['temp'])
+                temp_fields[influx_id] = float(temp_data["temp"])
 
         if not temp_fields:
             logger.warning("No valid temperature fields to write")
@@ -259,9 +251,7 @@ def write_temperatures_to_influx(
         timestamp = datetime.datetime.utcnow()
 
         if dry_run:
-            logger.info(
-                f"[DRY-RUN] Would write {len(temp_fields)} temperatures to InfluxDB:"
-            )
+            logger.info(f"[DRY-RUN] Would write {len(temp_fields)} temperatures to InfluxDB:")
             for field_name, value in temp_fields.items():
                 logger.info(f"[DRY-RUN]   {field_name}: {value} C")
             logger.info(f"[DRY-RUN] Timestamp: {timestamp}")
@@ -271,15 +261,11 @@ def write_temperatures_to_influx(
         # Write to InfluxDB
         influx = InfluxClient(config)
         success = influx.write_point(
-            measurement="temperatures",
-            fields=temp_fields,
-            timestamp=timestamp
+            measurement="temperatures", fields=temp_fields, timestamp=timestamp
         )
 
         if success:
-            logger.info(
-                f"Wrote {len(temp_fields)} temperatures to InfluxDB at {timestamp}"
-            )
+            logger.info(f"Wrote {len(temp_fields)} temperatures to InfluxDB at {timestamp}")
         else:
             logger.error("Failed to write temperatures to InfluxDB")
 
@@ -294,24 +280,17 @@ def main():
     """Main entry point for temperature collection."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description='Collect temperatures from 1-wire sensors'
-    )
+    parser = argparse.ArgumentParser(description="Collect temperatures from 1-wire sensors")
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Collect temperatures but do not write to InfluxDB'
+        "--dry-run", action="store_true", help="Collect temperatures but do not write to InfluxDB"
     )
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose debug logging'
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging")
 
     args = parser.parse_args()
 
     if args.verbose:
         import logging
+
         logger.setLevel(logging.DEBUG)
 
     if args.dry_run:
@@ -326,10 +305,7 @@ def main():
             logger.warning("No temperatures collected")
             return 1
 
-        success = write_temperatures_to_influx(
-            temperature_status,
-            dry_run=args.dry_run
-        )
+        success = write_temperatures_to_influx(temperature_status, dry_run=args.dry_run)
 
         if success:
             if args.dry_run:
@@ -348,4 +324,5 @@ def main():
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

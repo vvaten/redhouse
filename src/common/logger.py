@@ -1,7 +1,6 @@
 """Logging utilities for home automation system"""
 import logging
 import logging.handlers
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -9,9 +8,7 @@ from .config import get_config
 
 
 def setup_logger(
-    name: str,
-    log_file: Optional[str] = None,
-    level: Optional[str] = None
+    name: str, log_file: Optional[str] = None, level: Optional[str] = None
 ) -> logging.Logger:
     """
     Set up a logger with console and rotating file handlers
@@ -40,8 +37,7 @@ def setup_logger(
     # Console handler
     console_handler = logging.StreamHandler()
     console_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
@@ -54,13 +50,10 @@ def setup_logger(
         log_path = log_dir / log_file
 
         file_handler = logging.handlers.RotatingFileHandler(
-            log_path,
-            maxBytes=config.log_max_bytes,
-            backupCount=config.log_backup_count
+            log_path, maxBytes=config.log_max_bytes, backupCount=config.log_backup_count
         )
         file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)

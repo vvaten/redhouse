@@ -1,14 +1,13 @@
 """InfluxDB client wrapper for home automation system"""
 import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import influxdb_client
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from .config import get_config
+from .config_validator import ConfigValidationError, ConfigValidator
 from .logger import setup_logger
-from .config_validator import ConfigValidator, ConfigValidationError
-
 
 logger = setup_logger(__name__)
 
@@ -28,9 +27,7 @@ class InfluxClient:
 
         self.config = config
         self.client = influxdb_client.InfluxDBClient(
-            url=config.influxdb_url,
-            token=config.influxdb_token,
-            org=config.influxdb_org
+            url=config.influxdb_url, token=config.influxdb_token, org=config.influxdb_org
         )
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
         self.query_api = self.client.query_api()
@@ -46,10 +43,10 @@ class InfluxClient:
     def write_point(
         self,
         measurement: str,
-        fields: Dict[str, float],
-        tags: Optional[Dict[str, str]] = None,
+        fields: dict[str, float],
+        tags: Optional[dict[str, str]] = None,
         timestamp: Optional[datetime.datetime] = None,
-        bucket: Optional[str] = None
+        bucket: Optional[str] = None,
     ) -> bool:
         """
         Write a single data point to InfluxDB
@@ -75,9 +72,7 @@ class InfluxClient:
             try:
                 strict_mode = ConfigValidator.get_strict_mode()
                 warning = ConfigValidator.validate_write(
-                    bucket=bucket,
-                    fields=fields,
-                    strict_mode=strict_mode
+                    bucket=bucket, fields=fields, strict_mode=strict_mode
                 )
 
                 if warning:
@@ -99,11 +94,7 @@ class InfluxClient:
 
             point = point.time(timestamp)
 
-            self.write_api.write(
-                bucket=bucket,
-                org=self.config.influxdb_org,
-                record=point
-            )
+            self.write_api.write(bucket=bucket, org=self.config.influxdb_org, record=point)
 
             logger.debug(f"Written {measurement} data at {timestamp}")
             return True
@@ -114,8 +105,8 @@ class InfluxClient:
 
     def write_temperatures(
         self,
-        temperature_data: Dict[str, Dict[str, float]],
-        timestamp: Optional[datetime.datetime] = None
+        temperature_data: dict[str, dict[str, float]],
+        timestamp: Optional[datetime.datetime] = None,
     ) -> bool:
         """
         Write temperature data to InfluxDB
@@ -134,18 +125,18 @@ class InfluxClient:
             point = influxdb_client.Point("temperatures")
 
             for sensor_id, data in temperature_data.items():
-                if 'temp' in data and data['temp'] is not None:
+                if "temp" in data and data["temp"] is not None:
                     # Convert sensor ID to readable name
                     field_name = self._convert_sensor_id_to_name(sensor_id)
                     if field_name:
-                        point = point.field(field_name, float(data['temp']))
+                        point = point.field(field_name, float(data["temp"]))
 
             point = point.time(timestamp)
 
             self.write_api.write(
                 bucket=self.config.influxdb_bucket_temperatures,
                 org=self.config.influxdb_org,
-                record=point
+                record=point,
             )
 
             logger.debug(f"Written temperature data at {timestamp}")
@@ -157,8 +148,8 @@ class InfluxClient:
 
     def write_humidities(
         self,
-        humidity_data: Dict[str, Dict[str, float]],
-        timestamp: Optional[datetime.datetime] = None
+        humidity_data: dict[str, dict[str, float]],
+        timestamp: Optional[datetime.datetime] = None,
     ) -> bool:
         """
         Write humidity data to InfluxDB
@@ -177,17 +168,17 @@ class InfluxClient:
             point = influxdb_client.Point("humidities")
 
             for sensor_id, data in humidity_data.items():
-                if 'hum' in data and data['hum'] is not None:
+                if "hum" in data and data["hum"] is not None:
                     field_name = self._convert_sensor_id_to_name(sensor_id)
                     if field_name:
-                        point = point.field(field_name, float(data['hum']))
+                        point = point.field(field_name, float(data["hum"]))
 
             point = point.time(timestamp)
 
             self.write_api.write(
                 bucket=self.config.influxdb_bucket_temperatures,
                 org=self.config.influxdb_org,
-                record=point
+                record=point,
             )
 
             logger.debug(f"Written humidity data at {timestamp}")
@@ -197,7 +188,7 @@ class InfluxClient:
             logger.error(f"Exception when writing humidities to InfluxDB: {e}")
             return False
 
-    def write_weather(self, weather_data: Dict[datetime.datetime, Dict[str, float]]) -> bool:
+    def write_weather(self, weather_data: dict[datetime.datetime, dict[str, float]]) -> bool:
         """
         Write weather forecast data to InfluxDB
 
@@ -223,7 +214,7 @@ class InfluxClient:
             self.write_api.write(
                 bucket=self.config.influxdb_bucket_weather,
                 org=self.config.influxdb_org,
-                record=points
+                record=points,
             )
 
             logger.info(f"Written {len(points)} weather data points to DB")
@@ -233,7 +224,7 @@ class InfluxClient:
             logger.error(f"Exception when writing weather to InfluxDB: {e}")
             return False
 
-    def write_spot_prices(self, spot_price_data: List[Dict[str, Any]]) -> bool:
+    def write_spot_prices(self, spot_price_data: list[dict[str, Any]]) -> bool:
         """
         Write spot price data to InfluxDB
 
@@ -247,14 +238,14 @@ class InfluxClient:
             points = []
 
             for entry in spot_price_data:
-                timestamp = datetime.datetime.utcfromtimestamp(entry['epoch_timestamp'])
+                timestamp = datetime.datetime.utcfromtimestamp(entry["epoch_timestamp"])
 
                 point = (
                     influxdb_client.Point("spot")
-                    .field("price", entry['price'])
-                    .field("price_sell", entry['price_sell'])
-                    .field("price_withtax", entry['price_withtax'])
-                    .field("price_total", entry['price_total'])
+                    .field("price", entry["price"])
+                    .field("price_sell", entry["price_sell"])
+                    .field("price_withtax", entry["price_withtax"])
+                    .field("price_total", entry["price_total"])
                     .time(timestamp)
                 )
                 points.append(point)
@@ -262,7 +253,7 @@ class InfluxClient:
             self.write_api.write(
                 bucket=self.config.influxdb_bucket_spotprice,
                 org=self.config.influxdb_org,
-                record=points
+                record=points,
             )
 
             logger.info(f"Written {len(points)} spot price points to DB")
@@ -295,21 +286,21 @@ class InfluxClient:
         Returns:
             Display name or None
         """
-        sensor_mapping = self.config.get('sensor_mapping', {})
+        sensor_mapping = self.config.get("sensor_mapping", {})
 
         # Try direct lookup
         if sensor_id in sensor_mapping:
             return sensor_mapping[sensor_id]
 
         # Try last 2 chars for DS18B20 sensors
-        if sensor_id.startswith('28-'):
+        if sensor_id.startswith("28-"):
             suffix = sensor_id[-2:]
             for key, value in sensor_mapping.items():
                 if key.endswith(suffix):
                     return value
 
         # Try last 3 chars for Shelly sensors
-        if sensor_id.startswith('shelly-'):
+        if sensor_id.startswith("shelly-"):
             suffix = sensor_id[-3:]
             for key, value in sensor_mapping.items():
                 if key.endswith(suffix):

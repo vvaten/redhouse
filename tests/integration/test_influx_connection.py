@@ -5,7 +5,7 @@ import os
 import sys
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
@@ -40,22 +40,16 @@ def test_write_temperature():
         influx = InfluxClient(config)
 
         # Simulate temperature data
-        test_fields = {
-            "TestSensor1": 21.5,
-            "TestSensor2": 22.0,
-            "TestSensor3": 19.8
-        }
+        test_fields = {"TestSensor1": 21.5, "TestSensor2": 22.0, "TestSensor3": 19.8}
 
         timestamp = datetime.datetime.utcnow()
 
         success = influx.write_point(
-            measurement="temperatures",
-            fields=test_fields,
-            timestamp=timestamp
+            measurement="temperatures", fields=test_fields, timestamp=timestamp
         )
 
         if success:
-            print(f"  Write: OK")
+            print("  Write: OK")
             print(f"  Wrote {len(test_fields)} test sensors at {timestamp}")
             print(f"  Bucket: {config.influxdb_bucket_temperatures}")
             return True
@@ -75,7 +69,7 @@ def main():
     print("=" * 60)
 
     # Check if .env exists
-    if not os.path.exists('.env'):
+    if not os.path.exists(".env"):
         print("\nERROR: .env file not found!")
         print("Please copy .env.test to .env and add your credentials:")
         print("  cp .env.test .env")

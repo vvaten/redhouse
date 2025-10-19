@@ -1,14 +1,14 @@
 """Unit tests for weather data collection."""
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock
 import datetime
+import unittest
+from unittest.mock import Mock, patch
 
 from src.data_collection.weather import (
+    EXCLUDED_FIELDS,
     fetch_weather_forecast,
     save_weather_to_file,
     write_weather_to_influx,
-    EXCLUDED_FIELDS
 )
 
 
@@ -20,7 +20,7 @@ class TestWeatherCollection(unittest.TestCase):
         for field in EXCLUDED_FIELDS:
             self.assertTrue(field.isascii(), f"Field {field} contains non-ASCII characters")
 
-    @patch('src.data_collection.weather.download_stored_query')
+    @patch("src.data_collection.weather.download_stored_query")
     def test_fetch_weather_forecast_success(self, mock_download):
         """Test successful weather forecast fetch."""
         # Mock weather data
@@ -30,18 +30,13 @@ class TestWeatherCollection(unittest.TestCase):
 
         mock_weather.data = {
             timestamp1: {
-                '0': {
-                    'Temperature': {'value': 15.5},
-                    'Wind speed': {'value': 3.2},
-                    'Geopotential height': {'value': 100}  # Should be excluded
+                "0": {
+                    "Temperature": {"value": 15.5},
+                    "Wind speed": {"value": 3.2},
+                    "Geopotential height": {"value": 100},  # Should be excluded
                 }
             },
-            timestamp2: {
-                '0': {
-                    'Temperature': {'value': 15.8},
-                    'Wind speed': {'value': 3.5}
-                }
-            }
+            timestamp2: {"0": {"Temperature": {"value": 15.8}, "Wind speed": {"value": 3.5}}},
         }
 
         mock_download.return_value = mock_weather
@@ -54,14 +49,14 @@ class TestWeatherCollection(unittest.TestCase):
         self.assertIn(timestamp2, result)
 
         # Check first timestamp
-        self.assertEqual(result[timestamp1]['Temperature'], 15.5)
-        self.assertEqual(result[timestamp1]['Wind speed'], 3.2)
-        self.assertNotIn('Geopotential height', result[timestamp1])  # Excluded
+        self.assertEqual(result[timestamp1]["Temperature"], 15.5)
+        self.assertEqual(result[timestamp1]["Wind speed"], 3.2)
+        self.assertNotIn("Geopotential height", result[timestamp1])  # Excluded
 
         # Check second timestamp
-        self.assertEqual(result[timestamp2]['Temperature'], 15.8)
+        self.assertEqual(result[timestamp2]["Temperature"], 15.8)
 
-    @patch('src.data_collection.weather.download_stored_query')
+    @patch("src.data_collection.weather.download_stored_query")
     def test_fetch_weather_forecast_empty(self, mock_download):
         """Test handling of empty weather data."""
         mock_weather = Mock()
@@ -72,7 +67,7 @@ class TestWeatherCollection(unittest.TestCase):
 
         self.assertEqual(result, {})
 
-    @patch('src.data_collection.weather.download_stored_query')
+    @patch("src.data_collection.weather.download_stored_query")
     def test_fetch_weather_forecast_exception(self, mock_download):
         """Test handling of API exceptions."""
         mock_download.side_effect = Exception("API error")
@@ -81,16 +76,13 @@ class TestWeatherCollection(unittest.TestCase):
 
         self.assertEqual(result, {})
 
-    @patch('builtins.open', create=True)
-    @patch('os.makedirs')
-    @patch('json.dump')
+    @patch("builtins.open", create=True)
+    @patch("os.makedirs")
+    @patch("json.dump")
     def test_save_weather_to_file(self, mock_json_dump, mock_makedirs, mock_open):
         """Test saving weather data to file."""
         weather_data = {
-            datetime.datetime(2025, 10, 18, 12, 0): {
-                'Temperature': 15.5,
-                'Wind speed': 3.2
-            }
+            datetime.datetime(2025, 10, 18, 12, 0): {"Temperature": 15.5, "Wind speed": 3.2}
         }
 
         result = save_weather_to_file(weather_data, base_dir="/tmp/test")
@@ -108,14 +100,10 @@ class TestWeatherCollection(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("weather_data", result)
 
-    @patch('src.data_collection.weather.InfluxClient')
+    @patch("src.data_collection.weather.InfluxClient")
     def test_write_weather_to_influx_dry_run(self, mock_influx_class):
         """Test dry-run mode doesn't write to InfluxDB."""
-        weather_data = {
-            datetime.datetime(2025, 10, 18, 12, 0): {
-                'Temperature': 15.5
-            }
-        }
+        weather_data = {datetime.datetime(2025, 10, 18, 12, 0): {"Temperature": 15.5}}
 
         result = write_weather_to_influx(weather_data, dry_run=True)
 
@@ -125,8 +113,8 @@ class TestWeatherCollection(unittest.TestCase):
         # InfluxClient should not be instantiated in dry-run
         mock_influx_class.assert_not_called()
 
-    @patch('src.data_collection.weather.InfluxClient')
-    @patch('src.data_collection.weather.get_config')
+    @patch("src.data_collection.weather.InfluxClient")
+    @patch("src.data_collection.weather.get_config")
     def test_write_weather_to_influx_success(self, mock_config, mock_influx_class):
         """Test successful write to InfluxDB."""
         # Mock config
@@ -140,14 +128,8 @@ class TestWeatherCollection(unittest.TestCase):
         mock_influx_class.return_value = mock_influx
 
         weather_data = {
-            datetime.datetime(2025, 10, 18, 12, 0): {
-                'Temperature': 15.5,
-                'Wind speed': 3.2
-            },
-            datetime.datetime(2025, 10, 18, 12, 15): {
-                'Temperature': 15.8,
-                'Wind speed': 3.5
-            }
+            datetime.datetime(2025, 10, 18, 12, 0): {"Temperature": 15.5, "Wind speed": 3.2},
+            datetime.datetime(2025, 10, 18, 12, 15): {"Temperature": 15.8, "Wind speed": 3.5},
         }
 
         result = write_weather_to_influx(weather_data, dry_run=False)
@@ -168,5 +150,5 @@ class TestWeatherCollection(unittest.TestCase):
         self.assertFalse(result)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

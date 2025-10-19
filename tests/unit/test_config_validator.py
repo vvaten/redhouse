@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import Mock
 
-from src.common.config_validator import ConfigValidator, ConfigValidationError
+from src.common.config_validator import ConfigValidationError, ConfigValidator
 
 
 class TestConfigValidator(unittest.TestCase):
@@ -48,9 +48,7 @@ class TestConfigValidator(unittest.TestCase):
         """Test writing test data to test bucket (should be OK)."""
         fields = {"TestSensor1": 21.5}
         warning = ConfigValidator.validate_write(
-            bucket="temperatures_test",
-            fields=fields,
-            strict_mode=False
+            bucket="temperatures_test", fields=fields, strict_mode=False
         )
         # Should return warning but not raise
         self.assertIsNotNone(warning)
@@ -60,9 +58,7 @@ class TestConfigValidator(unittest.TestCase):
         """Test writing real data to production bucket (should warn)."""
         fields = {"PaaMH": 21.5, "Ulkolampo": 5.2}
         warning = ConfigValidator.validate_write(
-            bucket="temperatures",
-            fields=fields,
-            strict_mode=False
+            bucket="temperatures", fields=fields, strict_mode=False
         )
         # Should return warning
         self.assertIsNotNone(warning)
@@ -72,11 +68,7 @@ class TestConfigValidator(unittest.TestCase):
         """Test writing test data to production bucket (should block)."""
         fields = {"TestSensor1": 21.5, "PaaMH": 22.0}
         with self.assertRaises(ConfigValidationError) as ctx:
-            ConfigValidator.validate_write(
-                bucket="temperatures",
-                fields=fields,
-                strict_mode=False
-            )
+            ConfigValidator.validate_write(bucket="temperatures", fields=fields, strict_mode=False)
         self.assertIn("TestSensor1", str(ctx.exception))
         self.assertIn("production", str(ctx.exception).lower())
 
@@ -84,11 +76,7 @@ class TestConfigValidator(unittest.TestCase):
         """Test strict mode blocks all writes to production."""
         fields = {"RealSensor": 21.5}
         with self.assertRaises(ConfigValidationError) as ctx:
-            ConfigValidator.validate_write(
-                bucket="temperatures",
-                fields=fields,
-                strict_mode=True
-            )
+            ConfigValidator.validate_write(bucket="temperatures", fields=fields, strict_mode=True)
         self.assertIn("Strict mode", str(ctx.exception))
 
     def test_check_environment_production(self):
@@ -158,5 +146,5 @@ class TestConfigValidator(unittest.TestCase):
         self.assertIn("temperatures", str(ctx.exception))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

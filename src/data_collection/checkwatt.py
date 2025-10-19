@@ -4,22 +4,20 @@
 import asyncio
 import datetime
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import aiohttp
-import numpy as np
-import pandas as pd
-
-from src.common.config import get_config
-from src.common.logger import setup_logger
-from src.common.influx_client import InfluxClient
 import influxdb_client
 
-logger = setup_logger(__name__, 'checkwatt.log')
+from src.common.config import get_config
+from src.common.influx_client import InfluxClient
+from src.common.logger import setup_logger
+
+logger = setup_logger(__name__, "checkwatt.log")
 
 # CheckWatt API endpoints
-AUTH_URL = 'https://api.checkwatt.se/user/Login?audience=eib'
-DATA_URL = 'https://api.checkwatt.se/datagrouping/series'
+AUTH_URL = "https://api.checkwatt.se/user/Login?audience=eib"
+DATA_URL = "https://api.checkwatt.se/datagrouping/series"
 
 # Expected meter data columns in order
 CHECKWATT_COLUMNS = [
@@ -28,7 +26,7 @@ CHECKWATT_COLUMNS = [
     "BatteryDischarge",
     "EnergyImport",
     "EnergyExport",
-    "SolarYield"
+    "SolarYield",
 ]
 
 
@@ -49,8 +47,8 @@ async def get_auth_token(username: str, password: str) -> Optional[str]:
 
     # Create Basic auth header
     auth_string = f"{username}:{password}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
+    auth_bytes = auth_string.encode("ascii")
+    auth_b64 = base64.b64encode(auth_bytes).decode("ascii")
 
     headers = {
         "accept": "application/json, text/plain, */*",
@@ -65,9 +63,9 @@ async def get_auth_token(username: str, password: str) -> Optional[str]:
             async with session.post(AUTH_URL, data=payload, headers=headers) as response:
                 if response.status == 200:
                     json_data = await response.json()
-                    if 'JwtToken' in json_data:
+                    if "JwtToken" in json_data:
                         logger.info("Successfully obtained auth token")
-                        return json_data['JwtToken']
+                        return json_data["JwtToken"]
                     else:
                         logger.error("Auth response missing JwtToken")
                         return None
@@ -101,11 +99,8 @@ def format_datetime(dt) -> str:
 
 
 async def fetch_checkwatt_data(
-    auth_token: str,
-    meter_ids: List[str],
-    from_date: str,
-    to_date: str
-) -> Optional[Dict]:
+    auth_token: str, meter_ids: list[str], from_date: str, to_date: str
+) -> Optional[dict]:
     """
     Fetch CheckWatt data from API.
 
@@ -122,12 +117,8 @@ async def fetch_checkwatt_data(
     to_date = format_datetime(to_date)
 
     # Build URL with meter IDs
-    meter_params = '&'.join([f'meterId={mid}' for mid in meter_ids])
-    url = (
-        f'{DATA_URL}?grouping=delta&'
-        f'fromdate={from_date}&todate={to_date}&'
-        f'{meter_params}'
-    )
+    meter_params = "&".join([f"meterId={mid}" for mid in meter_ids])
+    url = f"{DATA_URL}?grouping=delta&" f"fromdate={from_date}&todate={to_date}&" f"{meter_params}"
 
     logger.info(f"Fetching CheckWatt data from {from_date} to {to_date}")
 
@@ -156,7 +147,7 @@ async def fetch_checkwatt_data(
         return None
 
 
-def process_checkwatt_data(json_data: Dict) -> List[Dict]:
+def process_checkwatt_data(json_data: dict) -> list[dict]:
     """
     Process CheckWatt JSON data into InfluxDB format.
 
@@ -174,8 +165,7 @@ def process_checkwatt_data(json_data: Dict) -> List[Dict]:
 
     if len(json_data.get("Meters", [])) != len(CHECKWATT_COLUMNS):
         raise ValueError(
-            f"Expected {len(CHECKWATT_COLUMNS)} meters, "
-            f"got {len(json_data.get('Meters', []))}"
+            f"Expected {len(CHECKWATT_COLUMNS)} meters, " f"got {len(json_data.get('Meters', []))}"
         )
 
     # Parse start time
@@ -183,17 +173,15 @@ def process_checkwatt_data(json_data: Dict) -> List[Dict]:
     start_timestamp = int(dt.timestamp())
 
     # Initialize data points with timestamps (1-minute intervals)
-    measurements_soc = json_data["Meters"][0]['Measurements']
+    measurements_soc = json_data["Meters"][0]["Measurements"]
     data_points = []
 
     for i in range(len(measurements_soc)):
-        data_points.append({
-            "epoch_timestamp": start_timestamp + i * 60
-        })
+        data_points.append({"epoch_timestamp": start_timestamp + i * 60})
 
     # Add measurements from each meter
     for col_idx, column_name in enumerate(CHECKWATT_COLUMNS):
-        measurements = json_data["Meters"][col_idx]['Measurements']
+        measurements = json_data["Meters"][col_idx]["Measurements"]
 
         for i in range(len(measurements_soc)):
             if i < len(measurements):
@@ -211,10 +199,7 @@ def process_checkwatt_data(json_data: Dict) -> List[Dict]:
     return data_points
 
 
-async def write_checkwatt_to_influx(
-    data_points: List[Dict],
-    dry_run: bool = False
-) -> bool:
+async def write_checkwatt_to_influx(data_points: list[dict], dry_run: bool = False) -> bool:
     """
     Write CheckWatt data to InfluxDB.
 
@@ -234,8 +219,8 @@ async def write_checkwatt_to_influx(
     if dry_run:
         logger.info(f"[DRY-RUN] Would write {len(data_points)} CheckWatt data points")
         if len(data_points) > 0:
-            first_ts = datetime.datetime.utcfromtimestamp(data_points[0]['epoch_timestamp'])
-            last_ts = datetime.datetime.utcfromtimestamp(data_points[-1]['epoch_timestamp'])
+            first_ts = datetime.datetime.utcfromtimestamp(data_points[0]["epoch_timestamp"])
+            last_ts = datetime.datetime.utcfromtimestamp(data_points[-1]["epoch_timestamp"])
             logger.info(f"[DRY-RUN]   From: {first_ts}")
             logger.info(f"[DRY-RUN]   To: {last_ts}")
             logger.info(f"[DRY-RUN]   First point fields: {list(data_points[0].keys())}")
@@ -248,9 +233,7 @@ async def write_checkwatt_to_influx(
         records = []
         for row in data_points:
             window_start_timestamp = row["epoch_timestamp"]
-            window_start_datetime = datetime.datetime.utcfromtimestamp(
-                window_start_timestamp
-            )
+            window_start_datetime = datetime.datetime.utcfromtimestamp(window_start_timestamp)
 
             p = influxdb_client.Point("checkwatt")
 
@@ -263,17 +246,14 @@ async def write_checkwatt_to_influx(
 
         # Write using influx client directly (not using wrapper for this one)
         influx.write_api.write(
-            bucket=config.influxdb_bucket_checkwatt,
-            org=config.influxdb_org,
-            record=records
+            bucket=config.influxdb_bucket_checkwatt, org=config.influxdb_org, record=records
         )
 
-        first_ts = datetime.datetime.utcfromtimestamp(data_points[0]['epoch_timestamp'])
-        last_ts = datetime.datetime.utcfromtimestamp(data_points[-1]['epoch_timestamp'])
+        first_ts = datetime.datetime.utcfromtimestamp(data_points[0]["epoch_timestamp"])
+        last_ts = datetime.datetime.utcfromtimestamp(data_points[-1]["epoch_timestamp"])
 
         logger.info(
-            f"Wrote {len(records)} CheckWatt records to InfluxDB "
-            f"(from {first_ts} to {last_ts})"
+            f"Wrote {len(records)} CheckWatt records to InfluxDB " f"(from {first_ts} to {last_ts})"
         )
         return True
 
@@ -286,7 +266,7 @@ async def collect_checkwatt_data(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     last_hour_only: bool = False,
-    dry_run: bool = False
+    dry_run: bool = False,
 ) -> int:
     """
     Main function to collect CheckWatt data.
@@ -305,9 +285,9 @@ async def collect_checkwatt_data(
     config = get_config()
 
     # Get credentials from config
-    username = config.get('checkwatt_username')
-    password = config.get('checkwatt_password')
-    meter_ids_str = config.get('checkwatt_meter_ids')
+    username = config.get("checkwatt_username")
+    password = config.get("checkwatt_password")
+    meter_ids_str = config.get("checkwatt_meter_ids")
 
     if not username or not password:
         logger.error("CHECKWATT_USERNAME and CHECKWATT_PASSWORD must be configured!")
@@ -317,18 +297,22 @@ async def collect_checkwatt_data(
         logger.error("CHECKWATT_METER_IDS must be configured!")
         return 1
 
-    meter_ids = [mid.strip() for mid in meter_ids_str.split(',')]
+    meter_ids = [mid.strip() for mid in meter_ids_str.split(",")]
 
     # Determine date range
     if last_hour_only:
         now = datetime.datetime.now()
-        start_date = (now - datetime.timedelta(hours=1)).replace(minute=0, second=0).isoformat()[:19]
+        start_date = (
+            (now - datetime.timedelta(hours=1)).replace(minute=0, second=0).isoformat()[:19]
+        )
         end_date = (now + datetime.timedelta(hours=1)).isoformat()[:19]
     else:
         if start_date is None:
             start_date = datetime.date.today().isoformat() + "T00:00:00"
         if end_date is None:
-            end_date = (datetime.date.today() + datetime.timedelta(days=1)).isoformat() + "T00:00:00"
+            end_date = (
+                datetime.date.today() + datetime.timedelta(days=1)
+            ).isoformat() + "T00:00:00"
 
     logger.info(f"Date range: {start_date} to {end_date}")
 
@@ -377,32 +361,18 @@ def main():
     """Main entry point for CheckWatt collection."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description='Collect CheckWatt battery and solar data'
-    )
+    parser = argparse.ArgumentParser(description="Collect CheckWatt battery and solar data")
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Collect data but do not write to InfluxDB'
+        "--dry-run", action="store_true", help="Collect data but do not write to InfluxDB"
     )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging")
     parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose debug logging'
+        "--last-hour",
+        action="store_true",
+        help="Only fetch data from last hour (default mode for cron)",
     )
-    parser.add_argument(
-        '--last-hour',
-        action='store_true',
-        help='Only fetch data from last hour (default mode for cron)'
-    )
-    parser.add_argument(
-        '--start-date',
-        help='Start date (YYYY-MM-DDTHH:MM:SS format)'
-    )
-    parser.add_argument(
-        '--end-date',
-        help='End date (YYYY-MM-DDTHH:MM:SS format)'
-    )
+    parser.add_argument("--start-date", help="Start date (YYYY-MM-DDTHH:MM:SS format)")
+    parser.add_argument("--end-date", help="End date (YYYY-MM-DDTHH:MM:SS format)")
 
     args = parser.parse_args()
 
@@ -415,21 +385,25 @@ def main():
         logger.info("Starting CheckWatt collection")
 
     try:
-        result = asyncio.run(collect_checkwatt_data(
-            start_date=args.start_date,
-            end_date=args.end_date,
-            last_hour_only=args.last_hour,
-            dry_run=args.dry_run
-        ))
+        result = asyncio.run(
+            collect_checkwatt_data(
+                start_date=args.start_date,
+                end_date=args.end_date,
+                last_hour_only=args.last_hour,
+                dry_run=args.dry_run,
+            )
+        )
         return result
 
     except Exception as e:
         logger.error(f"Unhandled exception in CheckWatt collection: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

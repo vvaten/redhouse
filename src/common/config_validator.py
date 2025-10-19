@@ -1,12 +1,12 @@
 """Configuration validation to prevent accidental writes to production."""
 
 import os
-import sys
-from typing import List, Optional
+from typing import Optional
 
 
 class ConfigValidationError(Exception):
     """Raised when configuration validation fails."""
+
     pass
 
 
@@ -14,26 +14,13 @@ class ConfigValidator:
     """Validates configuration to prevent production accidents."""
 
     # Buckets that should NEVER be written to during testing
-    PRODUCTION_BUCKETS = {
-        "temperatures",
-        "weather",
-        "spotprice",
-        "emeters",
-        "checkwatt_full_data"
-    }
+    PRODUCTION_BUCKETS = {"temperatures", "weather", "spotprice", "emeters", "checkwatt_full_data"}
 
     # Test bucket patterns
     TEST_BUCKET_SUFFIX = "_test"
 
     # Field patterns that indicate test data
-    TEST_FIELD_PATTERNS = [
-        "Test",
-        "test",
-        "dummy",
-        "Dummy",
-        "fake",
-        "Fake"
-    ]
+    TEST_FIELD_PATTERNS = ["Test", "test", "dummy", "Dummy", "fake", "Fake"]
 
     @classmethod
     def is_production_bucket(cls, bucket_name: str) -> bool:
@@ -62,7 +49,7 @@ class ConfigValidator:
         return bucket_name.endswith(cls.TEST_BUCKET_SUFFIX)
 
     @classmethod
-    def validate_field_names(cls, fields: dict, allow_test_fields: bool = True) -> List[str]:
+    def validate_field_names(cls, fields: dict, allow_test_fields: bool = True) -> list[str]:
         """
         Check if any field names look like test data.
 
@@ -93,12 +80,7 @@ class ConfigValidator:
         return test_fields
 
     @classmethod
-    def validate_write(
-        cls,
-        bucket: str,
-        fields: dict,
-        strict_mode: bool = False
-    ) -> Optional[str]:
+    def validate_write(cls, bucket: str, fields: dict, strict_mode: bool = False) -> Optional[str]:
         """
         Validate a write operation before executing.
 
@@ -142,14 +124,12 @@ class ConfigValidator:
         if cls.is_test_bucket(bucket):
             test_fields = cls.validate_field_names(fields, allow_test_fields=True)
             if test_fields:
-                warnings.append(
-                    f"INFO: Writing test fields {test_fields} to test bucket {bucket}"
-                )
+                warnings.append(f"INFO: Writing test fields {test_fields} to test bucket {bucket}")
 
         return " | ".join(warnings) if warnings else None
 
     @classmethod
-    def check_environment(cls, config) -> List[str]:
+    def check_environment(cls, config) -> list[str]:
         """
         Check entire configuration for production/test bucket usage.
 
@@ -186,7 +166,7 @@ class ConfigValidator:
             messages.insert(
                 0,
                 "WARNING: Mixed production and test buckets! "
-                "This is unusual and may indicate configuration error."
+                "This is unusual and may indicate configuration error.",
             )
         elif prod_count == len(buckets_to_check):
             messages.insert(0, "PRODUCTION environment detected")
