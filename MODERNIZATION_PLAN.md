@@ -337,16 +337,119 @@ ruff check src/ tests/
 
 ---
 
-## Phase 4 - Deployment Automation (Week 3-4)
+## Phase 4 - Heating Control Logic (Week 3-4)
+
+**Current Status:** ⏳ Not Started
+
+### Overview
+Refactor the core heating control system that optimizes when to heat based on weather forecasts, electricity prices, and solar production.
+
+**Existing Code to Refactor:**
+- `wibatemp/generate_heating_program.py` (407 lines) - Daily heating schedule optimizer
+- `wibatemp/execute_heating_program.py` (98 lines) - Schedule executor
+- `wibatemp/mlp_control.sh` - I2C heat pump controller
+
+### Phase 4.1 - Heating Curve & Calculations
+**Goal:** Extract and test the heating curve logic
+
+- [ ] Create `src/control/heating_curve.py`
+  - Extract heating curve function (temp → hours/day)
+  - Support configurable curve points from YAML
+  - Linear interpolation between points
+  - Unit tests for all temperature ranges
+
+- [ ] Create `src/control/heating_optimizer.py`
+  - Calculate heating priorities from spot prices + solar
+  - Optimize heating hours to cheapest electricity periods
+  - Consider EVU-OFF (grid control) constraints
+  - Unit tests with mocked data
+
+### Phase 4.2 - Program Generator
+**Goal:** Generate daily heating schedules
+
+- [ ] Create `src/control/program_generator.py`
+  - Fetch weather, spot price, and solar forecast data
+  - Calculate required heating hours from temperature
+  - Generate hourly schedule (ON/ALE/EVU states)
+  - Save schedule as JSON
+  - Unit tests with fixture data
+  - Integration test with test InfluxDB
+
+- [ ] Create `generate_heating_program_v2.py` wrapper
+  - Backward compatibility with cron
+  - Command-line arguments (--date, --dry-run, --output)
+  - Logging instead of print statements
+
+### Phase 4.3 - Program Executor
+**Goal:** Execute heating schedules safely
+
+- [ ] Create `src/control/program_executor.py`
+  - Load daily schedule JSON
+  - Execute commands at scheduled times
+  - Call pump controller (I2C via mlp_control.sh)
+  - Mark commands as executed
+  - Handle day transitions
+  - Unit tests with mocked I2C calls
+  - Dry-run mode for testing
+
+- [ ] Create `execute_heating_program_v2.py` wrapper
+  - Backward compatibility with cron
+  - Safety checks before pump control
+  - Error handling and logging
+  - Status reporting to InfluxDB
+
+### Phase 4.4 - Pump Controller Wrapper
+**Goal:** Safe I2C pump control
+
+- [ ] Create `src/control/pump_controller.py`
+  - Python wrapper for mlp_control.sh
+  - I2C communication via smbus or subprocess
+  - Safety interlocks (temperature limits, max runtime)
+  - Status monitoring
+  - Mock mode for testing
+  - Unit tests without hardware
+
+### Phase 4.5 - Testing
+**Goal:** Comprehensive test coverage
+
+- [ ] Unit tests (20+ tests expected):
+  - Test heating curve calculations
+  - Test priority calculations
+  - Test schedule generation
+  - Test schedule execution logic
+  - Test pump controller (mocked I2C)
+
+- [ ] Integration tests:
+  - End-to-end schedule generation
+  - Schedule execution in dry-run mode
+  - Data fetching from test InfluxDB
+
+- [ ] Simulation tests:
+  - Test with historical data
+  - Verify cost optimization
+  - Validate heating hour distribution
+
+### Success Criteria
+- ✅ All heating logic extracted from old scripts
+- ✅ Configurable heating curve (no hardcoded values)
+- ✅ Comprehensive unit tests (>20 tests)
+- ✅ Dry-run mode for safe testing
+- ✅ Backward-compatible wrappers for cron
+- ✅ All tests passing
+
+---
+
+## Phase 5 - Deployment Automation (Week 4-5)
 
 ### systemd Services
 
 **Services to create:**
-1. `redhouse-collector.service` + `.timer` (every minute)
+1. `redhouse-temperature.service` + `.timer` (every minute)
 2. `redhouse-weather.service` + `.timer` (hourly)
-3. `redhouse-spot-prices.service` + `.timer` (specific times)
-4. `redhouse-optimizer.service` + `.timer` (daily at 16:05)
-5. `redhouse-executor.service` + `.timer` (every 15 min)
+3. `redhouse-spot-prices.service` + `.timer` (daily at specific times)
+4. `redhouse-checkwatt.service` + `.timer` (every 5 minutes)
+5. `redhouse-generate-program.service` + `.timer` (daily at 16:05)
+6. `redhouse-execute-program.service` + `.timer` (every 15 min)
 
 ### Deployment Script
 
@@ -375,16 +478,16 @@ echo "Deployment complete!"
 
 ---
 
-## Phase 5 - Log Management (Week 4-5)
+## Phase 6 - Log Management (Week 5-6)
 
-1. **Replace all print statements with logging**
-2. **Configure log rotation** (10MB, 5 backups)
+1. **Replace remaining print statements with logging** (heating control scripts)
+2. **Configure log rotation** (10MB, 5 backups) - already done
 3. **Add logrotate config** for /var/log/redhouse/
 4. **Centralize logs** in /var/log/redhouse/
 
 ---
 
-## Phase 6 - Monitoring & Alerts (Week 5-6)
+## Phase 7 - Monitoring & Alerts (Week 6-7)
 
 ### Health Checks
 - Temperature sensors responding
@@ -399,7 +502,7 @@ echo "Deployment complete!"
 
 ---
 
-## Phase 7 - Historical Simulation (Week 6-7)
+## Phase 8 - Historical Simulation (Week 7-8)
 
 **Backtesting Framework:**
 ```python
@@ -413,7 +516,7 @@ print(f"Potential savings: {results['savings']} EUR/year")
 
 ---
 
-## Phase 8 - Multi-Load Support (Week 7-8)
+## Phase 9 - Multi-Load Support (Week 8-9)
 
 ### Load Balancer
 - Geothermal pump (priority 1, 3kW)
@@ -423,7 +526,7 @@ print(f"Potential savings: {results['savings']} EUR/year")
 
 ---
 
-## Phase 9 - Grafana Controls (Week 8-9)
+## Phase 10 - Grafana Controls (Week 9-10)
 
 ### REST API
 ```python
