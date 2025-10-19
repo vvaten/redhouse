@@ -62,6 +62,8 @@ def setup_logger(
         except (PermissionError, OSError) as e:
             # In CI or restricted environments, log directory may not be writable
             # Continue with console-only logging
-            logger.warning(f"Could not create log file {log_file}: {e}. Using console logging only.")
+            logger.warning(
+                f"Could not create log file {log_file}: {e}. Using console logging only."
+            )
 
     return logger
