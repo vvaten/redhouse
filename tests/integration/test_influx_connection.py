@@ -21,7 +21,7 @@ def test_influx_connection():
         print(f"  Org: {config.influxdb_org}")
         print(f"  Temperature bucket: {config.influxdb_bucket_temperatures}")
 
-        influx = InfluxClient(config)
+        InfluxClient(config)
         print("  Connection: OK")
 
         return True

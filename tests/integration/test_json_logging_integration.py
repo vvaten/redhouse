@@ -5,7 +5,6 @@ import datetime
 import json
 import tempfile
 import unittest
-from pathlib import Path
 
 from src.common.config import get_config
 from src.common.json_logger import JSONDataLogger
@@ -91,9 +90,7 @@ class TestJSONLoggingIntegration(unittest.TestCase):
         self.assertGreater(len(processed), 0)
 
         # Write to test bucket
-        latest_timestamp = asyncio.run(
-            write_spot_prices_to_influx(processed, dry_run=False)
-        )
+        latest_timestamp = asyncio.run(write_spot_prices_to_influx(processed, dry_run=False))
 
         self.assertIsNotNone(latest_timestamp)
         print(f"Successfully wrote {len(processed)} spot prices to test bucket")
@@ -104,7 +101,7 @@ class TestJSONLoggingIntegration(unittest.TestCase):
         json_logger.retention_days = 7
 
         # Create some log files
-        now = datetime.datetime.now()
+        datetime.datetime.now()
 
         # Create 5 recent logs
         for i in range(5):

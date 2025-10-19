@@ -5,7 +5,6 @@ import json
 import tempfile
 import time
 import unittest
-from pathlib import Path
 
 from src.common.json_logger import JSONDataLogger
 
