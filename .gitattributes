@@ -1,0 +1,32 @@
+# Force LF line endings for all text files in this repository
+* text=auto eol=lf
+
+# Ensure shell scripts always use LF
+*.sh text eol=lf
+
+# Ensure Python files always use LF
+*.py text eol=lf
+
+# Ensure YAML/config files use LF
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+
+# Ensure markdown and documentation use LF
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+
+# Binary files should not be modified
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.db binary
