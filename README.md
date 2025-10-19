@@ -1,4 +1,4 @@
-# Home Automation System
+# RedHouse Home Automation System
 
 Intelligent home heating control system optimizing geothermal pump operation based on weather forecasts and electricity spot prices.
 
@@ -34,7 +34,7 @@ NAS (Docker)
 ## Project Structure
 
 ```
-home-automation/
+redhouse/
 ├── src/
 │   ├── data_collection/    # Sensor readers, API clients
 │   ├── control/            # Heating optimizer, pump controller
@@ -62,9 +62,9 @@ home-automation/
 1. **Clone repository**
 ```bash
 cd /opt
-sudo git clone <your-repo-url> home-automation
-cd home-automation
-sudo chown -R pi:pi /opt/home-automation
+sudo git clone <your-repo-url> redhouse
+cd redhouse
+sudo chown -R pi:pi /opt/redhouse
 ```
 
 2. **Create virtual environment**
@@ -89,8 +89,8 @@ nano config/config.yaml  # Adjust heating curve, schedules, etc.
 
 5. **Create log directory**
 ```bash
-sudo mkdir -p /var/log/home-automation
-sudo chown pi:pi /var/log/home-automation
+sudo mkdir -p /var/log/redhouse
+sudo chown pi:pi /var/log/redhouse
 ```
 
 6. **Test configuration**
@@ -165,10 +165,10 @@ See [config/config.yaml.example](config/config.yaml.example) for details.
 
 ```bash
 # Application logs
-tail -f /var/log/home-automation/collector.log
+tail -f /var/log/redhouse/collector.log
 
 # Systemd logs
-journalctl -u home-automation-* -f
+journalctl -u redhouse-* -f
 ```
 
 ### Grafana Dashboards

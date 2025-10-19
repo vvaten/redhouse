@@ -135,7 +135,7 @@ class Config:
 
     @property
     def log_dir(self) -> str:
-        return self.get("LOG_DIR", "/var/log/home-automation")
+        return self.get("LOG_DIR", "/var/log/redhouse")
 
     @property
     def log_max_bytes(self) -> int:

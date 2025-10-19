@@ -1,4 +1,4 @@
-# Home Automation Configuration
+# RedHouse Home Automation Configuration
 
 heating:
   # Heating curve: temperature (C) -> hours to heat per day
@@ -15,7 +15,7 @@ heating:
 data_collection:
   weather:
     interval_minutes: 60
-    data_dir: /opt/home-automation/data/weather_data
+    data_dir: /opt/redhouse/data/weather_data
     retention_days: 7
 
   temperature:
