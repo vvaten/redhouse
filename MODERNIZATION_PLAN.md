@@ -339,7 +339,7 @@ ruff check src/ tests/
 
 ## Phase 4 - Heating Control Logic (Week 3-4)
 
-**Current Status:** ⏳ Not Started
+**Current Status:** 🚧 50% Complete - Heating Curve & Optimizer Done
 
 ### Overview
 Refactor the core heating control system that optimizes when to heat based on weather forecasts, electricity prices, and solar production.
@@ -349,20 +349,26 @@ Refactor the core heating control system that optimizes when to heat based on we
 - `wibatemp/execute_heating_program.py` (98 lines) - Schedule executor
 - `wibatemp/mlp_control.sh` - I2C heat pump controller
 
-### Phase 4.1 - Heating Curve & Calculations
+### Phase 4.1 - Heating Curve & Calculations ✅ COMPLETED
 **Goal:** Extract and test the heating curve logic
 
-- [ ] Create `src/control/heating_curve.py`
+- [x] Create `src/control/heating_curve.py`
   - Extract heating curve function (temp → hours/day)
   - Support configurable curve points from YAML
   - Linear interpolation between points
-  - Unit tests for all temperature ranges
+  - Unit tests for all temperature ranges (18 tests, all passing)
 
-- [ ] Create `src/control/heating_optimizer.py`
+- [x] Create `src/control/heating_data_fetcher.py`
+  - Fetch weather, spot prices, solar predictions from InfluxDB
+  - Merge data into pandas DataFrame for analysis
+  - Calculate day average temperatures
+
+- [x] Create `src/control/heating_optimizer.py`
   - Calculate heating priorities from spot prices + solar
   - Optimize heating hours to cheapest electricity periods
-  - Consider EVU-OFF (grid control) constraints
-  - Unit tests with mocked data
+  - Support both hourly (60min) and quarterly (15min) resolutions
+  - Ready for future quarterly-hour billing
+  - Unit tests with mocked data (20 tests, all passing)
 
 ### Phase 4.2 - Program Generator
 **Goal:** Generate daily heating schedules
