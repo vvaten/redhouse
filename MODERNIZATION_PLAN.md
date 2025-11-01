@@ -2,7 +2,7 @@
 
 **Project Name:** `redhouse`
 **Started:** 2025-10-18
-**Current Phase:** Phase 1 - Repository Setup (90% complete)
+**Current Phase:** Phase 4
 
 ---
 
@@ -376,8 +376,9 @@ Refactor the core heating control system that optimizes when to heat based on we
 - [ ] Create `src/control/program_generator.py`
   - Fetch weather, spot price, and solar forecast data
   - Calculate required heating hours from temperature
-  - Generate hourly schedule (ON/ALE/EVU states)
+  - Generate quarterhourly schedule (ON/ALE/EVU states)
   - Save schedule as JSON
+  - Also save the schedule to the InfluxDB (design a proper database format for this for it to be easily plotted in Grafana)
   - Unit tests with fixture data
   - Integration test with test InfluxDB
 
@@ -552,13 +553,28 @@ GET /api/status
 
 ## Quick Reference
 
-### Key Files Locations (Current System)
+### Important: Always Activate Virtual Environment
+**REMINDER:** Before running any Python commands, tests, or scripts:
+```bash
+# On Windows (Git Bash)
+source venv/Scripts/activate
+
+# On Linux/Raspberry Pi
+source venv/bin/activate
+```
+
+### Key Files Locations (Current/Old System)
 - Temperature: `wibatemp/wibatemp.py`
 - Weather: `wibatemp/get_weather.py`
 - Spot prices: `wibatemp/spot_price_getter/spot_price_getter.py`
 - Heating optimizer: `wibatemp/generate_heating_program.py`
 - Heating executor: `wibatemp/execute_heating_program.py`
+- Solar yield predictor: `wibatemp/predict_solar_yield.py`
+- Water temp controller `wibatemp/water_temp_controller.py`
+- Pinglogger `pinglogger/pinglogger.py`
 - Pump control: `wibatemp/mlp_control.sh`
+- Pump EVUcycleoff script: `wibatemp/mlp_cycle_evu_off_hourly.sh`
+  (It is needed to cycle the EVUOFF once per two hours for the pump not to go to direct heating mode)
 - Crontab: `crontab.list`
 
 ### InfluxDB Buckets
@@ -572,28 +588,17 @@ GET /api/status
 - **Temperature sensors:** 1-wire DS18B20 at `/sys/bus/w1/devices/`
 - **Pump control:** I2C bus 1, address 0x10
 - **Shelly relay:** HTTP at 192.168.1.5
+(There are multiple Shelly relays, two for Garage heating (different size), one for AC, one for hot water pump circulation, potentially several for some AC boosting in Movie room etc.)
 
 ---
 
 ## Notes & Decisions
 
 1. **Removed pysma dependency** - No longer have SMA inverter
-2. **Local folder name:** Keeping as `pi` locally, GitHub repo is `redhouse`
+2. **Local folder name:** `redhouse` locally, GitHub repo is `redhouse`
 3. **InfluxDB/Grafana on NAS:** Keep as-is, just add backups
 4. **No Docker on Pi:** Too much overhead for Python scripts
 5. **systemd over crontab:** Better logging and service management
-
----
-
-## Next Session Checklist
-
-When continuing work:
-
-1. ✅ Navigate to project: `cd c:\Projects\pi` (or redhouse)
-2. ⏳ Initialize git repository
-3. ⏳ Create GitHub repo `redhouse`
-4. ⏳ Make initial commit and push
-5. ⏳ Start Phase 2: Refactor temperature collection module
 
 ---
 
@@ -605,6 +610,3 @@ When continuing work:
 - **systemd Timers:** https://www.freedesktop.org/software/systemd/man/systemd.timer.html
 
 ---
-
-**Last Updated:** 2025-10-18
-**Status:** Phase 1 complete, ready for git initialization

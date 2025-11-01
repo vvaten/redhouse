@@ -46,7 +46,8 @@ def create_test_buckets():
         ("weather_test", "Weather forecast data (test)"),
         ("spotprice_test", "Electricity spot prices (test)"),
         ("emeters_test", "Energy meter data (test)"),
-        ("checkwatt_full_data_test", "CheckWatt battery/solar data (test)")
+        ("checkwatt_full_data_test", "CheckWatt battery/solar data (test)"),
+        ("load_control_test", "Load control heating programs (test)"),
     ]
 
     try:

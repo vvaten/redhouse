@@ -14,7 +14,14 @@ class ConfigValidator:
     """Validates configuration to prevent production accidents."""
 
     # Buckets that should NEVER be written to during testing
-    PRODUCTION_BUCKETS = {"temperatures", "weather", "spotprice", "emeters", "checkwatt_full_data"}
+    PRODUCTION_BUCKETS = {
+        "temperatures",
+        "weather",
+        "spotprice",
+        "emeters",
+        "checkwatt_full_data",
+        "load_control",
+    }
 
     # Test bucket patterns
     TEST_BUCKET_SUFFIX = "_test"

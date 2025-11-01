@@ -8,9 +8,27 @@ heating:
     16: 4
 
   # EVU off (hot water heating blocked) configuration
-  evuoff_threshold_price: 0.20  # EUR/kWh
+  evuoff_threshold_price: 15.0  # c/kWh (15 cents)
   evuoff_max_continuous_hours: 4
   evuoff_max_hours_per_day: 18  # 24 - heating_hours - 2
+
+  # Load definitions (for future multi-load support)
+  loads:
+    geothermal_pump:
+      enabled: true
+      priority: 1
+      power_kw: 3.0
+      control_type: mlp_i2c
+    garage_heater:
+      enabled: false
+      priority: 2
+      power_kw: 2.0
+      control_type: shelly_relay
+    ev_charger:
+      enabled: false
+      priority: 3
+      power_kw: 11.0
+      control_type: ocpp
 
 data_collection:
   weather:
