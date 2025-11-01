@@ -76,7 +76,7 @@ class HeatingProgramExecutor:
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Program file not found: {filepath}")
 
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             program = json.load(f)
 
         # Validate program structure
@@ -86,9 +86,7 @@ class HeatingProgramExecutor:
         if "loads" not in program:
             raise ValueError("Invalid program: missing 'loads' field")
 
-        logger.info(
-            f"Loaded program v{program.get('version')} for {program.get('program_date')}"
-        )
+        logger.info(f"Loaded program v{program.get('version')} for {program.get('program_date')}")
 
         return program
 

@@ -6,14 +6,15 @@ import os
 import sys
 import tempfile
 
-# Add src to path
+# Add src to path (required before project imports)
+# ruff: noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.common.config import get_config
-from src.common.influx_client import InfluxClient
-from src.control.heating_data_fetcher import HeatingDataFetcher
-from src.control.program_executor import HeatingProgramExecutor
-from src.control.program_generator import HeatingProgramGenerator
+from src.common.config import get_config  # noqa: E402
+from src.common.influx_client import InfluxClient  # noqa: E402
+from src.control.heating_data_fetcher import HeatingDataFetcher  # noqa: E402
+from src.control.program_executor import HeatingProgramExecutor  # noqa: E402
+from src.control.program_generator import HeatingProgramGenerator  # noqa: E402
 
 
 def test_influx_connection():
@@ -26,9 +27,11 @@ def test_influx_connection():
         config = get_config()
         print(f"  URL: {config.influxdb_url}")
         print(f"  Org: {config.influxdb_org}")
-        print(f"  Load control bucket: {config.get('influxdb_bucket_load_control', 'load_control')}")
+        print(
+            f"  Load control bucket: {config.get('influxdb_bucket_load_control', 'load_control')}"
+        )
 
-        influx = InfluxClient(config)
+        _ = InfluxClient(config)  # Test connection succeeds
         print("  [OK] Connection: OK")
 
         return True
@@ -81,6 +84,7 @@ def test_data_fetcher():
     except Exception as e:
         print(f"  [FAIL] FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -101,8 +105,12 @@ def test_program_generation():
         print(f"  [OK] Generated program v{program['version']}")
         print(f"  Program date: {program['program_date']}")
         print(f"  Average temperature: {program['input_parameters']['avg_temperature_c']:.1f}C")
-        print(f"  Heating hours needed: {program['planning_results']['total_heating_hours_needed']:.2f}h")
-        print(f"  Estimated cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR")
+        print(
+            f"  Heating hours needed: {program['planning_results']['total_heating_hours_needed']:.2f}h"
+        )
+        print(
+            f"  Estimated cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR"
+        )
 
         # Check structure
         assert "loads" in program
@@ -118,7 +126,7 @@ def test_program_generation():
             print(f"  [OK] Saved JSON to: {filepath}")
 
             # Verify file exists and can be loaded
-            with open(filepath, "r") as f:
+            with open(filepath) as f:
                 loaded = json.load(f)
                 assert loaded["version"] == program["version"]
                 print("  [OK] JSON file verified")
@@ -128,6 +136,7 @@ def test_program_generation():
     except Exception as e:
         print(f"  [FAIL] FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False, None
 
@@ -149,7 +158,7 @@ def test_program_save_to_influx():
         original_bucket = generator.config.get("influxdb_bucket_load_control", "load_control")
         generator.config["influxdb_bucket_load_control"] = "load_control_test"
 
-        print(f"  Writing to test bucket: load_control_test")
+        print("  Writing to test bucket: load_control_test")
         generator.save_program_influxdb(program, data_type="plan")
 
         print("  [OK] Program saved to InfluxDB test bucket")
@@ -163,6 +172,7 @@ def test_program_save_to_influx():
     except Exception as e:
         print(f"  [FAIL] FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -185,16 +195,25 @@ def test_program_execution_dry_run():
                     "schedule": [
                         {
                             "timestamp": int(datetime.datetime.now().timestamp()) - 60,  # 1 min ago
-                            "utc_time": (datetime.datetime.now() - datetime.timedelta(minutes=1)).isoformat(),
-                            "local_time": (datetime.datetime.now() - datetime.timedelta(minutes=1)).isoformat(),
+                            "utc_time": (
+                                datetime.datetime.now() - datetime.timedelta(minutes=1)
+                            ).isoformat(),
+                            "local_time": (
+                                datetime.datetime.now() - datetime.timedelta(minutes=1)
+                            ).isoformat(),
                             "command": "ON",
                             "duration_minutes": 60,
                             "reason": "test_execution",
                         },
                         {
-                            "timestamp": int(datetime.datetime.now().timestamp()) + 3600,  # 1 hour later
-                            "utc_time": (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat(),
-                            "local_time": (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat(),
+                            "timestamp": int(datetime.datetime.now().timestamp())
+                            + 3600,  # 1 hour later
+                            "utc_time": (
+                                datetime.datetime.now() + datetime.timedelta(hours=1)
+                            ).isoformat(),
+                            "local_time": (
+                                datetime.datetime.now() + datetime.timedelta(hours=1)
+                            ).isoformat(),
                             "command": "ALE",
                             "duration_minutes": None,
                             "reason": "test_completion",
@@ -232,6 +251,7 @@ def test_program_execution_dry_run():
     except Exception as e:
         print(f"  [FAIL] FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -274,6 +294,7 @@ def test_end_to_end_simulation():
     except Exception as e:
         print(f"  [FAIL] FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

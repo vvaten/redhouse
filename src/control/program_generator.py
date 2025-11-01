@@ -406,7 +406,9 @@ class HeatingProgramGenerator:
                 "duration_minutes": 60,
                 "reason": "cheap_electricity",
                 "spot_price_total_c_kwh": round(
-                    day_priorities.loc[hour, "price_total"] if hour in day_priorities.index else 0.0,
+                    day_priorities.loc[hour, "price_total"]
+                    if hour in day_priorities.index
+                    else 0.0,
                     2,
                 ),
                 "solar_prediction_kwh": round(
@@ -620,15 +622,15 @@ class HeatingProgramGenerator:
             .tag("program_date", program_date)
             .tag("data_type", data_type)
             .field("avg_temperature_c", program["input_parameters"]["avg_temperature_c"])
-            .field(
-                "total_heating_hours", program["planning_results"]["total_heating_hours_needed"]
-            )
+            .field("total_heating_hours", program["planning_results"]["total_heating_hours_needed"])
             .field("total_cost_eur", program["planning_results"]["estimated_total_cost_eur"])
             .field(
                 "total_heating_intervals",
                 program["planning_results"]["total_heating_intervals_planned"],
             )
-            .field("total_evu_off_intervals", program["planning_results"]["total_evu_off_intervals"])
+            .field(
+                "total_evu_off_intervals", program["planning_results"]["total_evu_off_intervals"]
+            )
             .field("cheapest_price", program["planning_results"]["cheapest_interval_price"])
             .field(
                 "most_expensive_price", program["planning_results"]["most_expensive_interval_price"]

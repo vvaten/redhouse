@@ -211,7 +211,7 @@ class MultiLoadController:
 
         elif load_id == "garage_heater":
             # TODO: Implement Shelly relay control
-            logger.warning(f"Garage heater control not yet implemented")
+            logger.warning("Garage heater control not yet implemented")
             return {
                 "success": False,
                 "command": command,
@@ -223,7 +223,7 @@ class MultiLoadController:
 
         elif load_id == "ev_charger":
             # TODO: Implement OCPP control
-            logger.warning(f"EV charger control not yet implemented")
+            logger.warning("EV charger control not yet implemented")
             return {
                 "success": False,
                 "command": command,

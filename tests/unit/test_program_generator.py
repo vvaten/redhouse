@@ -128,9 +128,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
         # Select hours 10, 11, 14, 15 (gap at 12-13)
         selected_timestamps = [timestamps[0], timestamps[1], timestamps[4], timestamps[5]]
 
-        df = pd.DataFrame(
-            {"heating_prio": [20.0, 21.0, 22.0, 23.0]}, index=selected_timestamps
-        )
+        df = pd.DataFrame({"heating_prio": [20.0, 21.0, 22.0, 23.0]}, index=selected_timestamps)
 
         groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
 

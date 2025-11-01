@@ -4,11 +4,12 @@ import datetime
 import os
 import sys
 
-# Add src to path
+# Add src to path (required before project imports)
+# ruff: noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.common.config import get_config
-from src.common.influx_client import InfluxClient
+from src.common.config import get_config  # noqa: E402
+from src.common.influx_client import InfluxClient  # noqa: E402
 
 
 def test_influx_connection():
