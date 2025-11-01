@@ -1,7 +1,7 @@
 """Unit tests for pump controller."""
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from src.control.pump_controller import MultiLoadController, PumpController
 
@@ -13,7 +13,7 @@ class TestPumpController(unittest.TestCase):
         """Test controller initialization."""
         controller = PumpController(dry_run=True)
         self.assertTrue(controller.dry_run)
-        self.assertEqual(controller.script_path, "./mlp_control.sh")
+        self.assertEqual(controller.shelly_url, "http://192.168.1.5/relay/0")
 
     def test_valid_commands(self):
         """Test valid command validation."""
@@ -50,28 +50,27 @@ class TestPumpController(unittest.TestCase):
         self.assertTrue(result["success"])  # Still executes in dry-run
         self.assertEqual(result["delay_seconds"], 2000)
 
-    @patch("subprocess.run")
-    def test_execute_command_subprocess_success(self, mock_run):
-        """Test successful subprocess execution."""
-        mock_run.return_value = MagicMock(returncode=0, stdout="OK\n", stderr="")
+    def test_execute_command_i2c_success(self):
+        """Test successful I2C execution (mocked)."""
+        controller = PumpController(dry_run=False)
 
-        controller = PumpController(script_path="/fake/path.sh", dry_run=False)
-        result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
+        # Mock the I2C write method to succeed
+        with patch.object(controller, "_write_i2c", return_value=True):
+            result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
 
-        self.assertTrue(result["success"])
-        self.assertEqual(result["output"], "OK")
-        mock_run.assert_called_once()
+            self.assertTrue(result["success"])
+            self.assertIn("I2C", result["output"])
 
-    @patch("subprocess.run")
-    def test_execute_command_subprocess_failure(self, mock_run):
-        """Test failed subprocess execution."""
-        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Error\n")
+    def test_execute_command_i2c_failure(self):
+        """Test failed I2C execution (mocked)."""
+        controller = PumpController(dry_run=False)
 
-        controller = PumpController(script_path="/fake/path.sh", dry_run=False)
-        result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
+        # Mock the I2C write method to fail
+        with patch.object(controller, "_write_i2c", return_value=False):
+            result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
 
-        self.assertFalse(result["success"])
-        self.assertIsNotNone(result["error"])
+            self.assertFalse(result["success"])
+            self.assertIn("I2C write failed", result["error"])
 
 
 class TestMultiLoadController(unittest.TestCase):

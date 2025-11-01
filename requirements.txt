@@ -12,6 +12,10 @@ fmiopendata==0.3.1
 # Date/time handling
 pytz==2023.3
 
+# Hardware control
+smbus2==0.4.3  # I2C communication for heat pump control
+requests==2.31.0  # HTTP requests for Shelly relay control
+
 # Testing
 pytest==7.4.0
 pytest-asyncio==0.21.0

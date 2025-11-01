@@ -202,6 +202,19 @@ class HeatingProgramExecutor:
                     next_execution_time = scheduled_time
                 break
 
+        # Check if periodic EVU cycle is needed (for geothermal pump)
+        evu_cycle_performed = False
+        if hasattr(self.load_controller, "pump_controller"):
+            pump_ctrl = self.load_controller.pump_controller
+            if pump_ctrl.check_evu_cycle_needed(current_time):
+                logger.info("Periodic EVU cycle needed (105 min threshold reached)")
+                cycle_result = pump_ctrl.perform_evu_cycle(current_time)
+                if cycle_result["success"]:
+                    logger.info("Periodic EVU cycle completed successfully")
+                    evu_cycle_performed = True
+                else:
+                    logger.error(f"Periodic EVU cycle failed: {cycle_result.get('error')}")
+
         # Update execution status in program
         total_commands = len([c for c in all_commands if not c["entry"].get("executed_at")])
         program["execution_status"] = {
@@ -209,6 +222,7 @@ class HeatingProgramExecutor:
             "pending_intervals": total_commands - executed_count,
             "last_executed_timestamp": current_time if executed_count > 0 else None,
             "next_execution_timestamp": next_execution_time,
+            "evu_cycle_performed": evu_cycle_performed,
         }
 
         summary = {
@@ -216,11 +230,12 @@ class HeatingProgramExecutor:
             "skipped_count": skipped_count,
             "failed_count": failed_count,
             "next_execution_time": next_execution_time,
+            "evu_cycle_performed": evu_cycle_performed,
         }
 
         logger.info(
             f"Execution complete: {executed_count} executed, {skipped_count} skipped, "
-            f"{failed_count} failed"
+            f"{failed_count} failed, EVU cycle: {evu_cycle_performed}"
         )
 
         return summary
