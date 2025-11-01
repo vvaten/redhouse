@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Heating Program Generation Timer
+Requires=redhouse-generate-program.service
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*-*-* 16:05:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

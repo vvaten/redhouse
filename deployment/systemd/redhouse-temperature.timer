@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Temperature Collection Timer
+Requires=redhouse-temperature.service
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

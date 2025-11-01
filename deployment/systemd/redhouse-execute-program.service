@@ -1,0 +1,16 @@
+[Unit]
+Description=RedHouse Heating Program Execution
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/execute_heating_program_v2.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-execute-program
+
+[Install]
+WantedBy=multi-user.target

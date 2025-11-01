@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse Spot Price Collection Timer
+Requires=redhouse-spot-prices.service
+
+[Timer]
+OnBootSec=5min
+# Run at 13:29, 13:59, 14:29, 14:59, 15:29, 15:59
+OnCalendar=*-*-* 13:29:00
+OnCalendar=*-*-* 13:59:00
+OnCalendar=*-*-* 14:29:00
+OnCalendar=*-*-* 14:59:00
+OnCalendar=*-*-* 15:29:00
+OnCalendar=*-*-* 15:59:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

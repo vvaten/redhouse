@@ -1,0 +1,16 @@
+[Unit]
+Description=RedHouse Heating Program Generation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/generate_heating_program_v2.py --date-offset 1
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-generate-program
+
+[Install]
+WantedBy=multi-user.target

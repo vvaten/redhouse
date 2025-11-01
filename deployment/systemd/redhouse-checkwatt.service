@@ -1,0 +1,16 @@
+[Unit]
+Description=RedHouse CheckWatt Data Collection
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/collect_checkwatt.py --last-hour
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-checkwatt
+
+[Install]
+WantedBy=multi-user.target

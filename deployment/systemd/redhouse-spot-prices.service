@@ -1,0 +1,16 @@
+[Unit]
+Description=RedHouse Spot Price Collection
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/collect_spot_prices.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-spot-prices
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=RedHouse Heating Program Execution Timer
+Requires=redhouse-execute-program.service
+
+[Timer]
+OnBootSec=1min
+# Run every 15 minutes
+OnCalendar=*:00,15,30,45:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

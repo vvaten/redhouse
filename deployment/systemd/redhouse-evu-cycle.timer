@@ -1,0 +1,12 @@
+[Unit]
+Description=RedHouse EVU Cycle Timer
+Requires=redhouse-evu-cycle.service
+
+[Timer]
+OnBootSec=5min
+# Run every 2 hours at :23
+OnCalendar=*:23:00/2h
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
