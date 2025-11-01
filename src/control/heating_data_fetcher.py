@@ -88,7 +88,7 @@ class HeatingDataFetcher:
             Dict mapping timestamps to solar prediction data
         """
         query = f"""
-        from(bucket: "{self.config.influxdb_bucket_energy}")
+        from(bucket: "{self.config.influxdb_bucket_emeters}")
           |> range(start: {start_offset}d, stop: {stop_offset}d)
           |> filter(fn: (r) => r["_field"] == "solar_yield_avg_prediction")
           |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)

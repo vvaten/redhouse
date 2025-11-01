@@ -599,6 +599,10 @@ source venv/bin/activate
 3. **InfluxDB/Grafana on NAS:** Keep as-is, just add backups
 4. **No Docker on Pi:** Too much overhead for Python scripts
 5. **systemd over crontab:** Better logging and service management
+6. **NO UNICODE CHARACTERS** - Always use ASCII equivalents only
+   - Use [OK], [FAIL], [WARN], [SKIP] instead of checkmarks/symbols
+   - Ensures compatibility with all terminals and log files
+   - Prevents encoding issues on Raspberry Pi
 
 ---
 
