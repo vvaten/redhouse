@@ -2,7 +2,7 @@
 
 **Project Name:** `redhouse`
 **Started:** 2025-10-18
-**Current Phase:** Phase 5 (Phase 4 Complete)
+**Current Phase:** Phase 6 (Phases 4-5 Complete)
 
 ---
 
@@ -463,40 +463,64 @@ Refactor the core heating control system that optimizes when to heat based on we
 
 ## Phase 5 - Deployment Automation (Week 4-5)
 
-### systemd Services
+**Current Status:** [DONE] 100% Complete - systemd services created
 
-**Services to create:**
-1. `redhouse-temperature.service` + `.timer` (every minute)
-2. `redhouse-weather.service` + `.timer` (hourly)
-3. `redhouse-spot-prices.service` + `.timer` (daily at specific times)
-4. `redhouse-checkwatt.service` + `.timer` (every 5 minutes)
-5. `redhouse-generate-program.service` + `.timer` (daily at 16:05)
-6. `redhouse-execute-program.service` + `.timer` (every 15 min)
+### systemd Services [DONE]
 
-### Deployment Script
+**Services created:**
+1. [DONE] `redhouse-temperature.service` + `.timer` (every minute)
+2. [DONE] `redhouse-weather.service` + `.timer` (hourly at :02)
+3. [DONE] `redhouse-spot-prices.service` + `.timer` (6 times daily 13:29-15:59)
+4. [DONE] `redhouse-checkwatt.service` + `.timer` (every 5 min at :01, :06, :11...)
+5. [DONE] `redhouse-solar-prediction.service` + `.timer` (hourly at :03)
+6. [DONE] `redhouse-generate-program.service` + `.timer` (daily at 16:05)
+7. [DONE] `redhouse-execute-program.service` + `.timer` (every 15 min)
+8. [DONE] `redhouse-evu-cycle.service` + `.timer` (every 2 hours at :23)
 
-```bash
-#!/bin/bash
-# deployment/deploy.sh
+### Deployment Script [DONE]
 
-set -e
+- [DONE] `deployment/deploy.sh` - Automated deployment script
+  - Pull latest code from GitHub
+  - Update Python dependencies
+  - Run unit tests before deployment
+  - Install/update systemd services
+  - Restart all timers
+  - Full error handling and status reporting
 
-DEPLOY_DIR=/opt/redhouse
-REPO_URL=https://github.com/<username>/redhouse.git
+### Documentation [DONE]
 
-cd $DEPLOY_DIR
-git pull origin main
+- [DONE] `deployment/README.md` - Comprehensive deployment guide
+  - Service descriptions and schedules
+  - Installation and update procedures
+  - Manual service management
+  - Log viewing with journalctl
+  - Monitoring and troubleshooting
+  - Migration guide from crontab
 
-source venv/bin/activate
-pip install -r requirements.txt
+### Benefits Over Crontab
 
-pytest tests/
+- [DONE] Better logging via journalctl (structured, persistent, searchable)
+- [DONE] Service dependency management
+- [DONE] Automatic restart on failure
+- [DONE] Easier monitoring and debugging
+- [DONE] Unit-based organization
+- [DONE] Boot-time service ordering
 
-sudo systemctl daemon-reload
-sudo systemctl restart redhouse-*
+### Success Criteria
 
-echo "Deployment complete!"
-```
+- [DONE] All data collection services automated
+- [DONE] All heating control services automated
+- [DONE] Deployment script tested
+- [DONE] Documentation complete
+- [DONE] Ready for Raspberry Pi deployment
+
+**Git Commit:**
+- 80e90b4 - Add Phase 5: Deployment Automation with systemd services
+
+**Future Enhancement:**
+- [ ] Smart EVU-OFF cycling based on actual pump ON time (not fixed schedule)
+- [ ] Health check service monitoring data freshness
+- [ ] Automated alerts on service failures
 
 ---
 
