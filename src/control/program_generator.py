@@ -169,17 +169,19 @@ class HeatingProgramGenerator:
             },
             "planning_results": planning_results,
             "loads": loads_schedules,
-            "simulation_data": {
-                "mode": "historical" if base_date else "live",
-                "base_date": base_date,
-                "data_sources": {
-                    "weather": "influxdb",
-                    "spot_prices": "influxdb",
-                    "solar_predictions": "influxdb",
-                },
-            }
-            if simulation_mode or base_date
-            else None,
+            "simulation_data": (
+                {
+                    "mode": "historical" if base_date else "live",
+                    "base_date": base_date,
+                    "data_sources": {
+                        "weather": "influxdb",
+                        "spot_prices": "influxdb",
+                        "solar_predictions": "influxdb",
+                    },
+                }
+                if simulation_mode or base_date
+                else None
+            ),
             "execution_status": {
                 "executed_intervals": 0,
                 "pending_intervals": planning_results.get("total_heating_intervals_planned", 0),
@@ -406,15 +408,19 @@ class HeatingProgramGenerator:
                 "duration_minutes": 60,
                 "reason": "cheap_electricity",
                 "spot_price_total_c_kwh": round(
-                    day_priorities.loc[hour, "price_total"]
-                    if hour in day_priorities.index
-                    else 0.0,
+                    (
+                        day_priorities.loc[hour, "price_total"]
+                        if hour in day_priorities.index
+                        else 0.0
+                    ),
                     2,
                 ),
                 "solar_prediction_kwh": round(
-                    day_priorities.loc[hour, "solar_yield_avg_prediction"]
-                    if hour in day_priorities.index
-                    else 0.0,
+                    (
+                        day_priorities.loc[hour, "solar_yield_avg_prediction"]
+                        if hour in day_priorities.index
+                        else 0.0
+                    ),
                     2,
                 ),
                 "priority_score": round(priority_score, 2),

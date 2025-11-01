@@ -16,12 +16,12 @@ class TestHeatingProgramGenerator(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         # Mock the config and dependencies
-        with patch("src.control.program_generator.get_config"), patch(
-            "src.control.program_generator.InfluxClient"
-        ), patch("src.control.program_generator.HeatingDataFetcher"), patch(
-            "src.control.program_generator.HeatingCurve"
-        ), patch(
-            "src.control.program_generator.HeatingOptimizer"
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer"),
         ):
             self.generator = HeatingProgramGenerator()
 
@@ -57,12 +57,12 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        with patch("src.control.program_generator.get_config"), patch(
-            "src.control.program_generator.InfluxClient"
-        ), patch("src.control.program_generator.HeatingDataFetcher"), patch(
-            "src.control.program_generator.HeatingCurve"
-        ), patch(
-            "src.control.program_generator.HeatingOptimizer"
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer"),
         ):
             self.generator = HeatingProgramGenerator()
 
@@ -157,12 +157,12 @@ class TestScheduleGeneration(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        with patch("src.control.program_generator.get_config"), patch(
-            "src.control.program_generator.InfluxClient"
-        ), patch("src.control.program_generator.HeatingDataFetcher"), patch(
-            "src.control.program_generator.HeatingCurve"
-        ), patch(
-            "src.control.program_generator.HeatingOptimizer"
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer"),
         ):
             self.generator = HeatingProgramGenerator()
 
@@ -275,12 +275,12 @@ class TestPlanningResults(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        with patch("src.control.program_generator.get_config"), patch(
-            "src.control.program_generator.InfluxClient"
-        ), patch("src.control.program_generator.HeatingDataFetcher"), patch(
-            "src.control.program_generator.HeatingCurve"
-        ), patch(
-            "src.control.program_generator.HeatingOptimizer"
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer"),
         ):
             self.generator = HeatingProgramGenerator()
 
@@ -353,12 +353,12 @@ class TestJSONSaving(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        with patch("src.control.program_generator.get_config"), patch(
-            "src.control.program_generator.InfluxClient"
-        ), patch("src.control.program_generator.HeatingDataFetcher"), patch(
-            "src.control.program_generator.HeatingCurve"
-        ), patch(
-            "src.control.program_generator.HeatingOptimizer"
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer"),
         ):
             self.generator = HeatingProgramGenerator()
 
@@ -402,9 +402,11 @@ class TestInfluxDBSaving(unittest.TestCase):
             with patch("src.control.program_generator.InfluxClient") as mock_influx_client:
                 self.mock_influx = MagicMock()
                 mock_influx_client.return_value = self.mock_influx
-                with patch("src.control.program_generator.HeatingDataFetcher"), patch(
-                    "src.control.program_generator.HeatingCurve"
-                ), patch("src.control.program_generator.HeatingOptimizer"):
+                with (
+                    patch("src.control.program_generator.HeatingDataFetcher"),
+                    patch("src.control.program_generator.HeatingCurve"),
+                    patch("src.control.program_generator.HeatingOptimizer"),
+                ):
                     self.generator = HeatingProgramGenerator()
 
     def test_save_program_influxdb_creates_points(self):

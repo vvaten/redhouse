@@ -16,8 +16,7 @@ The system uses systemd services and timers to replace the old crontab-based sch
 | `redhouse-checkwatt` | Every 5 min (:01, :06, :11...) | Collect battery/solar data from CheckWatt |
 | `redhouse-solar-prediction` | Hourly at :03 | Predict solar yield for optimization |
 | `redhouse-generate-program` | Daily at 16:05 | Generate tomorrow's heating program |
-| `redhouse-execute-program` | Every 15 min (:00, :15, :30, :45) | Execute heating program commands |
-| `redhouse-evu-cycle` | Every 2 hours at :23 | Cycle EVU-OFF to prevent direct heating mode |
+| `redhouse-execute-program` | Every 15 min (:00, :15, :30, :45) | Execute heating program commands (includes smart EVU cycling) |
 
 ## Deployment
 
@@ -192,9 +191,18 @@ sudo -u pi git reset --hard <commit-hash>
 sudo /opt/redhouse/deployment/deploy.sh
 ```
 
+## EVU-OFF Cycling
+
+The geothermal heat pump requires EVU-OFF signal to be cycled periodically to prevent direct heating mode. This is now handled automatically by smart cycling logic in the pump controller:
+
+- **Automatic cycling on state transitions**: EVU cycles when pump switches from ALE/ON to ON
+- **Periodic cycling**: EVU cycles every 105 minutes while pump is ON (15-min safety margin before 120-min threshold)
+- **State persistence**: Tracks ON time accumulation across restarts via `data/pump_state.json`
+
+No separate timer service is needed - all cycling logic is integrated into `redhouse-execute-program`.
+
 ## Future Enhancements
 
-- [ ] Smart EVU-OFF cycling based on actual pump ON time (not fixed 2-hour schedule)
 - [ ] Health check service that monitors data freshness
 - [ ] Automated alerts on service failures
 - [ ] Grafana dashboard integration for service status

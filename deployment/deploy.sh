@@ -92,7 +92,6 @@ TIMERS=(
     "redhouse-solar-prediction"
     "redhouse-generate-program"
     "redhouse-execute-program"
-    "redhouse-evu-cycle"
 )
 
 for timer in "${TIMERS[@]}"; do
