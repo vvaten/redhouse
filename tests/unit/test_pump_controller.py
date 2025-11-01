@@ -1,5 +1,6 @@
 """Unit tests for pump controller."""
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -33,6 +34,16 @@ class TestPumpController(unittest.TestCase):
         self.assertEqual(result["delay_seconds"], 10)
         self.assertIn("DRY-RUN", result["output"])
 
+    @patch.dict(os.environ, {"STAGING_MODE": "true"})
+    def test_staging_mode_from_env(self):
+        """Test that STAGING_MODE environment variable enables dry-run."""
+        controller = PumpController(dry_run=False)
+        self.assertTrue(controller.dry_run)  # Should be enabled by STAGING_MODE
+
+        result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
+        self.assertTrue(result["success"])
+        self.assertIn("DRY-RUN", result["output"])
+
     def test_execute_command_invalid(self):
         """Test that invalid commands raise ValueError."""
         controller = PumpController(dry_run=True)
@@ -50,6 +61,7 @@ class TestPumpController(unittest.TestCase):
         self.assertTrue(result["success"])  # Still executes in dry-run
         self.assertEqual(result["delay_seconds"], 2000)
 
+    @patch("src.control.pump_controller.I2C_AVAILABLE", True)
     def test_execute_command_i2c_success(self):
         """Test successful I2C execution (mocked)."""
         controller = PumpController(dry_run=False)
@@ -61,6 +73,7 @@ class TestPumpController(unittest.TestCase):
             self.assertTrue(result["success"])
             self.assertIn("I2C", result["output"])
 
+    @patch("src.control.pump_controller.I2C_AVAILABLE", True)
     def test_execute_command_i2c_failure(self):
         """Test failed I2C execution (mocked)."""
         controller = PumpController(dry_run=False)

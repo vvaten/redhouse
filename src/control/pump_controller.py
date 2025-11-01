@@ -2,6 +2,7 @@
 """Heat pump controller - safe interface to MLP I2C control."""
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -73,11 +74,15 @@ class PumpController:
         Initialize pump controller with direct I2C control.
 
         Args:
-            dry_run: If True, log commands but don't execute
+            dry_run: If True, log commands but don't execute (also enabled by STAGING_MODE env var)
             state_file: Path to state file (default: data/pump_state.json)
             shelly_url: Shelly relay URL (default: http://192.168.1.5/relay/0)
         """
-        self.dry_run = dry_run or not I2C_AVAILABLE
+        # Check staging mode from environment
+        staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
+
+        # Dry-run if: explicitly requested, I2C unavailable, or staging mode
+        self.dry_run = dry_run or not I2C_AVAILABLE or staging_mode
         self.state_file = Path(state_file or "data/pump_state.json")
         self.shelly_url = shelly_url or self.SHELLY_RELAY_URL
 
@@ -90,7 +95,10 @@ class PumpController:
         # Load saved state
         self._load_state()
 
-        if self.dry_run:
+        # Log initialization mode
+        if staging_mode:
+            logger.info("PumpController initialized in STAGING mode (no hardware control)")
+        elif self.dry_run:
             logger.info("PumpController initialized in DRY-RUN mode")
         else:
             logger.info("PumpController initialized with I2C direct control")

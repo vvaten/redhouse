@@ -40,14 +40,19 @@ class HeatingProgramExecutor:
 
         Args:
             config: Configuration dict (uses get_config() if None)
-            dry_run: If True, log commands but don't execute
+            dry_run: If True, log commands but don't execute (also enabled by STAGING_MODE env var)
         """
         self.config = config or get_config()
-        self.dry_run = dry_run
-        self.influx = InfluxClient(self.config)
-        self.load_controller = MultiLoadController(dry_run=dry_run)
 
-        logger.info(f"Initialized HeatingProgramExecutor v{self.VERSION} (dry_run={dry_run})")
+        # Check staging mode from environment
+        staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
+        self.dry_run = dry_run or staging_mode
+
+        self.influx = InfluxClient(self.config)
+        self.load_controller = MultiLoadController(dry_run=self.dry_run)
+
+        mode_str = "STAGING" if staging_mode else ("DRY-RUN" if dry_run else "PRODUCTION")
+        logger.info(f"Initialized HeatingProgramExecutor v{self.VERSION} ({mode_str} mode)")
 
     def load_program(self, program_date: Optional[str] = None, base_dir: str = ".") -> dict:
         """

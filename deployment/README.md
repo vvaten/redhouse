@@ -20,6 +20,115 @@ The system uses systemd services and timers to replace the old crontab-based sch
 
 ## Deployment
 
+### Staging Mode (Recommended First Step)
+
+Before switching from the old system to the new one, deploy in **staging mode** to run everything in parallel without hardware control.
+
+#### Step 1: Create Staging Buckets in InfluxDB
+
+```bash
+# SSH to InfluxDB server or use InfluxDB UI
+influx bucket create -n temperatures_staging -o area51 -r 0
+influx bucket create -n weather_staging -o area51 -r 0
+influx bucket create -n spotprice_staging -o area51 -r 0
+influx bucket create -n emeters_staging -o area51 -r 0
+influx bucket create -n checkwatt_staging -o area51 -r 0
+influx bucket create -n load_control_staging -o area51 -r 0
+```
+
+**Bucket naming convention:**
+- Production: `temperatures`, `weather`, etc. (used by old system)
+- Staging: `temperatures_staging`, `weather_staging`, etc. (used by new system in staging)
+- Tests: `temperatures_test`, `weather_test`, etc. (used by unit/integration tests)
+
+#### Step 2: Deploy and Configure Staging Mode
+
+```bash
+# 1. Deploy the system normally
+ssh pi@<raspberry-pi-ip>
+sudo /opt/redhouse/deployment/deploy.sh
+
+# 2. Configure staging mode in .env
+sudo nano /opt/redhouse/.env
+```
+
+Add or update these lines:
+```bash
+# Use staging buckets
+INFLUXDB_BUCKET_TEMPERATURES=temperatures_staging
+INFLUXDB_BUCKET_WEATHER=weather_staging
+INFLUXDB_BUCKET_SPOTPRICE=spotprice_staging
+INFLUXDB_BUCKET_EMETERS=emeters_staging
+INFLUXDB_BUCKET_CHECKWATT=checkwatt_staging
+INFLUXDB_BUCKET_LOAD_CONTROL=load_control_staging
+
+# Enable staging mode (no hardware control)
+STAGING_MODE=true
+```
+
+```bash
+# 3. Restart services to apply configuration
+sudo systemctl restart redhouse-*.timer
+```
+
+#### Step 3: Monitor and Validate
+
+In staging mode:
+- All data collection runs normally → writes to `*_staging` buckets
+- Program generation runs on schedule → reads from staging buckets
+- Program execution runs → but NO hardware commands (I2C, Shelly relay)
+- All actions logged with "STAGING" prefix
+- Old system continues controlling hardware using production buckets
+
+Monitor logs to verify everything works:
+```bash
+# Watch program execution
+journalctl -u redhouse-execute-program.service -f
+
+# Check all services
+systemctl list-timers redhouse-*
+
+# View recent program generation
+journalctl -u redhouse-generate-program.service -n 100
+```
+
+Use Grafana to compare staging data vs production data side-by-side.
+
+#### Step 4: Switch to Production
+
+When confident the new system works correctly:
+
+```bash
+# 1. Update .env to use production buckets
+sudo nano /opt/redhouse/.env
+```
+
+Change buckets back to production and disable staging:
+```bash
+# Use production buckets
+INFLUXDB_BUCKET_TEMPERATURES=temperatures
+INFLUXDB_BUCKET_WEATHER=weather
+INFLUXDB_BUCKET_SPOTPRICE=spotprice
+INFLUXDB_BUCKET_EMETERS=emeters
+INFLUXDB_BUCKET_CHECKWATT=checkwatt_full_data
+INFLUXDB_BUCKET_LOAD_CONTROL=load_control
+
+# Disable staging mode (enable hardware control)
+STAGING_MODE=false
+```
+
+```bash
+# 2. Stop old system
+# Disable old cron jobs: crontab -e
+# Stop old scripts/services
+
+# 3. Restart services to enable hardware control
+sudo systemctl restart redhouse-*.timer
+
+# 4. Monitor closely for the first 24 hours
+journalctl -u redhouse-execute-program.service -f
+```
+
 ### Fresh Installation
 
 ```bash
