@@ -73,6 +73,13 @@ else
     exit 1
 fi
 
+# Create log directory
+echo ""
+echo "Creating log directory..."
+mkdir -p /var/log/redhouse
+chown pi:pi /var/log/redhouse
+echo "[OK] Log directory created"
+
 # Install systemd services
 echo ""
 echo "Installing systemd services..."
