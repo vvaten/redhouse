@@ -83,6 +83,16 @@ class TestHeatingOptimizer(unittest.TestCase):
 
         self.assertTrue(result.empty)
 
+    def test_calculate_heating_priorities_with_column_not_index(self):
+        """Test calculate_heating_priorities when time_floor_local is a column, not index."""
+        # Reset index so time_floor_local becomes a column
+        df_with_column = self.sample_df.reset_index()
+        result = self.optimizer.calculate_heating_priorities(df_with_column)
+
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertIn("heating_prio", result.columns)
+        self.assertEqual(len(result), 24)  # 24 hours
+
     def test_calculate_heating_priorities_values(self):
         """Test that priority values are calculated correctly."""
         result = self.optimizer.calculate_heating_priorities(self.sample_df)

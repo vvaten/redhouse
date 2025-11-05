@@ -252,6 +252,8 @@ After 5-10 minutes, check InfluxDB:
 
 To test program generation with real data, copy production data to staging:
 
+### Option A: Run on Raspberry Pi (Slower)
+
 ```bash
 cd /opt/redhouse
 
@@ -268,7 +270,41 @@ venv/bin/python deployment/copy_production_to_staging.py --start 2024-10-01 --en
 venv/bin/python deployment/copy_production_to_staging.py --days 7 --buckets temperatures weather spotprice
 ```
 
-**Note:** This may take several minutes depending on data volume.
+**Note:** This copies data over the network and may take 15-30 minutes for 30 days of data.
+
+### Option B: Run on InfluxDB Server (Faster - Recommended)
+
+Running directly on the InfluxDB server is much faster (no network overhead):
+
+```bash
+# SSH to InfluxDB server
+ssh user@192.168.1.164
+
+# Clone repository (temporary - just for this script)
+cd /tmp
+git clone https://github.com/vvaten/redhouse.git
+cd redhouse
+
+# Install minimal dependencies
+python3 -m venv venv
+venv/bin/pip install influxdb-client python-dotenv
+
+# Create minimal .env with InfluxDB credentials only
+cat > .env << 'EOF'
+INFLUXDB_URL=http://localhost:8086
+INFLUXDB_TOKEN=your-token-here
+INFLUXDB_ORG=area51
+EOF
+
+# Run copy script
+venv/bin/python deployment/copy_production_to_staging.py --days 30
+
+# Cleanup when done
+cd /tmp
+rm -rf redhouse
+```
+
+**Advantage:** 5-10x faster due to local disk access and no network latency.
 
 ---
 

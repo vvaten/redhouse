@@ -88,10 +88,10 @@ class HeatingOptimizer:
 
         if self.resolution_minutes == 15:
             # Round to 15-minute intervals
-            df["time_resolution"] = time_col.floor("15T")
+            df["time_resolution"] = time_col.dt.floor("15T") if hasattr(time_col, 'dt') else time_col.floor("15T")
         else:
             # Use hourly resolution
-            df["time_resolution"] = time_col.floor("H")
+            df["time_resolution"] = time_col.dt.floor("H") if hasattr(time_col, 'dt') else time_col.floor("H")
 
         # Group by time resolution and average the values
         grouped = df.groupby("time_resolution")[
