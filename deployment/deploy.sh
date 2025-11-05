@@ -5,7 +5,7 @@
 set -e
 
 DEPLOY_DIR=/opt/redhouse
-REPO_URL=https://github.com/vvaten/redhouse.git
+REPO_URL=git@github.com:vvaten/redhouse.git
 VENV_DIR=$DEPLOY_DIR/venv
 
 echo "=================================================="
