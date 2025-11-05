@@ -26,6 +26,9 @@ class ConfigValidator:
     # Test bucket patterns
     TEST_BUCKET_SUFFIX = "_test"
 
+    # Staging bucket patterns
+    STAGING_BUCKET_SUFFIX = "_staging"
+
     # Field patterns that indicate test data
     TEST_FIELD_PATTERNS = ["Test", "test", "dummy", "Dummy", "fake", "Fake"]
 
@@ -54,6 +57,19 @@ class ConfigValidator:
             True if this is a test bucket
         """
         return bucket_name.endswith(cls.TEST_BUCKET_SUFFIX)
+
+    @classmethod
+    def is_staging_bucket(cls, bucket_name: str) -> bool:
+        """
+        Check if bucket is a staging bucket.
+
+        Args:
+            bucket_name: Name of the bucket
+
+        Returns:
+            True if this is a staging bucket
+        """
+        return bucket_name.endswith(cls.STAGING_BUCKET_SUFFIX)
 
     @classmethod
     def validate_field_names(cls, fields: dict, allow_test_fields: bool = True) -> list[str]:
@@ -158,6 +174,7 @@ class ConfigValidator:
 
         prod_count = 0
         test_count = 0
+        staging_count = 0
 
         for bucket_type, bucket_name in buckets_to_check:
             if cls.is_production_bucket(bucket_name):
@@ -166,19 +183,24 @@ class ConfigValidator:
             elif cls.is_test_bucket(bucket_name):
                 messages.append(f"  {bucket_type}: {bucket_name} (TEST)")
                 test_count += 1
+            elif cls.is_staging_bucket(bucket_name):
+                messages.append(f"  {bucket_type}: {bucket_name} (STAGING)")
+                staging_count += 1
             else:
                 messages.append(f"  {bucket_type}: {bucket_name} (UNKNOWN)")
 
-        if prod_count > 0 and test_count > 0:
+        if prod_count > 0 and (test_count > 0 or staging_count > 0):
             messages.insert(
                 0,
-                "WARNING: Mixed production and test buckets! "
+                "WARNING: Mixed production and test/staging buckets! "
                 "This is unusual and may indicate configuration error.",
             )
         elif prod_count == len(buckets_to_check):
             messages.insert(0, "PRODUCTION environment detected")
         elif test_count == len(buckets_to_check):
             messages.insert(0, "TEST environment detected")
+        elif staging_count == len(buckets_to_check):
+            messages.insert(0, "STAGING environment detected")
 
         return messages
 
