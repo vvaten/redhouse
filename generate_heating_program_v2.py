@@ -167,13 +167,11 @@ def main():
                 print(f"  Estimated Cost: {load_data['estimated_cost_eur']:.2f} EUR")
                 print(f"  Power: {load_data['power_kw']:.1f} kW")
                 print(f"\n  Schedule ({len(load_data['schedule'])} entries):")
-                for entry in load_data["schedule"][:5]:  # Show first 5
+                for entry in load_data["schedule"]:
                     print(
                         f"    {entry['local_time'][:19]} -> {entry['command']} "
                         f"({entry['reason']})"
                     )
-                if len(load_data["schedule"]) > 5:
-                    print(f"    ... and {len(load_data['schedule']) - 5} more entries")
 
         logger.info("Heating program generation completed successfully")
         return 0
