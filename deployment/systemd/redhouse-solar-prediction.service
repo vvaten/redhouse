@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=pi
-WorkingDirectory=/home/pi/wibatemp
-ExecStart=/usr/bin/python3 /home/pi/wibatemp/predict_solar_yield.py
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/predict_solar_yield.py
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=redhouse-solar-prediction
