@@ -30,8 +30,7 @@ from src.common.influx_client import InfluxClient
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -63,14 +62,18 @@ def load_solar_model():
         if len(prediction_model["prediction_ratio"]) != 24:
             raise ValueError("Model must have exactly 24 hourly ratios")
 
-        prediction_ratio = pd.DataFrame({
-            "hour": list(range(24)),
-            "radiation_shifted_to_solar_ratio": prediction_model["prediction_ratio"]
-        })
+        prediction_ratio = pd.DataFrame(
+            {
+                "hour": list(range(24)),
+                "radiation_shifted_to_solar_ratio": prediction_model["prediction_ratio"],
+            }
+        )
 
         logger.info(f"Loaded model version {prediction_model.get('version', 'unknown')}")
-        logger.info(f"Model trained on data from {prediction_model.get('training_period_start')} "
-                   f"to {prediction_model.get('training_period_end')}")
+        logger.info(
+            f"Model trained on data from {prediction_model.get('training_period_start')} "
+            f"to {prediction_model.get('training_period_end')}"
+        )
 
         return prediction_ratio, prediction_model
 
@@ -95,22 +98,22 @@ def fetch_weather_and_emeters_data(influx_client):
     config = influx_client.config
 
     # Fetch weather forecast (Global radiation, Air temperature)
-    weather_query = f'''
+    weather_query = f"""
     from(bucket: "{config.influxdb_bucket_weather}")
       |> range(start: -5d, stop: 2d)
       |> filter(fn: (r) => r["_measurement"] == "weather")
       |> filter(fn: (r) => r["_field"] == "Global radiation" or r["_field"] == "Air temperature")
       |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
-    '''
+    """
 
     # Fetch historical solar production
-    emeters_query = f'''
+    emeters_query = f"""
     from(bucket: "{config.influxdb_bucket_emeters}")
       |> range(start: -5d, stop: 2d)
       |> filter(fn: (r) => r["_measurement"] == "energy")
       |> filter(fn: (r) => r["_field"] == "solar_yield_avg" or r["_field"] == "emeter_avg" or r["_field"] == "consumption_avg")
       |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
-    '''
+    """
 
     logger.info("Fetching weather forecast data...")
     weather_result = influx_client.query_api.query(weather_query)
@@ -157,12 +160,12 @@ def predict_solar_yield(df, prediction_ratio, prediction_model):
     Returns:
         pandas.DataFrame: Predictions with solar_yield_avg_prediction column
     """
-    training_start = prediction_model.get('training_period_start')
-    period_seconds = prediction_model.get('period_seconds', 3600)  # Default 1 hour
-    radiation_timeshift_periods = prediction_model.get('radiation_timeshift_periods', -4)
+    training_start = prediction_model.get("training_period_start")
+    period_seconds = prediction_model.get("period_seconds", 3600)  # Default 1 hour
+    radiation_timeshift_periods = prediction_model.get("radiation_timeshift_periods", -4)
 
     # Filter to prediction period
-    df_pred = df[df.time_floor.dt.strftime('%Y-%m-%d') >= training_start].copy()
+    df_pred = df[df.time_floor.dt.strftime("%Y-%m-%d") >= training_start].copy()
 
     if df_pred.empty:
         logger.warning("No data available for prediction period")
@@ -171,9 +174,9 @@ def predict_solar_yield(df, prediction_ratio, prediction_model):
     # Group by period (default: hourly)
     df_pred["period"] = df_pred.apply(
         lambda r: datetime.datetime.utcfromtimestamp(
-            int(r['timestamp'].timestamp()) - (int(r['timestamp'].timestamp()) % period_seconds)
+            int(r["timestamp"].timestamp()) - (int(r["timestamp"].timestamp()) % period_seconds)
         ),
-        axis=1
+        axis=1,
     )
     df_pred = df_pred.groupby(by="period").mean()
 
@@ -181,24 +184,22 @@ def predict_solar_yield(df, prediction_ratio, prediction_model):
     df_pred["hour"] = df_pred.index.hour
 
     # Shift radiation data (compensate for forecast lag)
-    df_pred['radiation_shifted'] = df_pred['Global radiation'].shift(radiation_timeshift_periods)
+    df_pred["radiation_shifted"] = df_pred["Global radiation"].shift(radiation_timeshift_periods)
 
     # Join with hourly prediction ratios
-    pred = df_pred.join(prediction_ratio.set_index('hour'), on="hour", how="left")
+    pred = df_pred.join(prediction_ratio.set_index("hour"), on="hour", how="left")
 
     # Group by hour floor
-    pred['hour_floor'] = pred.index.floor("H")
-    pred = pred.groupby(by='hour_floor').mean()
+    pred["hour_floor"] = pred.index.floor("H")
+    pred = pred.groupby(by="hour_floor").mean()
 
     # Calculate prediction: radiation * ratio * snow_factor
-    pred['solar_yield_avg_prediction'] = (
-        pred['radiation_shifted'] *
-        pred['radiation_shifted_to_solar_ratio'] *
-        SNOW_COVER_FACTOR
+    pred["solar_yield_avg_prediction"] = (
+        pred["radiation_shifted"] * pred["radiation_shifted_to_solar_ratio"] * SNOW_COVER_FACTOR
     )
 
     # Calculate error on historical data (where actual solar_yield_avg exists)
-    pred['prediction_error'] = pred['solar_yield_avg_prediction'] - pred['solar_yield_avg']
+    pred["prediction_error"] = pred["solar_yield_avg_prediction"] - pred["solar_yield_avg"]
 
     return pred
 
@@ -215,7 +216,7 @@ def write_predictions_to_influxdb(pred, influx_client):
     points = []
 
     for timestamp, row in pred.iterrows():
-        solar_pred = row['solar_yield_avg_prediction']
+        solar_pred = row["solar_yield_avg_prediction"]
 
         # Only write valid predictions (non-negative)
         if pd.notna(solar_pred) and solar_pred >= 0.0:
@@ -225,19 +226,14 @@ def write_predictions_to_influxdb(pred, influx_client):
             point = {
                 "measurement": "energy",
                 "tags": {},
-                "fields": {
-                    "solar_yield_avg_prediction": float(solar_pred)
-                },
-                "time": ts_mid_hour
+                "fields": {"solar_yield_avg_prediction": float(solar_pred)},
+                "time": ts_mid_hour,
             }
             points.append(point)
 
     if points:
         logger.info(f"Writing {len(points)} solar predictions to InfluxDB")
-        influx_client.write_api.write(
-            bucket=config.influxdb_bucket_emeters,
-            record=points
-        )
+        influx_client.write_api.write(bucket=config.influxdb_bucket_emeters, record=points)
         logger.info("Solar predictions written successfully")
     else:
         logger.warning("No valid predictions to write")
@@ -245,7 +241,7 @@ def write_predictions_to_influxdb(pred, influx_client):
 
 def calculate_rmse(pred):
     """Calculate root mean square error for predictions with actual data."""
-    errors = pred[pred['prediction_error'].notna()]['prediction_error']
+    errors = pred[pred["prediction_error"].notna()]["prediction_error"]
     if len(errors) > 0:
         return np.sqrt((errors * errors).sum()) / len(errors)
     return None
@@ -291,7 +287,7 @@ def main():
         # Write predictions to InfluxDB
         if args.dry_run:
             logger.info("DRY-RUN: Would write %d predictions", len(pred))
-            logger.info(pred[['solar_yield_avg_prediction']].head(10))
+            logger.info(pred[["solar_yield_avg_prediction"]].head(10))
         else:
             write_predictions_to_influxdb(pred, influx_client)
 
