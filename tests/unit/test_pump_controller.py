@@ -71,8 +71,8 @@ class TestPumpController(unittest.TestCase):
             result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
 
             self.assertTrue(result["success"])
-            # In staging mode, expect DRY-RUN message; otherwise expect I2C message
-            if controller.staging_mode:
+            # In staging mode (dry_run), expect DRY-RUN message; otherwise expect I2C message
+            if controller.dry_run:
                 self.assertIn("DRY-RUN", result["output"])
             else:
                 self.assertIn("I2C", result["output"])
@@ -86,8 +86,8 @@ class TestPumpController(unittest.TestCase):
         with patch.object(controller, "_write_i2c", return_value=False):
             result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
 
-            # In staging mode, commands always succeed (dry-run); otherwise expect failure
-            if controller.staging_mode:
+            # In staging mode (dry_run), commands always succeed; otherwise expect failure
+            if controller.dry_run:
                 self.assertTrue(result["success"])
                 self.assertIn("DRY-RUN", result["output"])
             else:
