@@ -1,0 +1,70 @@
+{
+  "program_date": "2024-11-06",
+  "program_version": "2.0.0",
+  "generated_at": "2024-11-05T20:00:00+02:00",
+  "simulation_mode": false,
+  "input_parameters": {
+    "avg_temperature_c": -5.2,
+    "min_temperature_c": -8.5,
+    "max_temperature_c": -2.1
+  },
+  "planning_results": {
+    "total_heating_hours_needed": 18.5,
+    "total_evu_off_intervals": 2,
+    "estimated_total_cost_eur": 5.23,
+    "cheapest_interval_price": 2.15,
+    "most_expensive_interval_price": 12.84
+  },
+  "loads": {
+    "geothermal_pump": {
+      "enabled": true,
+      "priority": 1,
+      "power_kw": 3.0,
+      "total_intervals_on": 19,
+      "total_hours_on": 19.0,
+      "estimated_cost_eur": 4.85,
+      "schedule": [
+        {
+          "timestamp": 1730851200,
+          "utc_time": "2024-11-05T22:00:00+00:00",
+          "local_time": "2024-11-06T00:00:00+02:00",
+          "command": "ON",
+          "duration_minutes": 60,
+          "reason": "cheap_electricity",
+          "spot_price_total_c_kwh": 2.15,
+          "solar_prediction_kwh": 0.0,
+          "priority_score": 2.15,
+          "estimated_cost_eur": 0.065
+        },
+        {
+          "timestamp": 1730854800,
+          "utc_time": "2024-11-05T23:00:00+00:00",
+          "local_time": "2024-11-06T01:00:00+02:00",
+          "command": "ALE",
+          "duration_minutes": null,
+          "reason": "auto_mode"
+        },
+        {
+          "timestamp": 1730901600,
+          "utc_time": "2024-11-06T12:00:00+00:00",
+          "local_time": "2024-11-06T14:00:00+02:00",
+          "command": "EVU",
+          "duration_minutes": 180,
+          "reason": "expensive_direct_heating_blocked",
+          "spot_price_total_c_kwh": null,
+          "solar_prediction_kwh": null,
+          "priority_score": null,
+          "evu_off_group_id": 1
+        },
+        {
+          "timestamp": 1730912400,
+          "utc_time": "2024-11-06T15:00:00+00:00",
+          "local_time": "2024-11-06T17:00:00+02:00",
+          "command": "ALE",
+          "duration_minutes": null,
+          "reason": "auto_mode"
+        }
+      ]
+    }
+  }
+}

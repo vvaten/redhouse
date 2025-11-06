@@ -1,0 +1,27 @@
+[
+  {
+    "DateTime": "2024-11-06T00:00:00+02:00",
+    "PriceNoTax": 2.15,
+    "PriceWithTax": 2.67
+  },
+  {
+    "DateTime": "2024-11-06T01:00:00+02:00",
+    "PriceNoTax": 2.34,
+    "PriceWithTax": 2.90
+  },
+  {
+    "DateTime": "2024-11-06T02:00:00+02:00",
+    "PriceNoTax": 2.56,
+    "PriceWithTax": 3.17
+  },
+  {
+    "DateTime": "2024-11-06T14:00:00+02:00",
+    "PriceNoTax": 12.84,
+    "PriceWithTax": 15.92
+  },
+  {
+    "DateTime": "2024-11-06T15:00:00+02:00",
+    "PriceNoTax": 11.23,
+    "PriceWithTax": 13.92
+  }
+]
