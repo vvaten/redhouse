@@ -47,7 +47,7 @@ data_logs/
 mlp_status.txt
 temperature_status.json
 spot_price_getter_status.json
-spot.json
+spot_prices_cache.json
 
 # Temporary files
 *.tmp
