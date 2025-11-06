@@ -118,10 +118,22 @@ class ConfigValidator:
         Raises:
             ConfigValidationError: If validation fails and write should be blocked
         """
+        import os
+
         warnings = []
+
+        # Check if in staging mode
+        staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
 
         # Check if writing to production bucket
         is_prod = cls.is_production_bucket(bucket)
+
+        # CRITICAL: Prevent staging mode from writing to production buckets
+        if staging_mode and is_prod:
+            raise ConfigValidationError(
+                f"STAGING MODE is enabled but attempting to write to PRODUCTION bucket '{bucket}'! "
+                f"This is blocked for safety. Staging should only write to *_staging buckets."
+            )
 
         if is_prod:
             warnings.append(f"WARNING: Writing to PRODUCTION bucket: {bucket}")

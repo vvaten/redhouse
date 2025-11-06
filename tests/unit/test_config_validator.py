@@ -146,5 +146,57 @@ class TestConfigValidator(unittest.TestCase):
         self.assertIn("temperatures", str(ctx.exception))
 
 
+    def test_staging_mode_blocks_production_writes(self):
+        """Test that staging mode blocks writes to production buckets."""
+        import os
+
+        # Set staging mode
+        old_val = os.environ.get("STAGING_MODE")
+        os.environ["STAGING_MODE"] = "true"
+
+        try:
+            # Attempt to write to production bucket in staging mode
+            with self.assertRaises(ConfigValidationError) as ctx:
+                ConfigValidator.validate_write(
+                    bucket="temperatures",  # Production bucket
+                    fields={"test": 1.0},
+                    strict_mode=False
+                )
+
+            self.assertIn("STAGING MODE", str(ctx.exception))
+            self.assertIn("PRODUCTION bucket", str(ctx.exception))
+
+        finally:
+            # Restore original value
+            if old_val is None:
+                os.environ.pop("STAGING_MODE", None)
+            else:
+                os.environ["STAGING_MODE"] = old_val
+
+    def test_staging_mode_allows_staging_writes(self):
+        """Test that staging mode allows writes to staging buckets."""
+        import os
+
+        # Set staging mode
+        old_val = os.environ.get("STAGING_MODE")
+        os.environ["STAGING_MODE"] = "true"
+
+        try:
+            # Should NOT raise - writing to staging bucket is OK
+            warning = ConfigValidator.validate_write(
+                bucket="temperatures_staging",  # Staging bucket
+                fields={"test": 1.0},
+                strict_mode=False
+            )
+            # Should succeed (no exception)
+
+        finally:
+            # Restore original value
+            if old_val is None:
+                os.environ.pop("STAGING_MODE", None)
+            else:
+                os.environ["STAGING_MODE"] = old_val
+
+
 if __name__ == "__main__":
     unittest.main()
