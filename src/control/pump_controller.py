@@ -78,11 +78,15 @@ class PumpController:
             state_file: Path to state file (default: data/pump_state.json)
             shelly_url: Shelly relay URL (default: http://192.168.1.5/relay/0)
         """
-        # Check staging mode from environment
+        # Determine operating mode from environment
         staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
+        test_mode = os.getenv("TEST_MODE", "false").lower() in ("true", "1", "yes")
 
-        # Dry-run if: explicitly requested, I2C unavailable, or staging mode
-        self.dry_run = dry_run or not I2C_AVAILABLE or staging_mode
+        # dry_run: Don't execute hardware commands (staging or test mode)
+        # test_mode: Also skip delays for fast unit tests
+        self.dry_run = dry_run or not I2C_AVAILABLE or staging_mode or test_mode
+        self.test_mode = test_mode
+        self.staging_mode = staging_mode
         self.state_file = Path(state_file or "data/pump_state.json")
         self.shelly_url = shelly_url or self.SHELLY_RELAY_URL
 
@@ -96,12 +100,14 @@ class PumpController:
         self._load_state()
 
         # Log initialization mode
-        if staging_mode:
-            logger.info("PumpController initialized in STAGING mode (no hardware control)")
+        if self.staging_mode:
+            logger.info("PumpController initialized in STAGING mode (no hardware control, realistic timing)")
+        elif self.test_mode:
+            logger.info("PumpController initialized in TEST mode (no hardware, no delays)")
         elif self.dry_run:
             logger.info("PumpController initialized in DRY-RUN mode")
         else:
-            logger.info("PumpController initialized with I2C direct control")
+            logger.info("PumpController initialized in PRODUCTION mode with I2C direct control")
 
     def _load_state(self):
         """Load EVU cycle state from file."""
@@ -286,12 +292,16 @@ class PumpController:
 
         # Step 1: Enable EVU-OFF
         evu_result = self._execute_raw_command("EVU")
+        logger.info(f"EVU-OFF command: {evu_result['output']}")
         if not evu_result["success"]:
             result["error"] = f"Failed to enable EVU: {evu_result.get('error')}"
             return result
 
-        # Step 2: Wait 30 seconds
-        if not self.dry_run:
+        # Step 2: Wait 30 seconds (skip only in test mode, not in staging)
+        if self.test_mode:
+            logger.info(f"TEST MODE: Skipping {self.EVU_CYCLE_DURATION}s wait for EVU cycle")
+        else:
+            logger.info(f"Waiting {self.EVU_CYCLE_DURATION}s for EVU cycle...")
             time.sleep(self.EVU_CYCLE_DURATION)
 
         # Step 3: Reset tracking
@@ -333,19 +343,23 @@ class PumpController:
 
         # Step 1: Enable EVU-OFF
         evu_result = self._execute_raw_command("EVU")
+        logger.info(f"EVU-OFF command: {evu_result['output']}")
         if not evu_result["success"]:
             result["error"] = f"Failed to enable EVU: {evu_result.get('error')}"
             logger.error(result["error"])
             return result
 
-        # Step 2: Wait 30 seconds
-        if not self.dry_run:
-            logger.info(f"EVU-OFF enabled, waiting {self.EVU_CYCLE_DURATION}s...")
+        # Step 2: Wait 30 seconds (skip only in test mode, not in staging)
+        if self.test_mode:
+            logger.info(f"TEST MODE: Skipping {self.EVU_CYCLE_DURATION}s wait for EVU cycle")
+        else:
+            logger.info(f"Waiting {self.EVU_CYCLE_DURATION}s for EVU cycle...")
             time.sleep(self.EVU_CYCLE_DURATION)
 
         # Step 3: Return to previous state (or ON if unknown)
         restore_command = self.last_command if self.last_command in {"ON", "ALE"} else "ON"
         restore_result = self._execute_raw_command(restore_command)
+        logger.info(f"Restore to {restore_command}: {restore_result['output']}")
 
         if not restore_result["success"]:
             result["error"] = f"Failed to restore {restore_command}: {restore_result.get('error')}"
