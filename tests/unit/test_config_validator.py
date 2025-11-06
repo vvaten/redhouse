@@ -145,7 +145,6 @@ class TestConfigValidator(unittest.TestCase):
             ConfigValidator.require_test_environment(config)
         self.assertIn("temperatures", str(ctx.exception))
 
-
     def test_staging_mode_blocks_production_writes(self):
         """Test that staging mode blocks writes to production buckets."""
         import os
@@ -160,7 +159,7 @@ class TestConfigValidator(unittest.TestCase):
                 ConfigValidator.validate_write(
                     bucket="temperatures",  # Production bucket
                     fields={"test": 1.0},
-                    strict_mode=False
+                    strict_mode=False,
                 )
 
             self.assertIn("STAGING MODE", str(ctx.exception))
@@ -186,7 +185,7 @@ class TestConfigValidator(unittest.TestCase):
             warning = ConfigValidator.validate_write(
                 bucket="temperatures_staging",  # Staging bucket
                 fields={"test": 1.0},
-                strict_mode=False
+                strict_mode=False,
             )
             # Should succeed (no exception)
 
