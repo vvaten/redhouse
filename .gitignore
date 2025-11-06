@@ -41,10 +41,13 @@ ENV/
 
 # Local data
 heating_programs/
+data/
+data_logs/
 *.json.local
 mlp_status.txt
 temperature_status.json
 spot_price_getter_status.json
+spot.json
 
 # Temporary files
 *.tmp
