@@ -325,12 +325,12 @@ async def collect_spot_prices(dry_run: bool = False) -> int:
         if not dry_run:
             save_status(latest_uploaded_price_epoch)
         logger.info("Successfully updated spot prices with tomorrow's data")
-        return 0
     else:
-        logger.warning(
-            "Uploaded prices but didn't get tomorrow's data yet. " "Will try again later."
+        logger.info(
+            "Uploaded prices but didn't get tomorrow's data yet. "
+            "This is normal before tomorrow's prices are published (~14:00 EET)."
         )
-        return 1
+    return 0
 
 
 def main():
