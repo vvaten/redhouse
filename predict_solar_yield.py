@@ -199,7 +199,12 @@ def predict_solar_yield(df, prediction_ratio, prediction_model):
     )
 
     # Calculate error on historical data (where actual solar_yield_avg exists)
-    pred["prediction_error"] = pred["solar_yield_avg_prediction"] - pred["solar_yield_avg"]
+    # For forecast-only periods (staging/no historical data), skip error calculation
+    if "solar_yield_avg" in pred.columns and pred["solar_yield_avg"].notna().any():
+        pred["prediction_error"] = pred["solar_yield_avg_prediction"] - pred["solar_yield_avg"]
+    else:
+        pred["prediction_error"] = None
+        logger.info("No historical solar_yield_avg data - skipping error calculation")
 
     return pred
 
