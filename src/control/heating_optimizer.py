@@ -98,9 +98,18 @@ class HeatingOptimizer:
             )
 
         # Group by time resolution and average the values
-        grouped = df.groupby("time_resolution")[
-            ["solar_yield_avg_prediction", "price_sell", "price_total", "Air temperature"]
-        ].mean()
+        # Make solar predictions optional - use 0 if not available
+        required_cols = ["price_sell", "price_total", "Air temperature"]
+        optional_cols = []
+
+        if "solar_yield_avg_prediction" in df.columns:
+            optional_cols.append("solar_yield_avg_prediction")
+        else:
+            logger.warning("No solar_yield_avg_prediction data available - assuming 0 for solar")
+            df["solar_yield_avg_prediction"] = 0.0
+            optional_cols.append("solar_yield_avg_prediction")
+
+        grouped = df.groupby("time_resolution")[required_cols + optional_cols].mean()
 
         # Convert solar prediction from W to kWh (multiply by hours = 1)
         # Original code multiplies by 3.6, assuming 5-min intervals * 12 = 1 hour

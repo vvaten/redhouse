@@ -384,6 +384,54 @@ class TestHeatingOptimizer(unittest.TestCase):
         self.assertTrue({0, 1, 2, 3}.issubset(hourly_hours))
         self.assertTrue({0, 1, 2, 3}.issubset(quarterly_hours))
 
+    def test_calculate_heating_priorities_without_solar_prediction(self):
+        """Test that heating priorities can be calculated without solar_yield_avg_prediction column."""
+        # Create DataFrame WITHOUT solar_yield_avg_prediction column
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00",
+            periods=24,
+            freq="H",
+            tz="Europe/Helsinki",
+        )
+
+        df_no_solar = pd.DataFrame(
+            {
+                "time_floor_local": timestamps,
+                "price_total": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0]
+                + [6.0, 7.0, 8.0, 9.0]
+                + [15.0, 16.0, 17.0, 18.0]
+                + [12.0, 11.0, 10.0]
+                + [9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0],
+                "price_sell": [5.0] * 24,
+                "Air temperature": [-5.0] * 24,
+            }
+        )
+
+        df_no_solar.set_index("time_floor_local", inplace=True)
+
+        # Verify solar_yield_avg_prediction is NOT in the input
+        self.assertNotIn("solar_yield_avg_prediction", df_no_solar.columns)
+
+        # Calculate heating priorities - should NOT raise an error
+        result = self.optimizer.calculate_heating_priorities(df_no_solar)
+
+        # Verify result is valid
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertIn("heating_prio", result.columns)
+        self.assertEqual(len(result), 24)
+
+        # Verify solar_yield_avg_prediction column was added with zeros
+        self.assertIn("solar_yield_avg_prediction", result.columns)
+        self.assertTrue((result["solar_yield_avg_prediction"] == 0.0).all())
+
+        # Verify heating priorities are calculated correctly
+        # (all priorities should be positive)
+        self.assertTrue((result["heating_prio"] >= 0).all())
+
+        # Verify we can select cheapest hours without errors
+        selected = self.optimizer.select_cheapest_hours(result, num_hours=6.0)
+        self.assertEqual(len(selected), 6)
+
 
 if __name__ == "__main__":
     unittest.main()
