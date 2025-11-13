@@ -1,0 +1,12 @@
+[Unit]
+Description=RedHouse Shelly EM3 Energy Meter Data Collection Timer
+Requires=redhouse-shelly-em3.service
+
+[Timer]
+OnBootSec=2min
+# Run every minute at the top of the minute (00 seconds)
+OnCalendar=*:*:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

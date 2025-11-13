@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse Shelly EM3 Energy Meter Data Collection
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+EnvironmentFile=/opt/redhouse/.env
+ExecStart=/opt/redhouse/venv/bin/python -m src.data_collection.shelly_em3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-shelly-em3
+
+[Install]
+WantedBy=multi-user.target
