@@ -1,16 +1,12 @@
 """Unit tests for heating program editor."""
 
-import json
+import sys
 import unittest
-from datetime import datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 # Import functions from the editor script
-import sys
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from edit_heating_program import add_entry, list_program, find_program_file
+from edit_heating_program import add_entry, list_program  # noqa: E402
 
 
 class TestEditHeatingProgram(unittest.TestCase):

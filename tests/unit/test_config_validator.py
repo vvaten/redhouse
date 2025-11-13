@@ -222,7 +222,7 @@ class TestConfigValidator(unittest.TestCase):
 
         try:
             # Should NOT raise - writing to staging bucket is OK
-            warning = ConfigValidator.validate_write(
+            ConfigValidator.validate_write(
                 bucket="temperatures_staging",  # Staging bucket
                 fields={"test": 1.0},
                 strict_mode=False,
