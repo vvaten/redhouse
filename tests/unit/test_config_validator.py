@@ -56,28 +56,68 @@ class TestConfigValidator(unittest.TestCase):
 
     def test_validate_write_real_to_production_bucket(self):
         """Test writing real data to production bucket (should warn)."""
-        fields = {"PaaMH": 21.5, "Ulkolampo": 5.2}
-        warning = ConfigValidator.validate_write(
-            bucket="temperatures", fields=fields, strict_mode=False
-        )
-        # Should return warning
-        self.assertIsNotNone(warning)
-        self.assertIn("PRODUCTION", warning)
+        import os
+
+        # Ensure STAGING_MODE is not set (would block production writes)
+        old_val = os.environ.get("STAGING_MODE")
+        if "STAGING_MODE" in os.environ:
+            del os.environ["STAGING_MODE"]
+
+        try:
+            fields = {"PaaMH": 21.5, "Ulkolampo": 5.2}
+            warning = ConfigValidator.validate_write(
+                bucket="temperatures", fields=fields, strict_mode=False
+            )
+            # Should return warning
+            self.assertIsNotNone(warning)
+            self.assertIn("PRODUCTION", warning)
+        finally:
+            # Restore original STAGING_MODE value
+            if old_val is not None:
+                os.environ["STAGING_MODE"] = old_val
 
     def test_validate_write_test_to_production_blocked(self):
         """Test writing test data to production bucket (should block)."""
-        fields = {"TestSensor1": 21.5, "PaaMH": 22.0}
-        with self.assertRaises(ConfigValidationError) as ctx:
-            ConfigValidator.validate_write(bucket="temperatures", fields=fields, strict_mode=False)
-        self.assertIn("TestSensor1", str(ctx.exception))
-        self.assertIn("production", str(ctx.exception).lower())
+        import os
+
+        # Ensure STAGING_MODE is not set (would block for different reason)
+        old_val = os.environ.get("STAGING_MODE")
+        if "STAGING_MODE" in os.environ:
+            del os.environ["STAGING_MODE"]
+
+        try:
+            fields = {"TestSensor1": 21.5, "PaaMH": 22.0}
+            with self.assertRaises(ConfigValidationError) as ctx:
+                ConfigValidator.validate_write(
+                    bucket="temperatures", fields=fields, strict_mode=False
+                )
+            self.assertIn("TestSensor1", str(ctx.exception))
+            self.assertIn("production", str(ctx.exception).lower())
+        finally:
+            # Restore original STAGING_MODE value
+            if old_val is not None:
+                os.environ["STAGING_MODE"] = old_val
 
     def test_validate_write_strict_mode_blocks_production(self):
         """Test strict mode blocks all writes to production."""
-        fields = {"RealSensor": 21.5}
-        with self.assertRaises(ConfigValidationError) as ctx:
-            ConfigValidator.validate_write(bucket="temperatures", fields=fields, strict_mode=True)
-        self.assertIn("Strict mode", str(ctx.exception))
+        import os
+
+        # Ensure STAGING_MODE is not set (would block for different reason)
+        old_val = os.environ.get("STAGING_MODE")
+        if "STAGING_MODE" in os.environ:
+            del os.environ["STAGING_MODE"]
+
+        try:
+            fields = {"RealSensor": 21.5}
+            with self.assertRaises(ConfigValidationError) as ctx:
+                ConfigValidator.validate_write(
+                    bucket="temperatures", fields=fields, strict_mode=True
+                )
+            self.assertIn("Strict mode", str(ctx.exception))
+        finally:
+            # Restore original STAGING_MODE value
+            if old_val is not None:
+                os.environ["STAGING_MODE"] = old_val
 
     def test_check_environment_production(self):
         """Test environment check with production buckets."""
