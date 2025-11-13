@@ -104,14 +104,14 @@ def copy_bucket_data(client, source_bucket, dest_bucket, start_time, end_time, d
 
     # Query data from source bucket
     query_api = client.query_api()
-    query = f'''
+    query = f"""
     from(bucket: "{source_bucket}")
       |> range(start: {format_timestamp(start_time)}, stop: {format_timestamp(end_time)})
-    '''
+    """
 
     if dry_run:
         # Just count records
-        count_query = query + '|> count()'
+        count_query = query + "|> count()"
         result = query_api.query(count_query)
         total_records = 0
         for table in result:
@@ -139,7 +139,16 @@ def copy_bucket_data(client, source_bucket, dest_bucket, start_time, end_time, d
 
             # Copy all tags
             for key, value in record.values.items():
-                if key not in ["_measurement", "_field", "_value", "_time", "_start", "_stop", "result", "table"]:
+                if key not in [
+                    "_measurement",
+                    "_field",
+                    "_value",
+                    "_time",
+                    "_start",
+                    "_stop",
+                    "result",
+                    "table",
+                ]:
                     point_dict["tags"][key] = value
 
             write_api.write(bucket=dest_bucket, record=point_dict)
@@ -206,7 +215,9 @@ def main():
             total_records += records
 
         print("\n" + "=" * 60)
-        print(f"Total records {'that would be copied' if args.dry_run else 'copied'}: {total_records}")
+        print(
+            f"Total records {'that would be copied' if args.dry_run else 'copied'}: {total_records}"
+        )
         print("=" * 60)
 
         if args.dry_run:
@@ -220,6 +231,7 @@ def main():
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 

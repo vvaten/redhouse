@@ -303,6 +303,16 @@ def main():
 
         logger.setLevel(logging.DEBUG)
 
+    # CRITICAL: Temperature collection should NOT run in staging mode
+    # to avoid hardware sensor contention with production system
+    staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
+    if staging_mode:
+        logger.info(
+            "STAGING MODE enabled - temperature collection DISABLED "
+            "(avoiding hardware sensor contention with production)"
+        )
+        return 0
+
     if args.dry_run:
         logger.info("Starting temperature collection (DRY-RUN mode)")
     else:

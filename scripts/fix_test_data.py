@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.common.config import get_config
 import influxdb_client
@@ -35,9 +35,7 @@ def fix_test_data(timestamp_str, confirm=False, dry_run=False):
     try:
         config = get_config()
         client = influxdb_client.InfluxDBClient(
-            url=config.influxdb_url,
-            token=config.influxdb_token,
-            org=config.influxdb_org
+            url=config.influxdb_url, token=config.influxdb_token, org=config.influxdb_org
         )
 
         query_api = client.query_api()
@@ -47,21 +45,21 @@ def fix_test_data(timestamp_str, confirm=False, dry_run=False):
         bucket = "temperatures"
 
         # Parse the timestamp
-        target_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        target_time = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
 
         print(f"\nTarget bucket: {bucket}")
         print(f"Target timestamp: {target_time}")
         print(f"Searching for data at this timestamp...")
 
         # Query data at this exact timestamp (with 2-second window)
-        start_time = (target_time - timedelta(seconds=1)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-        stop_time = (target_time + timedelta(seconds=1)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        start_time = (target_time - timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        stop_time = (target_time + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-        query = f'''
+        query = f"""
         from(bucket: "{bucket}")
           |> range(start: {start_time}, stop: {stop_time})
           |> filter(fn: (r) => r["_measurement"] == "temperatures")
-        '''
+        """
 
         tables = query_api.query(query, org=config.influxdb_org)
 
@@ -91,7 +89,7 @@ def fix_test_data(timestamp_str, confirm=False, dry_run=False):
         real_sensors = {}
 
         for field, value in sorted(fields_data.items()):
-            if field.startswith('TestSensor'):
+            if field.startswith("TestSensor"):
                 test_sensors.append(field)
                 print(f"  - {field}: {value} (TEST - will be removed)")
             else:
@@ -133,7 +131,7 @@ def fix_test_data(timestamp_str, confirm=False, dry_run=False):
             stop=stop,
             predicate='_measurement="temperatures"',
             bucket=bucket,
-            org=config.influxdb_org
+            org=config.influxdb_org,
         )
         print("  Deleted: OK")
 
@@ -164,6 +162,7 @@ def fix_test_data(timestamp_str, confirm=False, dry_run=False):
     except Exception as e:
         print(f"\nError: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -173,26 +172,19 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Remove TestSensor fields from a specific timestamp'
+        description="Remove TestSensor fields from a specific timestamp"
+    )
+    parser.add_argument("timestamp", help='ISO timestamp like "2025-10-18T18:31:00.000Z"')
+    parser.add_argument(
+        "--confirm", action="store_true", help="Confirm fix (required to actually fix)"
     )
     parser.add_argument(
-        'timestamp',
-        help='ISO timestamp like "2025-10-18T18:31:00.000Z"'
-    )
-    parser.add_argument(
-        '--confirm',
-        action='store_true',
-        help='Confirm fix (required to actually fix)'
-    )
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be done without actually doing it'
+        "--dry-run", action="store_true", help="Show what would be done without actually doing it"
     )
 
     args = parser.parse_args()
 
-    if not os.path.exists('.env'):
+    if not os.path.exists(".env"):
         print("\nERROR: .env file not found!")
         return 1
 

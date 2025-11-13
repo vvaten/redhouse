@@ -147,7 +147,9 @@ def process_spot_prices(spot_prices_raw: list[dict], config) -> list[dict]:
     return processed_spot_prices
 
 
-def save_spot_prices_to_file(spot_prices_raw: list[dict], filename: str = "spot_prices_cache.json") -> bool:
+def save_spot_prices_to_file(
+    spot_prices_raw: list[dict], filename: str = "spot_prices_cache.json"
+) -> bool:
     """
     Save raw spot price data to JSON file for backup.
 

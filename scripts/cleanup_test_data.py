@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.common.config import get_config
 import influxdb_client
@@ -22,9 +22,7 @@ def delete_test_sensors(confirm=False, dry_run=False):
     try:
         config = get_config()
         client = influxdb_client.InfluxDBClient(
-            url=config.influxdb_url,
-            token=config.influxdb_token,
-            org=config.influxdb_org
+            url=config.influxdb_url, token=config.influxdb_token, org=config.influxdb_org
         )
 
         delete_api = client.delete_api()
@@ -69,7 +67,7 @@ def delete_test_sensors(confirm=False, dry_run=False):
                     stop=stop,
                     predicate=predicate,
                     bucket=bucket,
-                    org=config.influxdb_org
+                    org=config.influxdb_org,
                 )
                 deleted_count += 1
                 print(f"  {field}: OK")
@@ -93,22 +91,20 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Delete test sensor data from InfluxDB production bucket'
+        description="Delete test sensor data from InfluxDB production bucket"
     )
     parser.add_argument(
-        '--confirm',
-        action='store_true',
-        help='Confirm deletion (required to actually delete)'
+        "--confirm", action="store_true", help="Confirm deletion (required to actually delete)"
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be deleted without actually deleting'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be deleted without actually deleting",
     )
 
     args = parser.parse_args()
 
-    if not os.path.exists('.env'):
+    if not os.path.exists(".env"):
         print("\nERROR: .env file not found!")
         return 1
 

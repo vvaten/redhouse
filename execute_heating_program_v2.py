@@ -151,9 +151,9 @@ def main():
         print(f"Skipped:  {summary['skipped_count']} commands (delay too large)")
         print(f"Failed:   {summary['failed_count']} commands")
 
-        if summary['next_execution_time']:
-            next_time = datetime.datetime.fromtimestamp(summary['next_execution_time'])
-            time_until = summary['next_execution_time'] - int(datetime.datetime.now().timestamp())
+        if summary["next_execution_time"]:
+            next_time = datetime.datetime.fromtimestamp(summary["next_execution_time"])
+            time_until = summary["next_execution_time"] - int(datetime.datetime.now().timestamp())
             print(f"\nNext execution: {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"Time until next: {time_until // 60} minutes")
         else:
@@ -165,7 +165,7 @@ def main():
             print("\nDRY-RUN MODE: No commands were actually executed")
 
         # Check for failures
-        if summary['failed_count'] > 0:
+        if summary["failed_count"] > 0:
             logger.error(f"{summary['failed_count']} commands failed to execute")
             return 1
 

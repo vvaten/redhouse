@@ -118,9 +118,7 @@ def main():
         )
 
         logger.info(f"Generated program for {program['program_date']}")
-        logger.info(
-            f"Average temperature: {program['input_parameters']['avg_temperature_c']:.1f}C"
-        )
+        logger.info(f"Average temperature: {program['input_parameters']['avg_temperature_c']:.1f}C")
         logger.info(
             f"Required heating hours: {program['planning_results']['total_heating_hours_needed']:.2f}h"
         )
@@ -147,9 +145,7 @@ def main():
         print(
             f"Heating Hours Needed: {program['planning_results']['total_heating_hours_needed']:.2f}h"
         )
-        print(
-            f"EVU-OFF Intervals: {program['planning_results']['total_evu_off_intervals']}"
-        )
+        print(f"EVU-OFF Intervals: {program['planning_results']['total_evu_off_intervals']}")
         print(f"Estimated Cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR")
         print(
             f"Price Range: {program['planning_results']['cheapest_interval_price']:.2f} - "

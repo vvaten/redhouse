@@ -5,7 +5,7 @@ import sys
 import os
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.common.config import get_config
 import influxdb_client
@@ -18,21 +18,19 @@ def find_test_data():
     try:
         config = get_config()
         client = influxdb_client.InfluxDBClient(
-            url=config.influxdb_url,
-            token=config.influxdb_token,
-            org=config.influxdb_org
+            url=config.influxdb_url, token=config.influxdb_token, org=config.influxdb_org
         )
 
         query_api = client.query_api()
         bucket = "temperatures"
 
         # Query for TestSensor data in last 7 days
-        query = f'''
+        query = f"""
         from(bucket: "{bucket}")
           |> range(start: -7d)
           |> filter(fn: (r) => r["_measurement"] == "temperatures")
           |> filter(fn: (r) => r["_field"] =~ /TestSensor/)
-        '''
+        """
 
         tables = query_api.query(query, org=config.influxdb_org)
 
@@ -59,6 +57,7 @@ def find_test_data():
     except Exception as e:
         print(f"\nError: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

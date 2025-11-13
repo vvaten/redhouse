@@ -5,7 +5,7 @@ import sys
 import os
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.common.config import get_config
 import influxdb_client
@@ -18,9 +18,7 @@ def list_buckets():
     try:
         config = get_config()
         client = influxdb_client.InfluxDBClient(
-            url=config.influxdb_url,
-            token=config.influxdb_token,
-            org=config.influxdb_org
+            url=config.influxdb_url, token=config.influxdb_token, org=config.influxdb_org
         )
         buckets_api = client.buckets_api()
         buckets = buckets_api.find_buckets().buckets
@@ -53,9 +51,7 @@ def create_test_buckets():
     try:
         config = get_config()
         client = influxdb_client.InfluxDBClient(
-            url=config.influxdb_url,
-            token=config.influxdb_token,
-            org=config.influxdb_org
+            url=config.influxdb_url, token=config.influxdb_token, org=config.influxdb_org
         )
         buckets_api = client.buckets_api()
 
@@ -74,15 +70,14 @@ def create_test_buckets():
                 try:
                     # Create with 30 day retention (2592000 seconds)
                     retention_rules = influxdb_client.domain.retention_rule.RetentionRule(
-                        type="expire",
-                        every_seconds=2592000  # 30 days
+                        type="expire", every_seconds=2592000  # 30 days
                     )
 
                     bucket = influxdb_client.domain.bucket.Bucket(
                         name=bucket_name,
                         retention_rules=[retention_rules],
                         description=description,
-                        org_id=client.org
+                        org_id=client.org,
                     )
 
                     buckets_api.create_bucket(bucket=bucket)
@@ -112,7 +107,7 @@ def main():
     print("InfluxDB Test Bucket Setup")
     print("=" * 60)
 
-    if not os.path.exists('.env'):
+    if not os.path.exists(".env"):
         print("\nERROR: .env file not found!")
         print("Please create .env with your InfluxDB credentials.")
         return 1

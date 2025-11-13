@@ -101,7 +101,9 @@ class PumpController:
 
         # Log initialization mode
         if self.staging_mode:
-            logger.info("PumpController initialized in STAGING mode (no hardware control, realistic timing)")
+            logger.info(
+                "PumpController initialized in STAGING mode (no hardware control, realistic timing)"
+            )
         elif self.test_mode:
             logger.info("PumpController initialized in TEST mode (no hardware, no delays)")
         elif self.dry_run:

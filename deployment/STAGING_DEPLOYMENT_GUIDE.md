@@ -128,8 +128,8 @@ INFLUXDB_URL=http://192.168.1.164:8086
 INFLUXDB_TOKEN=your-influxdb-token-here
 INFLUXDB_ORG=area51
 
-# IMPORTANT: Use staging buckets (not production!)
-INFLUXDB_BUCKET_TEMPERATURES=temperatures_staging
+# IMPORTANT: Use staging buckets (temperatures can use production for read-only access)
+INFLUXDB_BUCKET_TEMPERATURES=temperatures  # Read-only, avoids sensor hardware contention
 INFLUXDB_BUCKET_WEATHER=weather_staging
 INFLUXDB_BUCKET_SPOTPRICE=spotprice_staging
 INFLUXDB_BUCKET_EMETERS=emeters_staging
@@ -149,7 +149,7 @@ PUMP_I2C_BUS=1
 PUMP_I2C_ADDRESS=0x10
 SHELLY_RELAY_URL=http://192.168.1.5
 
-# CRITICAL: Enable staging mode (no hardware control)
+# CRITICAL: Enable staging mode (no hardware control, blocks production writes)
 STAGING_MODE=true
 
 # Heating Configuration

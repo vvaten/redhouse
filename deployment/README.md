@@ -54,15 +54,15 @@ sudo nano /opt/redhouse/.env
 
 Add or update these lines:
 ```bash
-# Use staging buckets
-INFLUXDB_BUCKET_TEMPERATURES=temperatures_staging
+# Use staging buckets (temperatures can use production for read-only access)
+INFLUXDB_BUCKET_TEMPERATURES=temperatures  # Read-only, avoids sensor hardware contention
 INFLUXDB_BUCKET_WEATHER=weather_staging
 INFLUXDB_BUCKET_SPOTPRICE=spotprice_staging
 INFLUXDB_BUCKET_EMETERS=emeters_staging
 INFLUXDB_BUCKET_CHECKWATT=checkwatt_staging
 INFLUXDB_BUCKET_LOAD_CONTROL=load_control_staging
 
-# Enable staging mode (no hardware control)
+# Enable staging mode (no hardware control, blocks production writes)
 STAGING_MODE=true
 ```
 
@@ -75,7 +75,8 @@ sudo systemctl restart redhouse-*.timer
 
 In staging mode:
 - All data collection runs normally → writes to `*_staging` buckets
-- Program generation runs on schedule → reads from staging buckets
+- Temperature collection uses production bucket in READ-ONLY mode (writes blocked by validator)
+- Program generation runs on schedule → reads from staging buckets (and production temperatures)
 - Program execution runs → but NO hardware commands (I2C, Shelly relay)
 - All actions logged with "STAGING" prefix
 - Old system continues controlling hardware using production buckets
