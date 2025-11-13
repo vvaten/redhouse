@@ -95,6 +95,10 @@ class Config:
     def influxdb_bucket_checkwatt(self) -> str:
         return self.get("INFLUXDB_BUCKET_CHECKWATT", "checkwatt_full_data")
 
+    @property
+    def influxdb_bucket_shelly_em3_raw(self) -> str:
+        return self.get("INFLUXDB_BUCKET_SHELLY_EM3_RAW", "shelly_em3_emeters_raw")
+
     # Weather configuration
     @property
     def weather_latlon(self) -> str:
