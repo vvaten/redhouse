@@ -14,8 +14,7 @@ import logging
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from influxdb_client import InfluxDBClient
-from influxdb_client.client.bucket_api import BucketRetentionRules
+from influxdb_client import InfluxDBClient, BucketRetentionRules
 from src.common.config import get_config
 
 logging.basicConfig(
