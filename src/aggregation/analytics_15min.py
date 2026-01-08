@@ -431,8 +431,8 @@ def run_aggregation(window_end: datetime.datetime, dry_run: bool = False) -> boo
     result = aggregate_15min_window(emeters_data, spotprice, weather, temperatures, window_end)
 
     if result is None:
-        logger.error("Failed to aggregate 15-min window")
-        return False
+        logger.warning("No data available for 15-min window - skipping")
+        return True
 
     # Write to InfluxDB
     if dry_run:
