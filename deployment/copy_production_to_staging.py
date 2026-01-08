@@ -32,6 +32,7 @@ BUCKET_MAPPINGS = {
     "spotprice": "spotprice_staging",
     "emeters": "emeters_staging",
     "checkwatt_full_data": "checkwatt_staging",
+    "shelly_em3_emeters_raw": "shelly_em3_emeters_raw_staging",
     "load_control": "load_control_staging",
 }
 
