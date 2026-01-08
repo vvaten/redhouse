@@ -36,12 +36,12 @@ def fetch_checkwatt_data(
     config = get_config()
     bucket = config.influxdb_bucket_checkwatt
 
-    query = f'''
+    query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
   |> filter(fn: (r) => r._measurement == "checkwatt")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-'''
+"""
 
     logger.debug(f"Fetching CheckWatt data from {start_time} to {end_time}")
 
@@ -87,12 +87,12 @@ def fetch_shelly_em3_data(
     config = get_config()
     bucket = config.influxdb_bucket_shelly_em3_raw
 
-    query = f'''
+    query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
   |> filter(fn: (r) => r._measurement == "shelly_em3")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-'''
+"""
 
     logger.debug(f"Fetching Shelly EM3 data from {start_time} to {end_time}")
 
@@ -128,7 +128,9 @@ from(bucket: "{bucket}")
         return {"shelly": []}
 
 
-def aggregate_5min_window(checkwatt_data: list, shelly_data: list, window_end: datetime.datetime) -> Optional[dict]:
+def aggregate_5min_window(
+    checkwatt_data: list, shelly_data: list, window_end: datetime.datetime
+) -> Optional[dict]:
     """
     Aggregate 5-minute window data into summary statistics.
 
@@ -153,7 +155,9 @@ def aggregate_5min_window(checkwatt_data: list, shelly_data: list, window_end: d
         num_points = len(checkwatt_data)
         avg_solar = sum(p["solar_yield"] or 0.0 for p in checkwatt_data) / num_points
         avg_battery_charge = sum(p["battery_charge"] or 0.0 for p in checkwatt_data) / num_points
-        avg_battery_discharge = sum(p["battery_discharge"] or 0.0 for p in checkwatt_data) / num_points
+        avg_battery_discharge = (
+            sum(p["battery_discharge"] or 0.0 for p in checkwatt_data) / num_points
+        )
         avg_import = sum(p["energy_import"] or 0.0 for p in checkwatt_data) / num_points
         avg_export = sum(p["energy_export"] or 0.0 for p in checkwatt_data) / num_points
 
