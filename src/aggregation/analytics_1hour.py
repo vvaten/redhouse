@@ -42,7 +42,7 @@ def fetch_emeters_5min_data(
     query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
-  |> filter(fn: (r) => r._measurement == "emeters_5min")
+  |> filter(fn: (r) => r._measurement == "energy")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 """
 
