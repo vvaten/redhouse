@@ -1,0 +1,14 @@
+[Unit]
+Description=RedHouse 5-Minute Energy Meter Aggregation Timer
+Requires=redhouse-aggregate-emeters-5min.service
+After=redhouse-checkwatt.timer
+
+[Timer]
+OnBootSec=5min
+# Run every 5 minutes at :02, :07, :12, :17, :22, :27, :32, :37, :42, :47, :52, :57
+# Runs 1 minute after CheckWatt (:01, :06, ...) to ensure all source data is collected
+OnCalendar=*:02,07,12,17,22,27,32,37,42,47,52,57:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

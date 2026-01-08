@@ -97,6 +97,7 @@ TIMERS=(
     "redhouse-spot-prices"
     "redhouse-checkwatt"
     "redhouse-shelly-em3"
+    "redhouse-aggregate-emeters-5min"
     "redhouse-solar-prediction"
     "redhouse-generate-program"
     "redhouse-execute-program"

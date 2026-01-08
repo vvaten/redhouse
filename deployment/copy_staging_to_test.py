@@ -68,10 +68,10 @@ def copy_bucket_data(client, source_bucket, dest_bucket, start_time, end_time, d
     start_str = start_time.strftime("%Y-%m-%dT%H:%M:%SZ")
     end_str = end_time.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    query = f'''
+    query = f"""
 from(bucket: "{source_bucket}")
   |> range(start: {start_str}, stop: {end_str})
-'''
+"""
 
     if dry_run:
         # Just count records

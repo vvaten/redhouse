@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse 5-Minute Energy Meter Aggregation
+After=network-online.target redhouse-checkwatt.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+EnvironmentFile=/opt/redhouse/.env
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/aggregate_emeters_5min.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-aggregate-emeters-5min
+
+[Install]
+WantedBy=multi-user.target
