@@ -217,7 +217,7 @@ def test_battery_aggregation(sample_emeters_5min_data):
     window_end = datetime.datetime(2026, 1, 8, 10, 15, 0, tzinfo=pytz.UTC)
 
     # Add battery activity
-    for i, point in enumerate(sample_emeters_5min_data):
+    for point in sample_emeters_5min_data:
         point["battery_charge_avg"] = 2000.0  # W
         point["battery_charge_diff"] = 166.67  # Wh per 5 min
         point["battery_discharge_avg"] = 0.0
