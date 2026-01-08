@@ -448,8 +448,7 @@ def run_aggregation(window_end: datetime.datetime, dry_run: bool = False) -> boo
                     point.field(field_name, value)
             point.time(window_end)
 
-            write_api = client.write_api()
-            write_api.write(
+            client.write_api.write(
                 bucket=config.influxdb_bucket_analytics_15min,
                 org=config.influxdb_org,
                 record=point,
