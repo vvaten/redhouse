@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse 1-Hour Analytics Aggregation
+After=network-online.target redhouse-aggregate-emeters-5min.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+EnvironmentFile=/opt/redhouse/.env
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/aggregate_analytics_1hour.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-aggregate-analytics-1hour
+
+[Install]
+WantedBy=multi-user.target

@@ -98,6 +98,8 @@ TIMERS=(
     "redhouse-checkwatt"
     "redhouse-shelly-em3"
     "redhouse-aggregate-emeters-5min"
+    "redhouse-aggregate-analytics-15min"
+    "redhouse-aggregate-analytics-1hour"
     "redhouse-solar-prediction"
     "redhouse-generate-program"
     "redhouse-execute-program"

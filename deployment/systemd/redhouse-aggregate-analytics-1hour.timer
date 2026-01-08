@@ -1,0 +1,13 @@
+[Unit]
+Description=RedHouse 1-Hour Analytics Aggregation Timer
+Requires=redhouse-aggregate-analytics-1hour.service
+
+[Timer]
+OnBootSec=1h
+# Run every hour at :05 past the hour (e.g., 01:05, 02:05, ...)
+# Runs after emeters_5min data is fully populated
+OnCalendar=*:05:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

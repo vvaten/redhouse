@@ -99,6 +99,18 @@ class Config:
     def influxdb_bucket_shelly_em3_raw(self) -> str:
         return self.get("INFLUXDB_BUCKET_SHELLY_EM3_RAW", "shelly_em3_emeters_raw")
 
+    @property
+    def influxdb_bucket_emeters_5min(self) -> str:
+        return self.get("INFLUXDB_BUCKET_EMETERS_5MIN", "emeters_5min")
+
+    @property
+    def influxdb_bucket_analytics_15min(self) -> str:
+        return self.get("INFLUXDB_BUCKET_ANALYTICS_15MIN", "analytics_15min")
+
+    @property
+    def influxdb_bucket_analytics_1hour(self) -> str:
+        return self.get("INFLUXDB_BUCKET_ANALYTICS_1HOUR", "analytics_1hour")
+
     # Weather configuration
     @property
     def weather_latlon(self) -> str:

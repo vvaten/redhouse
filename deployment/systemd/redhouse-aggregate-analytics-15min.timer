@@ -1,0 +1,13 @@
+[Unit]
+Description=RedHouse 15-Minute Analytics Aggregation Timer
+Requires=redhouse-aggregate-analytics-15min.service
+
+[Timer]
+OnBootSec=15min
+# Run every 15 minutes at :01, :16, :31, :46
+# Runs after emeters_5min aggregation completes (at :02, :07, :12, ...)
+OnCalendar=*:01,16,31,46:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
