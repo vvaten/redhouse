@@ -71,10 +71,10 @@ from(bucket: "{bucket}")
                         "energy_export_avg": record.values.get("energy_export_avg"),
                     }
                 )
-        logger.info(f"Fetched {len(data)} emeters_5min data points")
+        logger.info(f"Fetched {len(data)} data points from {bucket}")
         return data
     except Exception as e:
-        logger.error(f"Error fetching emeters_5min data: {e}")
+        logger.error(f"Error fetching data from {bucket}: {e}")
         return []
 
 
