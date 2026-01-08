@@ -233,7 +233,7 @@ def aggregate_5min_window(
             # Calculate energy by processing each consecutive pair of data points
             # This allows us to detect and handle counter resets within the window
             total_energy_diff = 0.0
-            max_reasonable_decrease = 100000.0  # 100 kWh threshold for reset detection
+            max_reasonable_decrease = 10000.0  # 10 kWh threshold for reset detection
 
             for i in range(1, len(shelly_data)):
                 prev = shelly_data[i - 1]
@@ -266,14 +266,6 @@ def aggregate_5min_window(
                     segment_energy = curr_net - prev_net
 
                 total_energy_diff += segment_energy
-
-            # Sanity check: total energy change should be reasonable
-            max_reasonable_abs_diff = 5000.0  # Wh for 5-minute window
-            if abs(total_energy_diff) > max_reasonable_abs_diff:
-                logger.error(
-                    f"Cannot aggregate: suspicious total energy diff ({total_energy_diff:.1f} Wh over {total_time_diff}s exceeds max {max_reasonable_abs_diff} Wh)"
-                )
-                return None
 
             fields["emeter_avg"] = (total_energy_diff * 3600.0) / total_time_diff
             fields["emeter_diff"] = total_energy_diff

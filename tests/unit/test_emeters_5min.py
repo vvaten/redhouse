@@ -257,10 +257,8 @@ def test_single_shelly_datapoint():
 
     result = aggregate_5min_window([], shelly_data, window_end)
 
-    # With single point, should use instantaneous power
-    assert result["emeter_avg"] == 1500.0
-    assert result["emeter_diff"] == 0.0
-    assert result["ts_diff"] == 0.0
+    # With single point, cannot calculate energy difference - should fail
+    assert result is None
 
 
 def test_timestamp_field():
@@ -336,8 +334,8 @@ def test_fetch_shelly_em3_data_empty_result(mock_influx_client):
 
 
 def test_counter_reset_detection():
-    """Test that counter resets are detected and handled."""
-    # Simulate counter reset where end < start
+    """Test that counter resets are detected and handled with averaged power gap-fill."""
+    # Simulate counter reset where end < start (large decrease indicates reset)
     shelly_data = [
         {
             "time": datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC),
@@ -360,7 +358,7 @@ def test_counter_reset_detection():
             "total_power": 1200.0,
             "net_total_energy": 100.0,  # Counter reset to small value
             "total_energy": 100.0,
-            "total_energy_returned": 50.0,
+            "total_energy_returned": 101.0,  # Must be > 100 to pass sanity check
             "phase1_voltage": 230.0,
             "phase2_voltage": 230.0,
             "phase3_voltage": 230.0,
@@ -376,11 +374,12 @@ def test_counter_reset_detection():
 
     result = aggregate_5min_window([], shelly_data, window_end)
 
-    # Should use instantaneous power instead of diff
-    assert result["emeter_avg"] == 1200.0  # Last instantaneous value
-    assert result["emeter_diff"] == 0.0
-    # Should skip returned energy calculation due to reset
-    assert "energy_returned_diff" not in result
+    # Should use averaged power for gap-fill: avg(1000, 1200) = 1100W
+    # Time diff: 180 seconds = 0.05 hours
+    # Energy: 1100W * 0.05h = 55 Wh
+    assert result is not None, "Should succeed with gap-fill"
+    assert abs(result["emeter_diff"] - 55.0) < 1.0, f"Expected ~55 Wh, got {result['emeter_diff']}"
+    assert abs(result["emeter_avg"] - 1100.0) < 10.0, f"Expected ~1100 W, got {result['emeter_avg']}"
 
 
 def test_small_start_value_detection():
@@ -423,13 +422,12 @@ def test_small_start_value_detection():
 
     result = aggregate_5min_window([], shelly_data, window_end)
 
-    # Should use instantaneous power due to suspicious start value
-    assert result["emeter_avg"] == 1200.0
-    assert result["emeter_diff"] == 0.0
+    # Should fail due to insufficient data (counters < 100 Wh)
+    assert result is None
 
 
 def test_unreasonable_energy_diff():
-    """Test that unreasonably large energy diffs are rejected."""
+    """Test that large energy diffs (without counter reset) are calculated correctly."""
     shelly_data = [
         {
             "time": datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC),
@@ -468,9 +466,12 @@ def test_unreasonable_energy_diff():
 
     result = aggregate_5min_window([], shelly_data, window_end)
 
-    # Should reject the diff and use instantaneous power
-    assert result["emeter_avg"] == 1200.0
-    assert result["emeter_diff"] == 0.0
+    # No counter reset (counters increasing), just a large energy consumption
+    # Should calculate actual diff: 20000 - 10000 = 10000 Wh
+    assert result is not None, "Should succeed with normal calculation"
+    assert abs(result["emeter_diff"] - 10000.0) < 1.0
+    # avg_power = 10000 Wh / 0.05 h = 200000 W
+    assert abs(result["emeter_avg"] - 200000.0) < 100.0
 
 
 def test_reasonable_energy_calculation():
