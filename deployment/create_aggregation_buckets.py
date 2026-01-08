@@ -95,10 +95,13 @@ def main():
             ("emeters_5min", 90 * 86400),  # 90 days
             ("analytics_15min", 5 * 365 * 86400),  # 5 years
             ("analytics_1hour", 0),  # Infinite - keep forever for historical analysis
-            # Test buckets
-            ("emeters_5min_test", 7 * 86400),  # 7 days for testing
-            ("analytics_15min_test", 7 * 86400),  # 7 days for testing
-            ("analytics_1hour_test", 7 * 86400),  # 7 days for testing
+            # Test buckets (for integration tests)
+            ("checkwatt_test", 7 * 86400),  # 7 days
+            ("shelly_em3_emeters_raw_test", 7 * 86400),  # 7 days
+            ("spotprice_test", 7 * 86400),  # 7 days
+            ("emeters_5min_test", 7 * 86400),  # 7 days
+            ("analytics_15min_test", 7 * 86400),  # 7 days
+            ("analytics_1hour_test", 7 * 86400),  # 7 days
             # Staging buckets
             ("emeters_5min_staging", 30 * 86400),  # 30 days for staging
             ("analytics_15min_staging", 30 * 86400),  # 30 days for staging

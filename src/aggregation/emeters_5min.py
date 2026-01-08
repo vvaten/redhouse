@@ -36,10 +36,13 @@ def fetch_checkwatt_data(
     config = get_config()
     bucket = config.influxdb_bucket_checkwatt
 
+    # Use checkwatt_v2 measurement for test environment (to avoid field type conflicts from old test data)
+    measurement = "checkwatt_v2" if bucket.endswith("_test") else "checkwatt"
+
     query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
-  |> filter(fn: (r) => r._measurement == "checkwatt")
+  |> filter(fn: (r) => r._measurement == "{measurement}")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 """
 
@@ -212,52 +215,73 @@ def aggregate_5min_window(
 
     # Shelly EM3 aggregation
     if shelly_data:
-        # Emeter average: calculate from first and last net_total_energy
+        # Emeter average: calculate from net_total_energy with counter reset handling
         if len(shelly_data) >= 2:
-            energy_start = shelly_data[0]["net_total_energy"]
-            energy_end = shelly_data[-1]["net_total_energy"]
-            time_diff = (shelly_data[-1]["time"] - shelly_data[0]["time"]).total_seconds()
-
-            # Sanity checks for energy calculation
-            # 1. If start energy is 0 or very small, we likely have missing data
-            # 2. If end < start, counter has reset
-            # 3. If diff is negative, counter has reset
-            # Don't calculate diff in these cases, use instantaneous power instead
-            if energy_start < 100.0 or time_diff <= 0 or energy_end < energy_start:
-                # Missing data, counter reset, or invalid time range
-                reason = "missing data or invalid time"
-                if energy_end < energy_start:
-                    reason = "counter reset detected"
-                fields["emeter_avg"] = shelly_data[-1]["total_power"]
-                fields["emeter_diff"] = 0.0
-                fields["ts_diff"] = time_diff if time_diff > 0 else 0.0
-                logger.warning(
-                    f"Energy calculation skipped ({reason}): start={energy_start} Wh, "
-                    f"end={energy_end} Wh, time_diff={time_diff}s, using instantaneous power"
+            # Check first data point for missing data
+            if shelly_data[0]["total_energy"] < 100.0 or shelly_data[0]["total_energy_returned"] < 100.0:
+                logger.error(
+                    f"Cannot aggregate: insufficient data (total={shelly_data[0]['total_energy']:.1f}, "
+                    f"returned={shelly_data[0]['total_energy_returned']:.1f})"
                 )
-            else:
-                # Energy difference in Wh, convert to W
-                energy_diff = energy_end - energy_start
-                # Additional sanity check: diff should be reasonable for the time period
-                # Max expected power ~50kW, so for 5min window, max diff ~4200 Wh
-                max_reasonable_diff = 5000.0  # Wh for 5-minute window
-                if energy_diff > max_reasonable_diff:
+                return None
+
+            total_time_diff = (shelly_data[-1]["time"] - shelly_data[0]["time"]).total_seconds()
+            if total_time_diff <= 0:
+                logger.error("Cannot aggregate: invalid time range")
+                return None
+
+            # Calculate energy by processing each consecutive pair of data points
+            # This allows us to detect and handle counter resets within the window
+            total_energy_diff = 0.0
+            max_reasonable_decrease = 100000.0  # 100 kWh threshold for reset detection
+
+            for i in range(1, len(shelly_data)):
+                prev = shelly_data[i - 1]
+                curr = shelly_data[i]
+
+                prev_net = prev["net_total_energy"]
+                curr_net = curr["net_total_energy"]
+                prev_total = prev["total_energy"]
+                curr_total = curr["total_energy"]
+                prev_returned = prev["total_energy_returned"]
+                curr_returned = curr["total_energy_returned"]
+
+                # Check for counter reset between these two points
+                total_reset = (prev_total - curr_total) > max_reasonable_decrease
+                returned_reset = (prev_returned - curr_returned) > max_reasonable_decrease
+
+                if total_reset or returned_reset:
+                    # Counter reset detected - use averaged power from before and after reset
+                    avg_power = (prev["total_power"] + curr["total_power"]) / 2.0
+                    time_diff = (curr["time"] - prev["time"]).total_seconds()
+                    segment_energy = (avg_power * time_diff) / 3600.0  # Convert to Wh
+
                     logger.warning(
-                        f"Suspicious energy diff ({energy_diff} Wh over {time_diff}s), "
-                        f"using instantaneous power"
+                        f"Counter reset detected between {prev['time']} and {curr['time']}: "
+                        f"total {prev_total:.1f}->{curr_total:.1f}, returned {prev_returned:.1f}->{curr_returned:.1f}. "
+                        f"Using averaged power {avg_power:.1f}W for gap-fill."
                     )
-                    fields["emeter_avg"] = shelly_data[-1]["total_power"]
-                    fields["emeter_diff"] = 0.0
-                    fields["ts_diff"] = time_diff
                 else:
-                    fields["emeter_avg"] = (energy_diff * 3600.0) / time_diff
-                    fields["emeter_diff"] = energy_diff
-                    fields["ts_diff"] = time_diff
+                    # Normal case - use counter difference
+                    segment_energy = curr_net - prev_net
+
+                total_energy_diff += segment_energy
+
+            # Sanity check: total energy change should be reasonable
+            max_reasonable_abs_diff = 5000.0  # Wh for 5-minute window
+            if abs(total_energy_diff) > max_reasonable_abs_diff:
+                logger.error(
+                    f"Cannot aggregate: suspicious total energy diff ({total_energy_diff:.1f} Wh over {total_time_diff}s exceeds max {max_reasonable_abs_diff} Wh)"
+                )
+                return None
+
+            fields["emeter_avg"] = (total_energy_diff * 3600.0) / total_time_diff
+            fields["emeter_diff"] = total_energy_diff
+            fields["ts_diff"] = total_time_diff
         else:
-            # Single data point, use instantaneous power
-            fields["emeter_avg"] = shelly_data[0]["total_power"]
-            fields["emeter_diff"] = 0.0
-            fields["ts_diff"] = 0.0
+            # Single data point - cannot calculate energy difference
+            logger.error("Cannot aggregate: only 1 Shelly data point available, need at least 2")
+            return None
 
         # Grid voltage average across phases
         voltages = []

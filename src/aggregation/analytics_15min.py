@@ -99,7 +99,7 @@ def fetch_spotprice_data(client: InfluxClient, window_time: datetime.datetime) -
     query = f"""
 from(bucket: "{bucket}")
   |> range(start: {hour_start.isoformat()}, stop: {hour_end.isoformat()})
-  |> filter(fn: (r) => r._measurement == "spotprice")
+  |> filter(fn: (r) => r._measurement == "spot")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> limit(n: 1)
 """
@@ -188,7 +188,6 @@ def fetch_temperatures_data(
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
   |> filter(fn: (r) => r._measurement == "temperatures")
-  |> filter(fn: (r) => r._field == "PaaMH" or r._field == "Ulkolampo" or r._field == "PalMH")
   |> mean()
 """
 
@@ -382,11 +381,10 @@ def aggregate_15min_window(
         fields["solar_radiation"] = weather.get("solar_radiation")
         fields["wind_speed"] = weather.get("wind_speed")
 
-    # Add temperature data
+    # Add all temperature data
     if temperatures:
-        fields["PaaMH"] = temperatures.get("PaaMH")
-        fields["Ulkolampo"] = temperatures.get("Ulkolampo")
-        fields["PalMH"] = temperatures.get("PalMH")
+        for field_name, value in temperatures.items():
+            fields[field_name] = value
 
     # Add timestamp
     fields["time"] = window_end

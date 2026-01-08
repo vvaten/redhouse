@@ -292,7 +292,14 @@ def collect_temperatures():
 - [x] Test InfluxDB read/write
 - [x] Test safety system (blocks test data in production)
 - [x] Test end-to-end data collection
-- **Total: 4 integration tests**
+- [x] Aggregation pipeline integration tests (tests/integration/)
+  - Test 5-min aggregator writes with measurement="energy"
+  - Test 15-min aggregator reads from 5-min bucket
+  - Test 1-hour aggregator reads from 5-min bucket
+  - Test analytics cost calculations
+  - All tests use *_test buckets only
+  - Run only during development, not at deployment
+- **Total: 8 integration tests**
 
 ### [DONE] Test Infrastructure - COMPLETE
 - [x] Create pytest.ini configuration
