@@ -75,7 +75,7 @@ def find_program_file(target: str) -> Optional[Path]:
 
 def load_program(filepath: Path) -> dict:
     """Load heating program from JSON file."""
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         return json.load(f)
 
 

@@ -379,7 +379,9 @@ def test_counter_reset_detection():
     # Energy: 1100W * 0.05h = 55 Wh
     assert result is not None, "Should succeed with gap-fill"
     assert abs(result["emeter_diff"] - 55.0) < 1.0, f"Expected ~55 Wh, got {result['emeter_diff']}"
-    assert abs(result["emeter_avg"] - 1100.0) < 10.0, f"Expected ~1100 W, got {result['emeter_avg']}"
+    assert (
+        abs(result["emeter_avg"] - 1100.0) < 10.0
+    ), f"Expected ~1100 W, got {result['emeter_avg']}"
 
 
 def test_small_start_value_detection():

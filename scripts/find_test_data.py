@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Script to find TestSensor data timestamps."""
 
-import sys
 import os
+import sys
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.common.config import get_config
 import influxdb_client
+
+from src.common.config import get_config
 
 
 def find_test_data():
@@ -38,7 +39,7 @@ def find_test_data():
         for table in tables:
             for record in table.records:
                 if not found:
-                    print(f"\nFound TestSensor data:")
+                    print("\nFound TestSensor data:")
                     found = True
 
                 field = record.get_field()

@@ -2,7 +2,7 @@
 
 **Project Name:** `redhouse`
 **Started:** 2025-10-18
-**Current Phase:** Phase 6 (Phases 4-5 Complete)
+**Current Phase:** Phase 6 (Phases 1-5.5 Complete)
 
 ---
 
@@ -531,7 +531,144 @@ Refactor the core heating control system that optimizes when to heat based on we
 
 ---
 
-## Phase 6 - Log Management (Week 5-6)
+## Phase 5.5 - Analytics Data Aggregation (Week 5-6)
+
+**Current Status:** [DONE] 100% Complete - Multi-resolution analytics pipeline
+
+### Overview
+Implement multi-resolution data aggregation pipeline for energy analytics and reporting.
+Aggregates raw 1-minute data from Shelly EM3 and CheckWatt into 5-minute, 15-minute,
+and 1-hour buckets for efficient querying and long-term storage.
+
+### Phase 5.5.1 - 5-Minute Energy Aggregation [DONE]
+**Goal:** Aggregate raw energy meter data to 5-minute resolution
+
+- [DONE] Create `src/aggregation/emeters_5min.py`
+  - Fetch CheckWatt data (battery, solar, grid) at 1-min resolution
+  - Fetch Shelly EM3 data (3-phase power, cumulative energy) at 1-min resolution
+  - Calculate energy consumption from cumulative counters
+  - Detect and handle counter resets with averaged power gap-fill (10 kWh threshold)
+  - Properly handle export scenarios (negative net energy is normal)
+  - Average all electrical metrics (voltage, current, power factor)
+  - Calculate grid import/export and total consumption
+  - Write to "emeters_5min" bucket with measurement="energy"
+
+- [DONE] Create systemd service for 5-min aggregation
+  - `redhouse-aggregate-5min.service` + `.timer`
+  - Runs every 5 minutes at :00, :05, :10, etc.
+  - Aggregates previous 5-minute window
+  - Comprehensive error handling and logging
+
+### Phase 5.5.2 - 15-Minute Analytics Aggregation [DONE]
+**Goal:** Aggregate to 15-minute resolution with cost calculations
+
+- [DONE] Create `src/aggregation/analytics_15min.py`
+  - Read from "emeters_5min" bucket (energy data)
+  - Read from "temperatures" bucket (all 19 sensors, not just 3)
+  - Read from "spotprice" bucket (electricity prices with VAT)
+  - Calculate energy costs (import cost, export revenue, net cost)
+  - Average all metrics over 15-minute window
+  - Write to "analytics_15min" bucket
+
+- [DONE] Create systemd service for 15-min analytics
+  - `redhouse-aggregate-analytics-15min.service` + `.timer`
+  - Runs every 15 minutes at :01, :16, :31, :46
+  - Aggregates previous 15-minute window
+
+### Phase 5.5.3 - 1-Hour Analytics Aggregation [DONE]
+**Goal:** Aggregate to 1-hour resolution for long-term storage
+
+- [DONE] Create `src/aggregation/analytics_1hour.py`
+  - Read from "emeters_5min" bucket (energy data)
+  - Read from "temperatures" bucket (all 19 sensors)
+  - Read from "spotprice" bucket (electricity prices)
+  - Calculate hourly energy costs
+  - Average all metrics over 1-hour window
+  - Write to "analytics_1hour" bucket
+
+- [DONE] Create systemd service for 1-hour analytics
+  - `redhouse-aggregate-analytics-1hour.service` + `.timer`
+  - Runs hourly at :02 minutes past the hour
+  - Aggregates previous 1-hour window
+
+### Phase 5.5.4 - Data Collection Enhancement [DONE]
+**Goal:** Add high-resolution Shelly EM3 data collection
+
+- [DONE] Create `src/data_collection/shelly_em3.py`
+  - Fetch 3-phase power, voltage, current, power factor
+  - Fetch cumulative energy counters (total_energy, total_energy_returned)
+  - Calculate net energy (consumption - export)
+  - 1-minute resolution data collection
+  - Write to "emeters_raw" bucket with measurement="shelly_em3_raw"
+
+- [DONE] Create systemd service for Shelly EM3 collection
+  - `redhouse-shelly-em3.service` + `.timer`
+  - Runs every minute
+  - Fetches from Shelly EM3 device at 192.168.1.83
+
+### Phase 5.5.5 - InfluxDB Bucket Setup [DONE]
+**Goal:** Create required InfluxDB buckets for aggregation pipeline
+
+- [DONE] Create `deployment/create_aggregation_buckets.py`
+  - Creates "emeters_5min" bucket (90-day retention)
+  - Creates "analytics_15min" bucket (1-year retention)
+  - Creates "analytics_1hour" bucket (infinite retention)
+  - Creates "emeters_raw" bucket (30-day retention)
+  - All buckets with appropriate retention policies
+
+### Phase 5.5.6 - Testing [DONE]
+**Goal:** Comprehensive test coverage for aggregation pipeline
+
+- [DONE] Unit tests (31 total):
+  - Counter reset detection and handling (8 tests)
+  - 5-minute aggregation logic (23 tests)
+  - All tests passing
+
+- [DONE] Integration tests (4 tests):
+  - 5-min aggregation writes to correct bucket
+  - 15-min aggregation reads from 5-min bucket
+  - 1-hour aggregation reads from 5-min bucket
+  - Analytics cost calculations
+  - All tests use *_test buckets only
+
+- [DONE] Test infrastructure:
+  - `tests/integration/conftest.py` - Test fixtures
+  - Helper functions for writing test data (CheckWatt, Shelly, temperatures)
+  - Realistic cumulative counter generation
+  - All 19 temperature sensors in test data
+
+### Success Criteria
+- [DONE] Multi-resolution aggregation pipeline (1min -> 5min -> 15min -> 1hour)
+- [DONE] Counter reset detection with 10 kWh threshold
+- [DONE] Gap-fill using averaged power when resets detected
+- [DONE] Export scenarios handled correctly (negative net energy)
+- [DONE] All 19 temperature sensors aggregated (not just 3)
+- [DONE] Cost calculations with spot prices
+- [DONE] Comprehensive testing (35 tests: 31 unit + 4 integration)
+- [DONE] systemd services for all aggregators
+- [DONE] Deployed to staging and verified
+
+**Git Commits:**
+- 6a69467 - Reduce counter reset threshold to 10 kWh and remove sanity check
+- c064682 - Fix critical counter reset bug and add comprehensive testing
+- 99c35be - Fix WriteApi usage in analytics aggregators
+- 3295a73 - Fix measurement name in analytics aggregators query
+
+**Test Summary:**
+- 31 unit tests passing (counter reset + 5-min aggregation)
+- 4 integration tests passing (full pipeline)
+- All deployed services running on staging Raspberry Pi
+
+**Benefits:**
+- Efficient multi-resolution data storage (raw -> 5min -> 15min -> 1hour)
+- Automatic data retention management (30d raw, 90d 5min, 1yr 15min, infinite 1hour)
+- Fast queries on aggregated data for Grafana dashboards
+- Accurate energy cost tracking with spot prices
+- Robust counter reset handling (power outages, device reboots)
+
+---
+
+## Phase 6 - Log Management (Week 6-7)
 
 1. **Replace remaining print statements with logging** (heating control scripts)
 2. **Configure log rotation** (10MB, 5 backups) - already done

@@ -25,6 +25,7 @@ pytest-env==1.1.3  # Sets TEST_MODE=true to skip 30s delays in unit tests
 # Code quality
 black==24.10.0
 ruff==0.1.8
+mypy==1.7.1
 
 # Future: API for Grafana controls (Phase 10)
 # flask==3.0.0

@@ -12,6 +12,7 @@ extend-exclude = '''
   | \.pytest_cache
   | wibatemp
   | old_scripts
+  | \.fissio
 )/
 '''
 
@@ -48,11 +49,16 @@ exclude = [
     "wibatemp",
     "old_scripts",
     "old backups",
+    ".fissio",
 ]
 
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F401"]  # Allow unused imports in __init__.py
 "tests/*" = ["B011"]  # Allow assert False
+# Allow E402 in wrapper scripts that modify sys.path before imports
+"*.py" = ["E402"]  # Module level imports after sys.path manipulation
+"scripts/*.py" = ["E402"]
+"deployment/*.py" = ["E402"]
 
 [tool.pytest.ini_options]
 # This duplicates pytest.ini but some tools prefer pyproject.toml

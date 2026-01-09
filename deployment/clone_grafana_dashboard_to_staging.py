@@ -22,7 +22,7 @@ import json
 import os
 import re
 import sys
-from typing import Any, Dict
+from typing import Any
 
 import requests
 
@@ -70,7 +70,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_dashboard(grafana_url: str, api_key: str, dashboard_uid: str) -> Dict[str, Any]:
+def get_dashboard(grafana_url: str, api_key: str, dashboard_uid: str) -> dict[str, Any]:
     """
     Fetch dashboard from Grafana.
 
@@ -127,7 +127,7 @@ def replace_bucket_names(query: str) -> tuple[str, int]:
     return modified, count
 
 
-def update_dashboard_for_staging(dashboard_data: Dict[str, Any]) -> tuple[Dict[str, Any], int]:
+def update_dashboard_for_staging(dashboard_data: dict[str, Any]) -> tuple[dict[str, Any], int]:
     """
     Update dashboard to use staging buckets.
 
@@ -174,7 +174,7 @@ def update_dashboard_for_staging(dashboard_data: Dict[str, Any]) -> tuple[Dict[s
     return {"dashboard": dashboard, "overwrite": False}, total_replacements
 
 
-def create_dashboard(grafana_url: str, api_key: str, dashboard_data: Dict[str, Any]) -> str:
+def create_dashboard(grafana_url: str, api_key: str, dashboard_data: dict[str, Any]) -> str:
     """
     Create new dashboard in Grafana.
 

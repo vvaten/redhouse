@@ -1,0 +1,10 @@
+- Never add all files to git. Always only add modified and added files one by one.
+- Do not ever use unicode characters.
+- ALWAYS activate the virtual environment before running any Python commands:
+  - On Windows (Git Bash): source venv/Scripts/activate
+  - On Linux/Raspberry Pi: source venv/bin/activate
+- IMPORTANT: Before committing to git, ALWAYS run: python scripts/run_all_checks.py
+  - This checks code formatting (black), linting (ruff), type checking (mypy), runs all tests, checks code quality metrics, and measures code coverage.
+  - If any checks fail, fix the issues before committing.
+  - Use --fix flag to auto-fix formatting and linting: python scripts/run_all_checks.py --fix
+  - Use --quick flag to skip coverage for faster checks: python scripts/run_all_checks.py --quick

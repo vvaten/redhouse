@@ -9,14 +9,14 @@ Tests the complete flow:
 6. Run 1-hour aggregator
 7. Verify 1-hour analytics data is written
 """
-import datetime
-import pytest
-import pytz
 
-from src.aggregation.emeters_5min import aggregate_5min
-from src.aggregation.analytics_15min import run_aggregation as run_15min_aggregation
+import datetime
+
 from src.aggregation.analytics_1hour import run_aggregation as run_1hour_aggregation
-from tests.integration.conftest import write_checkwatt_data, write_shelly_data
+from src.aggregation.analytics_15min import run_aggregation as run_15min_aggregation
+from src.aggregation.emeters_5min import aggregate_5min
+
+from .conftest import write_checkwatt_data, write_shelly_data
 
 
 def test_5min_aggregation_writes_energy_measurement(
@@ -29,8 +29,18 @@ def test_5min_aggregation_writes_energy_measurement(
 
     for i in range(5):
         timestamp = window_start + datetime.timedelta(minutes=i)
-        write_checkwatt_data(influx_client, config, timestamp, consumption=1000, solar=500, battery_discharge=200)
-        write_shelly_data(influx_client, config, timestamp, phase_a=300, phase_b=300, phase_c=300, baseline_timestamp=window_start)
+        write_checkwatt_data(
+            influx_client, config, timestamp, consumption=1000, solar=500, battery_discharge=200
+        )
+        write_shelly_data(
+            influx_client,
+            config,
+            timestamp,
+            phase_a=300,
+            phase_b=300,
+            phase_c=300,
+            baseline_timestamp=window_start,
+        )
 
     # Run 5-minute aggregator
     result = aggregate_5min(window_end, dry_run=False)
@@ -71,14 +81,28 @@ def test_15min_aggregation_reads_from_5min_bucket(
 
     baseline_time = window_end - datetime.timedelta(minutes=15)
     for window in range(3):
-        window_5min_end = window_end - datetime.timedelta(minutes=15) + datetime.timedelta(minutes=(window + 1) * 5)
+        window_5min_end = (
+            window_end
+            - datetime.timedelta(minutes=15)
+            + datetime.timedelta(minutes=(window + 1) * 5)
+        )
         window_5min_start = window_5min_end - datetime.timedelta(minutes=5)
 
         # Write 1-minute source data
         for i in range(5):
             timestamp = window_5min_start + datetime.timedelta(minutes=i)
-            write_checkwatt_data(influx_client, config, timestamp, consumption=1000, solar=600, battery_discharge=100)
-            write_shelly_data(influx_client, config, timestamp, phase_a=300, phase_b=300, phase_c=300, baseline_timestamp=baseline_time)
+            write_checkwatt_data(
+                influx_client, config, timestamp, consumption=1000, solar=600, battery_discharge=100
+            )
+            write_shelly_data(
+                influx_client,
+                config,
+                timestamp,
+                phase_a=300,
+                phase_b=300,
+                phase_c=300,
+                baseline_timestamp=baseline_time,
+            )
 
         # Run 5-minute aggregator
         result = aggregate_5min(window_5min_end, dry_run=False)
@@ -124,11 +148,17 @@ def test_1hour_aggregation_reads_from_5min_bucket(
 ):
     """Test that 1-hour aggregator reads from 5-minute bucket and writes analytics."""
     # Create 12 x 5-minute windows of data (1 hour)
-    window_end = test_timestamp.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
+    window_end = test_timestamp.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(
+        hours=1
+    )
 
     baseline_time = window_end - datetime.timedelta(hours=1)
     for window in range(12):
-        window_5min_end = window_end - datetime.timedelta(minutes=60) + datetime.timedelta(minutes=(window + 1) * 5)
+        window_5min_end = (
+            window_end
+            - datetime.timedelta(minutes=60)
+            + datetime.timedelta(minutes=(window + 1) * 5)
+        )
         window_5min_start = window_5min_end - datetime.timedelta(minutes=5)
 
         # Write 1-minute source data with varying values
@@ -136,8 +166,23 @@ def test_1hour_aggregation_reads_from_5min_bucket(
             timestamp = window_5min_start + datetime.timedelta(minutes=i)
             consumption = 1000 + (window * 50)  # Vary consumption
             solar = 500 + (window * 30)  # Vary solar
-            write_checkwatt_data(influx_client, config, timestamp, consumption=consumption, solar=solar, battery_discharge=150)
-            write_shelly_data(influx_client, config, timestamp, phase_a=300, phase_b=300, phase_c=300, baseline_timestamp=baseline_time)
+            write_checkwatt_data(
+                influx_client,
+                config,
+                timestamp,
+                consumption=consumption,
+                solar=solar,
+                battery_discharge=150,
+            )
+            write_shelly_data(
+                influx_client,
+                config,
+                timestamp,
+                phase_a=300,
+                phase_b=300,
+                phase_c=300,
+                baseline_timestamp=baseline_time,
+            )
 
         # Run 5-minute aggregator
         result = aggregate_5min(window_5min_end, dry_run=False)
@@ -182,9 +227,7 @@ from(bucket: "{config.influxdb_bucket_analytics_1hour}")
     assert record["solar_yield_max"] >= record["solar_yield_avg"]
 
 
-def test_analytics_cost_calculation(
-    influx_client, config, test_timestamp, cleanup_test_data
-):
+def test_analytics_cost_calculation(influx_client, config, test_timestamp, cleanup_test_data):
     """Test that cost calculations are performed correctly in analytics."""
     # Write spot price data
     from influxdb_client import Point
@@ -209,16 +252,30 @@ def test_analytics_cost_calculation(
     # Create 3 x 5-minute windows with high solar export
     baseline_time = window_end - datetime.timedelta(minutes=15)
     for window in range(3):
-        window_5min_end = window_end - datetime.timedelta(minutes=15) + datetime.timedelta(minutes=(window + 1) * 5)
+        window_5min_end = (
+            window_end
+            - datetime.timedelta(minutes=15)
+            + datetime.timedelta(minutes=(window + 1) * 5)
+        )
         window_5min_start = window_5min_end - datetime.timedelta(minutes=5)
 
         # High solar, low consumption to enable export
         # Grid power = consumption - solar = 200 - 1000 = -800W (exporting)
         for i in range(5):
             timestamp = window_5min_start + datetime.timedelta(minutes=i)
-            write_checkwatt_data(influx_client, config, timestamp, consumption=200, solar=1000, battery_discharge=0)
+            write_checkwatt_data(
+                influx_client, config, timestamp, consumption=200, solar=1000, battery_discharge=0
+            )
             # Grid exports 800W, split across 3 phases
-            write_shelly_data(influx_client, config, timestamp, phase_a=-267, phase_b=-267, phase_c=-266, baseline_timestamp=baseline_time)
+            write_shelly_data(
+                influx_client,
+                config,
+                timestamp,
+                phase_a=-267,
+                phase_b=-267,
+                phase_c=-266,
+                baseline_timestamp=baseline_time,
+            )
 
         result = aggregate_5min(window_5min_end, dry_run=False)
         assert result == 0
@@ -247,9 +304,9 @@ from(bucket: "{config.influxdb_bucket_analytics_15min}")
     record = data[0]
 
     # Debug: print all fields to see what we got
-    print(f"\nAnalytics record fields:")
+    print("\nAnalytics record fields:")
     for key, value in sorted(record.items()):
-        if not key.startswith('_'):
+        if not key.startswith("_"):
             print(f"  {key}: {value}")
 
     # Verify cost fields exist
@@ -265,4 +322,6 @@ from(bucket: "{config.influxdb_bucket_analytics_15min}")
     # Consumption = 200W * 5min * 3 windows / 60 = 50 Wh
     # Export = 250 - 50 = 200 Wh = 0.2 kWh
     # Revenue = 0.2 kWh * 5 cents/kWh = 1 cent
-    assert record.get("solar_export_revenue", 0) > 0, f"Expected solar export revenue > 0, got {record.get('solar_export_revenue')}"
+    assert (
+        record.get("solar_export_revenue", 0) > 0
+    ), f"Expected solar export revenue > 0, got {record.get('solar_export_revenue')}"

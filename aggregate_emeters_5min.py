@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Wrapper script for 5-minute energy meter aggregation."""
 
-import sys
 import os
+import sys
 
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))

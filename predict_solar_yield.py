@@ -12,10 +12,8 @@ The predictions are written to the emeters bucket as 'solar_yield_avg_prediction
 
 import argparse
 import datetime
-import glob
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -52,7 +50,7 @@ def load_solar_model():
     try:
         logger.info(f"Loading solar model from {SOLAR_MODEL_FILE}")
 
-        with open(SOLAR_MODEL_FILE, "r") as f:
+        with open(SOLAR_MODEL_FILE) as f:
             prediction_model = json.load(f)
 
         # Validate model structure

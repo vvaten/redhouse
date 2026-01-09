@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Script to delete test sensor data from InfluxDB."""
 
-import sys
 import os
+import sys
 from datetime import datetime, timedelta
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.common.config import get_config
 import influxdb_client
-from influxdb_client.client.delete_api import DeleteApi
+
+from src.common.config import get_config
 
 
 def delete_test_sensors(confirm=False, dry_run=False):
@@ -35,7 +35,7 @@ def delete_test_sensors(confirm=False, dry_run=False):
 
         print(f"\nTarget bucket: {bucket}")
         print(f"Time range: {start} to {stop}")
-        print(f"Deleting: TestSensor1, TestSensor2, TestSensor3")
+        print("Deleting: TestSensor1, TestSensor2, TestSensor3")
 
         # Test sensor fields to delete (must delete one at a time)
         test_fields = ["TestSensor1", "TestSensor2", "TestSensor3"]

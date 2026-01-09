@@ -35,7 +35,6 @@ Examples:
 import argparse
 import datetime
 import sys
-from pathlib import Path
 
 from src.common.logger import setup_logger
 from src.control.program_executor import HeatingProgramExecutor
@@ -117,7 +116,7 @@ def main():
             print(f"\nERROR: Program file not found for {program_date}", file=sys.stderr)
             print(f"Expected location: {args.base_dir}/{program_date[:7]}/", file=sys.stderr)
             print("\nHave you generated the program? Run:", file=sys.stderr)
-            print(f"  python generate_heating_program_v2.py", file=sys.stderr)
+            print("  python generate_heating_program_v2.py", file=sys.stderr)
             return 1
 
         # Handle day transition (check for yesterday's unexecuted commands)

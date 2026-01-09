@@ -218,7 +218,10 @@ def aggregate_5min_window(
         # Emeter average: calculate from net_total_energy with counter reset handling
         if len(shelly_data) >= 2:
             # Check first data point for missing data
-            if shelly_data[0]["total_energy"] < 100.0 or shelly_data[0]["total_energy_returned"] < 100.0:
+            if (
+                shelly_data[0]["total_energy"] < 100.0
+                or shelly_data[0]["total_energy_returned"] < 100.0
+            ):
                 logger.error(
                     f"Cannot aggregate: insufficient data (total={shelly_data[0]['total_energy']:.1f}, "
                     f"returned={shelly_data[0]['total_energy_returned']:.1f})"

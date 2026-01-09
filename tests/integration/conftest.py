@@ -1,6 +1,8 @@
 """Pytest fixtures for integration tests."""
+
 import datetime
 import os
+
 import pytest
 import pytz
 from influxdb_client import Point
@@ -66,7 +68,16 @@ def cleanup_test_data(influx_client, config):
             pass  # Bucket might not exist or have no data
 
 
-def write_checkwatt_data(influx_client, config, timestamp, consumption=1000, solar=500, battery_discharge=200, battery_soc=65, battery_charge=0):
+def write_checkwatt_data(
+    influx_client,
+    config,
+    timestamp,
+    consumption=1000,
+    solar=500,
+    battery_discharge=200,
+    battery_soc=65,
+    battery_charge=0,
+):
     """Write synthetic CheckWatt data for testing.
 
     Args:
@@ -101,7 +112,15 @@ def write_checkwatt_data(influx_client, config, timestamp, consumption=1000, sol
     )
 
 
-def write_shelly_data(influx_client, config, timestamp, phase_a=300.0, phase_b=300.0, phase_c=300.0, baseline_timestamp=None):
+def write_shelly_data(
+    influx_client,
+    config,
+    timestamp,
+    phase_a=300.0,
+    phase_b=300.0,
+    phase_c=300.0,
+    baseline_timestamp=None,
+):
     """Write synthetic Shelly EM3 data for testing.
 
     Args:

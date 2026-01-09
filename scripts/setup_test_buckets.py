@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Script to create test buckets in InfluxDB."""
 
-import sys
 import os
+import sys
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.common.config import get_config
 import influxdb_client
-from influxdb_client.client.bucket_api import BucketsApi
+
+from src.common.config import get_config
 
 
 def list_buckets():
@@ -89,7 +89,7 @@ def create_test_buckets():
 
         client.close()
 
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"  Created: {created_count}")
         print(f"  Skipped: {skipped_count}")
         print(f"  Total: {len(test_buckets)}")

@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from influxdb_client import InfluxDBClient
+
 from src.common.config import get_config
 
 # Bucket mappings: production -> staging

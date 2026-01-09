@@ -3,17 +3,18 @@
 
 import sys
 from datetime import datetime, timezone
+
 from influxdb_client import InfluxDBClient
+
 from src.common.config import get_config
+
 
 def clean_bucket(bucket_name: str):
     """Delete all data from a bucket."""
     config = get_config()
 
     client = InfluxDBClient(
-        url=config.influxdb_url,
-        token=config.influxdb_token,
-        org=config.influxdb_org
+        url=config.influxdb_url, token=config.influxdb_token, org=config.influxdb_org
     )
 
     delete_api = client.delete_api()
@@ -25,11 +26,7 @@ def clean_bucket(bucket_name: str):
 
     try:
         delete_api.delete(
-            start=start,
-            stop=stop,
-            predicate='',
-            bucket=bucket_name,
-            org=config.influxdb_org
+            start=start, stop=stop, predicate="", bucket=bucket_name, org=config.influxdb_org
         )
         print(f"Successfully cleaned bucket '{bucket_name}'")
     except Exception as e:
@@ -37,6 +34,7 @@ def clean_bucket(bucket_name: str):
         sys.exit(1)
     finally:
         client.close()
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

@@ -8,14 +8,15 @@ Creates buckets for production, test, and staging environments:
 - analytics_1hour: 5 years retention (1-hour analytics with joined data)
 """
 
-import sys
-import os
 import logging
+import os
+import sys
 
 # Add parent directory to path so we can import src module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from influxdb_client import InfluxDBClient, BucketRetentionRules
+from influxdb_client import BucketRetentionRules, InfluxDBClient
+
 from src.common.config import get_config
 
 logging.basicConfig(
@@ -51,7 +52,7 @@ def create_bucket_if_not_exists(
         # Create bucket with retention policy
         retention_rules = BucketRetentionRules(type="expire", every_seconds=retention_seconds)
 
-        bucket = buckets_api.create_bucket(
+        buckets_api.create_bucket(
             bucket_name=bucket_name, org_id=org_id, retention_rules=retention_rules
         )
 

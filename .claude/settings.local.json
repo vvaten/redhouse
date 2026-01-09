@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/unit/test_edit_heating_program.py -v)",
+      "Read(//c/Projects/mapanything-ipc-v2-2025-11/src/quality/**)",
+      "Bash(python:*)",
+      "Bash(source:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

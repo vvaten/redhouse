@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Script to remove TestSensor fields from a specific timestamp by rewriting the point."""
 
-import sys
 import os
+import sys
 from datetime import datetime, timedelta
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.common.config import get_config
 import influxdb_client
 from influxdb_client.client.write_api import SYNCHRONOUS
+
+from src.common.config import get_config
 
 
 def fix_test_data(timestamp_str, confirm=False, dry_run=False):
@@ -49,7 +50,7 @@ def fix_test_data(timestamp_str, confirm=False, dry_run=False):
 
         print(f"\nTarget bucket: {bucket}")
         print(f"Target timestamp: {target_time}")
-        print(f"Searching for data at this timestamp...")
+        print("Searching for data at this timestamp...")
 
         # Query data at this exact timestamp (with 2-second window)
         start_time = (target_time - timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")

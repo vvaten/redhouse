@@ -33,7 +33,6 @@ Examples:
 
 import argparse
 import sys
-from pathlib import Path
 
 from src.common.logger import setup_logger
 from src.control.program_generator import HeatingProgramGenerator
