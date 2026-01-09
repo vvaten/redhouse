@@ -351,6 +351,7 @@ class TestPlanningResults(unittest.TestCase):
         loads_schedules = {
             "geothermal_pump": {
                 "load_id": "geothermal_pump",
+                "power_kw": 3.0,
                 "total_intervals_on": 6,
                 "total_hours_on": 6.0,
                 "estimated_cost_eur": 1.50,
@@ -366,7 +367,8 @@ class TestPlanningResults(unittest.TestCase):
         timestamps = pd.date_range(
             start="2025-01-15 00:00:00", periods=6, freq="H", tz="Europe/Helsinki"
         )
-        # heating_prio values are in EUR/kWh
+        # heating_prio values are in EUR (total cost per hour for 3 kW load)
+        # 3 kW * 0.01-0.023 EUR/kWh = 0.03-0.07 EUR
         selected_hours = pd.DataFrame(
             {"heating_prio": [0.03, 0.035, 0.04, 0.05, 0.06, 0.07]}, index=timestamps
         )
@@ -381,19 +383,22 @@ class TestPlanningResults(unittest.TestCase):
         self.assertEqual(result["total_heating_intervals_planned"], 6)
         self.assertEqual(result["total_evu_off_intervals"], 1)
         self.assertEqual(result["estimated_total_cost_eur"], 1.50)
-        # Prices are converted to c/kWh for display
-        self.assertEqual(result["cheapest_interval_price"], 3.0)
-        self.assertEqual(result["most_expensive_interval_price"], 7.0)
+        # Prices are converted to c/kWh for display (EUR / kW * 100)
+        # 0.03 EUR / 3 kW * 100 = 1.0 c/kWh, 0.07 EUR / 3 kW * 100 = 2.33 c/kWh
+        self.assertAlmostEqual(result["cheapest_interval_price"], 1.0, places=1)
+        self.assertAlmostEqual(result["most_expensive_interval_price"], 2.33, places=1)
 
     def test_calculate_planning_results_multiple_loads(self):
         """Test planning results with multiple loads."""
         loads_schedules = {
             "geothermal_pump": {
+                "power_kw": 3.0,
                 "total_intervals_on": 6,
                 "estimated_cost_eur": 1.50,
                 "schedule": [{"command": "ON"}, {"command": "EVU"}],
             },
             "garage_heater": {
+                "power_kw": 2.0,
                 "total_intervals_on": 2,
                 "estimated_cost_eur": 0.50,
                 "schedule": [{"command": "ON"}],
@@ -403,7 +408,7 @@ class TestPlanningResults(unittest.TestCase):
         timestamps = pd.date_range(
             start="2025-01-15 00:00:00", periods=6, freq="H", tz="Europe/Helsinki"
         )
-        # heating_prio values are in EUR/kWh
+        # heating_prio values are in EUR (total cost per hour for 3 kW load)
         selected_hours = pd.DataFrame({"heating_prio": [0.03] * 6}, index=timestamps)
 
         result = self.generator._calculate_planning_results(loads_schedules, 6.0, selected_hours)
