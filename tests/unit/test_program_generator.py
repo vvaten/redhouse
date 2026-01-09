@@ -366,8 +366,9 @@ class TestPlanningResults(unittest.TestCase):
         timestamps = pd.date_range(
             start="2025-01-15 00:00:00", periods=6, freq="H", tz="Europe/Helsinki"
         )
+        # heating_prio values are in EUR/kWh
         selected_hours = pd.DataFrame(
-            {"heating_prio": [3.0, 3.5, 4.0, 5.0, 6.0, 7.0]}, index=timestamps
+            {"heating_prio": [0.03, 0.035, 0.04, 0.05, 0.06, 0.07]}, index=timestamps
         )
 
         hours_to_heat = 6.0
@@ -380,6 +381,7 @@ class TestPlanningResults(unittest.TestCase):
         self.assertEqual(result["total_heating_intervals_planned"], 6)
         self.assertEqual(result["total_evu_off_intervals"], 1)
         self.assertEqual(result["estimated_total_cost_eur"], 1.50)
+        # Prices are converted to c/kWh for display
         self.assertEqual(result["cheapest_interval_price"], 3.0)
         self.assertEqual(result["most_expensive_interval_price"], 7.0)
 
@@ -401,7 +403,8 @@ class TestPlanningResults(unittest.TestCase):
         timestamps = pd.date_range(
             start="2025-01-15 00:00:00", periods=6, freq="H", tz="Europe/Helsinki"
         )
-        selected_hours = pd.DataFrame({"heating_prio": [3.0] * 6}, index=timestamps)
+        # heating_prio values are in EUR/kWh
+        selected_hours = pd.DataFrame({"heating_prio": [0.03] * 6}, index=timestamps)
 
         result = self.generator._calculate_planning_results(loads_schedules, 6.0, selected_hours)
 

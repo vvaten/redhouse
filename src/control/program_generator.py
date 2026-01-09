@@ -411,7 +411,7 @@ class HeatingProgramGenerator:
                 "reason": "cheap_electricity",
                 "spot_price_total_c_kwh": round(
                     (
-                        day_priorities.loc[hour, "price_total"]
+                        day_priorities.loc[hour, "price_total"] * 100
                         if hour in day_priorities.index
                         else 0.0
                     ),
@@ -425,8 +425,8 @@ class HeatingProgramGenerator:
                     ),
                     2,
                 ),
-                "priority_score": round(priority_score, 2),
-                "estimated_cost_eur": round(priority_score * load_config["power_kw"] / 100, 3),
+                "priority_score": round(priority_score * 100, 2),
+                "estimated_cost_eur": round(priority_score * load_config["power_kw"], 3),
             }
 
             schedule_entries.append(entry)
@@ -520,11 +520,11 @@ class HeatingProgramGenerator:
         total_cost = sum(load["estimated_cost_eur"] for load in loads_schedules.values())
         total_intervals = sum(load["total_intervals_on"] for load in loads_schedules.values())
 
-        # Get price range from selected hours
+        # Get price range from selected hours (convert EUR/kWh to c/kWh)
         if not selected_hours.empty:
-            cheapest_price = selected_hours["heating_prio"].min()
-            most_expensive_price = selected_hours["heating_prio"].max()
-            avg_price = selected_hours["heating_prio"].mean()
+            cheapest_price = selected_hours["heating_prio"].min() * 100
+            most_expensive_price = selected_hours["heating_prio"].max() * 100
+            avg_price = selected_hours["heating_prio"].mean() * 100
         else:
             cheapest_price = 0.0
             most_expensive_price = 0.0
