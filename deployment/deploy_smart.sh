@@ -2,7 +2,8 @@
 #
 # Smart deployment script that waits for the next optimal deployment window
 #
-# Optimal windows: :06-:09, :21-:24, :36-:39, :51-:54 (avoids heating execution and aggregation)
+# Optimal windows: :06:10-:08:30, :21:10-:23:30, :36:10-:38:30, :51:10-:53:30
+# (start 10s after to let Shelly EM3 collector run, end 30s before next collection)
 # Deployment should complete in 2-3 minutes
 #
 # Usage:
@@ -16,8 +17,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_SCRIPT="${SCRIPT_DIR}/deploy.sh"
 
-# Optimal deployment windows (start minute of each 4-minute window)
+# Optimal deployment windows (start minute of each window)
 OPTIMAL_WINDOWS=(6 21 36 51)
+# Window timing adjustments
+WINDOW_START_OFFSET=10  # Start 10 seconds after the minute
+WINDOW_END_OFFSET=30    # End 30 seconds before the end minute
 
 # Function to get next optimal window
 get_next_window() {
@@ -57,8 +61,9 @@ calculate_wait_time() {
         minutes_to_wait=$((60 - current_minute + next_window))
     fi
 
-    # Convert to seconds and subtract current seconds to align to exact minute
-    echo $((minutes_to_wait * 60 - current_second))
+    # Convert to seconds, subtract current seconds, and add the start offset
+    # to wait until :XX:10 instead of :XX:00
+    echo $((minutes_to_wait * 60 - current_second + WINDOW_START_OFFSET))
 }
 
 # Function to format seconds as human readable time
@@ -77,11 +82,24 @@ format_duration() {
 # Function to check if we're in an optimal window
 in_optimal_window() {
     local current_minute=$(date +%M | sed 's/^0*//')
+    local current_second=$(date +%S | sed 's/^0*//')
     [ -z "$current_minute" ] && current_minute=0
+    [ -z "$current_second" ] && current_second=0
 
     for window_start in "${OPTIMAL_WINDOWS[@]}"; do
-        local window_end=$((window_start + 3))
-        if [ "$current_minute" -ge "$window_start" ] && [ "$current_minute" -le "$window_end" ]; then
+        # Window: :06:10 to :08:30 (start minute + 0:10, end minute + 2:30)
+        local window_end=$((window_start + 2))
+
+        # Check if in start minute and after start offset
+        if [ "$current_minute" -eq "$window_start" ] && [ "$current_second" -ge "$WINDOW_START_OFFSET" ]; then
+            return 0
+        fi
+        # Check if in middle minutes
+        if [ "$current_minute" -gt "$window_start" ] && [ "$current_minute" -lt "$window_end" ]; then
+            return 0
+        fi
+        # Check if in end minute and before end offset
+        if [ "$current_minute" -eq "$window_end" ] && [ "$current_second" -le "$((60 - WINDOW_END_OFFSET))" ]; then
             return 0
         fi
     done
@@ -93,15 +111,16 @@ show_schedule() {
     echo "Optimal Deployment Windows"
     echo "============================"
     echo ""
-    echo "Safe windows (4 minutes each):"
-    echo "  :06-:09  (after aggregation, before next collection)"
-    echo "  :21-:24  (after aggregation, before next collection)"
-    echo "  :36-:39  (after aggregation, before next collection)"
-    echo "  :51-:54  (after aggregation, before next collection)"
+    echo "Safe windows (2m 20s each, adjusted for collectors):"
+    echo "  :06:10-:08:30  (after Shelly EM3, before next collection)"
+    echo "  :21:10-:23:30  (after Shelly EM3, before next collection)"
+    echo "  :36:10-:38:30  (after Shelly EM3, before next collection)"
+    echo "  :51:10-:53:30  (after Shelly EM3, before next collection)"
     echo ""
     echo "Avoid these times:"
     echo "  :00, :15, :30, :45  (heating program execution)"
-    echo "  :00, :05, :10, etc. (5-min aggregation + Shelly EM3)"
+    echo "  :00, :05, :10, etc. (5-min aggregation)"
+    echo "  :X6:00-:X6:10       (Shelly EM3 collection)"
     echo "  :01, :06, :11, etc. (CheckWatt collection)"
     echo ""
 
