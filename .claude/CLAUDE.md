@@ -8,3 +8,4 @@
   - If any checks fail, fix the issues before committing.
   - Use --fix flag to auto-fix formatting and linting: python scripts/run_all_checks.py --fix
   - Use --quick flag to skip coverage for faster checks: python scripts/run_all_checks.py --quick
+- When committing, NEVER use git add -A or git add . - always add files individually

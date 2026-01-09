@@ -68,6 +68,9 @@ weather_data/
 # Old backups
 old scripts/
 
+# Legacy/archived code
+.fissio/
+
 # Test coverage
 .coverage
 htmlcov/
