@@ -63,24 +63,29 @@ class TestFetchFingridData:
         start_time = datetime.datetime(2024, 1, 15, 10, 0, 0)
         end_time = datetime.datetime(2024, 1, 15, 12, 0, 0)
 
-        with patch("aiohttp.ClientSession") as mock_session_class:
-            mock_response = MagicMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value=sample_fingrid_response)
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock(return_value=None)
+        with patch("src.data_collection.windpower.get_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.fingrid_api_key = "test-api-key"
+            mock_get_config.return_value = mock_config
 
-            mock_session = MagicMock()
-            mock_session.get = MagicMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
+            with patch("aiohttp.ClientSession") as mock_session_class:
+                mock_response = MagicMock()
+                mock_response.status = 200
+                mock_response.json = AsyncMock(return_value=sample_fingrid_response)
+                mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+                mock_response.__aexit__ = AsyncMock(return_value=None)
 
-            mock_session_class.return_value = mock_session
+                mock_session = MagicMock()
+                mock_session.get = MagicMock(return_value=mock_response)
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=None)
 
-            result = await fetch_fingrid_data(75, start_time, end_time)
+                mock_session_class.return_value = mock_session
 
-            assert result == sample_fingrid_response
-            assert len(result) == 2
+                result = await fetch_fingrid_data(75, start_time, end_time)
+
+                assert result == sample_fingrid_response
+                assert len(result) == 2
 
     @pytest.mark.asyncio
     async def test_fetch_fingrid_data_with_dict_response(self, sample_fingrid_response):
@@ -88,23 +93,28 @@ class TestFetchFingridData:
         start_time = datetime.datetime(2024, 1, 15, 10, 0, 0)
         end_time = datetime.datetime(2024, 1, 15, 12, 0, 0)
 
-        with patch("aiohttp.ClientSession") as mock_session_class:
-            mock_response = MagicMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"data": sample_fingrid_response})
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock(return_value=None)
+        with patch("src.data_collection.windpower.get_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.fingrid_api_key = "test-api-key"
+            mock_get_config.return_value = mock_config
 
-            mock_session = MagicMock()
-            mock_session.get = MagicMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
+            with patch("aiohttp.ClientSession") as mock_session_class:
+                mock_response = MagicMock()
+                mock_response.status = 200
+                mock_response.json = AsyncMock(return_value={"data": sample_fingrid_response})
+                mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+                mock_response.__aexit__ = AsyncMock(return_value=None)
 
-            mock_session_class.return_value = mock_session
+                mock_session = MagicMock()
+                mock_session.get = MagicMock(return_value=mock_response)
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=None)
 
-            result = await fetch_fingrid_data(75, start_time, end_time)
+                mock_session_class.return_value = mock_session
 
-            assert result == sample_fingrid_response
+                result = await fetch_fingrid_data(75, start_time, end_time)
+
+                assert result == sample_fingrid_response
 
     @pytest.mark.asyncio
     async def test_fetch_fingrid_data_rate_limited(self, sample_fingrid_response):
@@ -112,29 +122,34 @@ class TestFetchFingridData:
         start_time = datetime.datetime(2024, 1, 15, 10, 0, 0)
         end_time = datetime.datetime(2024, 1, 15, 12, 0, 0)
 
-        with patch("aiohttp.ClientSession") as mock_session_class:
-            with patch("time.sleep"):  # Mock sleep to speed up test
-                # First response is 429
-                mock_response_429 = MagicMock()
-                mock_response_429.status = 429
-                mock_response_429.__aenter__ = AsyncMock(return_value=mock_response_429)
-                mock_response_429.__aexit__ = AsyncMock(return_value=None)
+        with patch("src.data_collection.windpower.get_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.fingrid_api_key = "test-api-key"
+            mock_get_config.return_value = mock_config
 
-                # Second response is 200
-                mock_response_200 = MagicMock()
-                mock_response_200.status = 200
-                mock_response_200.json = AsyncMock(return_value=sample_fingrid_response)
-                mock_response_200.__aenter__ = AsyncMock(return_value=mock_response_200)
-                mock_response_200.__aexit__ = AsyncMock(return_value=None)
+            with patch("aiohttp.ClientSession") as mock_session_class:
+                with patch("time.sleep"):  # Mock sleep to speed up test
+                    # First response is 429
+                    mock_response_429 = MagicMock()
+                    mock_response_429.status = 429
+                    mock_response_429.__aenter__ = AsyncMock(return_value=mock_response_429)
+                    mock_response_429.__aexit__ = AsyncMock(return_value=None)
 
-                mock_session = MagicMock()
-                mock_session.get = MagicMock(side_effect=[mock_response_429, mock_response_200])
-                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-                mock_session.__aexit__ = AsyncMock(return_value=None)
+                    # Second response is 200
+                    mock_response_200 = MagicMock()
+                    mock_response_200.status = 200
+                    mock_response_200.json = AsyncMock(return_value=sample_fingrid_response)
+                    mock_response_200.__aenter__ = AsyncMock(return_value=mock_response_200)
+                    mock_response_200.__aexit__ = AsyncMock(return_value=None)
 
-                mock_session_class.return_value = mock_session
+                    mock_session = MagicMock()
+                    mock_session.get = MagicMock(side_effect=[mock_response_429, mock_response_200])
+                    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                    mock_session.__aexit__ = AsyncMock(return_value=None)
 
-                result = await fetch_fingrid_data(75, start_time, end_time)
+                    mock_session_class.return_value = mock_session
+
+                    result = await fetch_fingrid_data(75, start_time, end_time)
 
                 assert result == sample_fingrid_response
 

@@ -120,6 +120,11 @@ class Config:
     def weather_latlon(self) -> str:
         return self.get("WEATHER_LATLON", "60.1699,24.9384")
 
+    # API Keys
+    @property
+    def fingrid_api_key(self) -> str:
+        return self.get("FINGRID_API_KEY", "")
+
     # Hardware configuration
     @property
     def pump_i2c_bus(self) -> int:

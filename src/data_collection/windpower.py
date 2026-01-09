@@ -18,7 +18,6 @@ logger = setup_logger(__name__, "windpower.log")
 
 # Fingrid API configuration
 FINGRID_API_URL = "https://data.fingrid.fi/api/datasets/{variable_id}/data"
-FINGRID_API_KEY = "779865ac3644488cb77186b98df787cb"
 
 # FMI wind power forecast URL
 FMI_WINDPOWER_URL = (
@@ -51,12 +50,19 @@ async def fetch_fingrid_data(
     Returns:
         List of data points, or None if failed
     """
+    config = get_config()
+    api_key = config.fingrid_api_key
+
+    if not api_key:
+        logger.error("FINGRID_API_KEY not configured")
+        return None
+
     url = FINGRID_API_URL.format(variable_id=variable_id)
     url += f"?startTime={start_time_utc.strftime(DATEFORMAT_QUERY)}"
     url += f"&endTime={end_time_utc.strftime(DATEFORMAT_QUERY)}"
     url += "&pageSize=20000"
 
-    headers = {"x-api-key": FINGRID_API_KEY, "Accept": "application/json"}
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
 
     tries_left = 10
     status = 0
