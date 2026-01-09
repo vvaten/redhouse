@@ -307,9 +307,8 @@ python collect_temperatures.py --dry-run --verbose
 - `config/config.yaml.example` - System configuration
 
 ### Documentation
-- `README.md` - Project overview and setup
-- `TESTING.md` - Testing guide
-- `MODERNIZATION_PLAN.md` - Project roadmap
+- `README.md` - Project overview and setup (includes testing guide)
+- `PLAN.md` - Project roadmap
 - `docs/LESSONS_LEARNED.md` - Lessons and best practices
 - `docs/QUICK_REFERENCE.md` - This file
 
@@ -413,8 +412,7 @@ git push
 ## Getting Help
 
 1. **Check documentation**
-   - [README.md](../README.md) for setup
-   - [TESTING.md](../TESTING.md) for testing
+   - [README.md](../README.md) for setup and testing
    - [LESSONS_LEARNED.md](LESSONS_LEARNED.md) for best practices
 
 2. **Check logs**

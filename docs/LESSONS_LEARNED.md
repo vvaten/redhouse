@@ -65,7 +65,7 @@ During initial integration testing, test data was accidentally written to the **
 
 4. **Created `.env.test` template** with test buckets pre-configured
 
-5. **Updated [TESTING.md](../TESTING.md)** with clear instructions
+5. **Updated [README.md](../README.md)** with comprehensive testing instructions
 
 ---
 

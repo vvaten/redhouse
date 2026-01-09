@@ -101,22 +101,74 @@ python -c "from src.common.config import get_config; print(get_config().influxdb
 
 ## Development
 
-### Running Tests
+### Quality Checks (Required Before Commit)
+
+**IMPORTANT:** Always run comprehensive checks before committing:
 
 ```bash
 source venv/bin/activate
-pytest tests/
+python scripts/run_all_checks.py
 ```
 
-### Code Quality
+This runs:
+- Code formatting (black)
+- Linting (ruff)
+- Type checking (mypy)
+- Unit tests (pytest)
+- Code quality metrics
+- Code coverage
+
+**Quick options:**
+```bash
+# Auto-fix formatting and linting
+python scripts/run_all_checks.py --fix
+
+# Skip coverage for faster checks
+python scripts/run_all_checks.py --quick
+
+# Format/lint only, skip tests
+python scripts/run_all_checks.py --no-tests
+```
+
+### Running Tests
+
+**Unit tests** (fast, safe - mock hardware and InfluxDB):
+```bash
+source venv/bin/activate
+pytest tests/unit/ -v
+```
+
+**Integration tests** (write to test buckets):
+```bash
+# Create test buckets first (see below)
+pytest tests/integration/ -v
+```
+
+**With coverage**:
+```bash
+pytest tests/ --cov=src --cov-report=html
+```
+
+**Specific test file**:
+```bash
+pytest tests/unit/test_heating_optimizer.py -v
+```
+
+### Test Buckets Setup
+
+Integration tests require test buckets in InfluxDB:
 
 ```bash
-# Format code
-black src/ tests/
-
-# Lint
-ruff check src/ tests/
+# Create test buckets (via InfluxDB UI or CLI)
+influx bucket create -n temperatures_test -o area51 -r 30d
+influx bucket create -n weather_test -o area51 -r 30d
+influx bucket create -n spotprice_test -o area51 -r 30d
+influx bucket create -n emeters_test -o area51 -r 30d
+influx bucket create -n checkwatt_full_data_test -o area51 -r 30d
+influx bucket create -n load_control_test -o area51 -r 30d
 ```
+
+Configure your `.env` to use test buckets when developing.
 
 ### Running Individual Components
 
