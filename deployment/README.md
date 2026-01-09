@@ -145,8 +145,38 @@ sudo /tmp/deploy.sh
 
 ### Update Existing Installation
 
+#### Smart Deployment (Recommended)
+
+The smart deployment script automatically waits for the next optimal deployment window to avoid interfering with critical scheduled tasks.
+
 ```bash
-# SSH to Raspberry Pi and run deployment script
+# SSH to Raspberry Pi
+ssh pi@<raspberry-pi-ip>
+
+# Check when next safe window is
+sudo /opt/redhouse/deployment/deploy_smart.sh --schedule
+
+# Wait for next window and deploy automatically
+sudo /opt/redhouse/deployment/deploy_smart.sh
+
+# Or deploy immediately (emergency)
+sudo /opt/redhouse/deployment/deploy_smart.sh --now
+```
+
+**Optimal deployment windows** (4 minutes each, 16 min/hour total):
+- `:06-:09` - After aggregation, before next collection
+- `:21-:24` - After aggregation, before next collection
+- `:36-:39` - After aggregation, before next collection
+- `:51-:54` - After aggregation, before next collection
+
+**Avoids these critical times:**
+- `:00, :15, :30, :45` - Heating program execution
+- `:00, :05, :10, etc.` - 5-min aggregation + Shelly EM3 collection
+
+#### Manual Deployment
+
+```bash
+# SSH to Raspberry Pi and run deployment script directly
 ssh pi@<raspberry-pi-ip>
 sudo /opt/redhouse/deployment/deploy.sh
 ```
@@ -157,6 +187,8 @@ The deployment script will:
 3. Run unit tests
 4. Install/update systemd services
 5. Restart all timers
+
+**Note:** Manual deployment may briefly interrupt data collection if run during critical times.
 
 ## Manual Service Management
 
