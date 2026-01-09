@@ -311,6 +311,173 @@ class TestShellyEM3DataCollection(unittest.TestCase):
         # Should return None on exception
         self.assertIsNone(result)
 
+    @patch("src.data_collection.shelly_em3.get_config")
+    @patch("src.data_collection.shelly_em3.InfluxClient")
+    async def test_write_shelly_em3_to_influx_success(self, mock_influx_class, mock_get_config):
+        """Test successful write to InfluxDB."""
+        from src.data_collection.shelly_em3 import write_shelly_em3_to_influx
+
+        # Mock config
+        mock_config = MagicMock()
+        mock_config.influxdb_bucket_shelly_em3_raw = "shelly_em3_raw"
+        mock_get_config.return_value = mock_config
+
+        # Mock InfluxClient
+        mock_influx = MagicMock()
+        mock_influx.write_point = MagicMock(return_value=True)
+        mock_influx_class.return_value = mock_influx
+
+        fields = {"total_power": 545.6, "total_energy": 50479.9}
+
+        result = await write_shelly_em3_to_influx(fields, dry_run=False)
+
+        self.assertTrue(result)
+        mock_influx.write_point.assert_called_once()
+
+    async def test_write_shelly_em3_to_influx_dry_run(self):
+        """Test write in dry-run mode."""
+        from src.data_collection.shelly_em3 import write_shelly_em3_to_influx
+
+        fields = {"total_power": 545.6}
+
+        result = await write_shelly_em3_to_influx(fields, dry_run=True)
+
+        self.assertTrue(result)
+        # Should not call InfluxDB in dry-run mode
+
+    @patch("src.data_collection.shelly_em3.get_config")
+    @patch("src.data_collection.shelly_em3.InfluxClient")
+    async def test_write_shelly_em3_to_influx_exception(self, mock_influx_class, mock_get_config):
+        """Test write handles exceptions."""
+        from src.data_collection.shelly_em3 import write_shelly_em3_to_influx
+
+        # Mock config
+        mock_config = MagicMock()
+        mock_config.influxdb_bucket_shelly_em3_raw = "shelly_em3_raw"
+        mock_get_config.return_value = mock_config
+
+        # Mock InfluxClient to raise exception
+        mock_influx_class.side_effect = Exception("Connection error")
+
+        fields = {"total_power": 545.6}
+
+        result = await write_shelly_em3_to_influx(fields, dry_run=False)
+
+        self.assertFalse(result)
+
+    @patch("src.data_collection.shelly_em3.JSONDataLogger")
+    @patch("src.data_collection.shelly_em3.write_shelly_em3_to_influx")
+    @patch("src.data_collection.shelly_em3.fetch_shelly_em3_status")
+    async def test_collect_shelly_em3_data_success(
+        self, mock_fetch, mock_write, mock_json_logger_class
+    ):
+        """Test successful data collection."""
+        from src.data_collection.shelly_em3 import collect_shelly_em3_data
+
+        # Set environment variable
+        with patch.dict("os.environ", {"SHELLY_EM3_URL": "http://192.168.1.5"}):
+            # Mock fetch to return valid data
+            mock_fetch.return_value = self.sample_status
+
+            # Mock write to succeed
+            mock_write.return_value = True
+
+            # Mock JSON logger
+            mock_json_logger = MagicMock()
+            mock_json_logger_class.return_value = mock_json_logger
+
+            result = await collect_shelly_em3_data(dry_run=False)
+
+            self.assertEqual(result, 0)  # Success
+            mock_fetch.assert_called_once_with("http://192.168.1.5")
+            mock_write.assert_called_once()
+            mock_json_logger.log_data.assert_called_once()
+            mock_json_logger.cleanup_old_logs.assert_called_once()
+
+    async def test_collect_shelly_em3_data_no_url(self):
+        """Test collection fails when SHELLY_EM3_URL not set."""
+        from src.data_collection.shelly_em3 import collect_shelly_em3_data
+
+        # Ensure env var is not set
+        with patch.dict("os.environ", {}, clear=True):
+            result = await collect_shelly_em3_data(dry_run=False)
+
+            self.assertEqual(result, 1)  # Failure
+
+    @patch("src.data_collection.shelly_em3.fetch_shelly_em3_status")
+    async def test_collect_shelly_em3_data_fetch_fails(self, mock_fetch):
+        """Test collection fails when fetch returns None."""
+        from src.data_collection.shelly_em3 import collect_shelly_em3_data
+
+        with patch.dict("os.environ", {"SHELLY_EM3_URL": "http://192.168.1.5"}):
+            # Mock fetch to fail
+            mock_fetch.return_value = None
+
+            result = await collect_shelly_em3_data(dry_run=False)
+
+            self.assertEqual(result, 1)  # Failure
+
+    @patch("src.data_collection.shelly_em3.JSONDataLogger")
+    @patch("src.data_collection.shelly_em3.fetch_shelly_em3_status")
+    async def test_collect_shelly_em3_data_process_fails(self, mock_fetch, mock_json_logger_class):
+        """Test collection fails when processing raises exception."""
+        from src.data_collection.shelly_em3 import collect_shelly_em3_data
+
+        with patch.dict("os.environ", {"SHELLY_EM3_URL": "http://192.168.1.5"}):
+            # Mock fetch to return invalid data (will cause processing error)
+            mock_fetch.return_value = {"emeters": []}  # Wrong number of emeters
+
+            # Mock JSON logger
+            mock_json_logger = MagicMock()
+            mock_json_logger_class.return_value = mock_json_logger
+
+            result = await collect_shelly_em3_data(dry_run=False)
+
+            self.assertEqual(result, 1)  # Failure
+
+    @patch("src.data_collection.shelly_em3.JSONDataLogger")
+    @patch("src.data_collection.shelly_em3.write_shelly_em3_to_influx")
+    @patch("src.data_collection.shelly_em3.fetch_shelly_em3_status")
+    async def test_collect_shelly_em3_data_write_fails(
+        self, mock_fetch, mock_write, mock_json_logger_class
+    ):
+        """Test collection fails when write fails."""
+        from src.data_collection.shelly_em3 import collect_shelly_em3_data
+
+        with patch.dict("os.environ", {"SHELLY_EM3_URL": "http://192.168.1.5"}):
+            # Mock fetch to succeed
+            mock_fetch.return_value = self.sample_status
+
+            # Mock write to fail
+            mock_write.return_value = False
+
+            # Mock JSON logger
+            mock_json_logger = MagicMock()
+            mock_json_logger_class.return_value = mock_json_logger
+
+            result = await collect_shelly_em3_data(dry_run=False)
+
+            self.assertEqual(result, 1)  # Failure
+
+    @patch("asyncio.run")
+    @patch("argparse.ArgumentParser.parse_args")
+    def test_main(self, mock_parse_args, mock_asyncio_run):
+        """Test main entry point."""
+        from src.data_collection.shelly_em3 import main
+
+        # Mock arguments
+        mock_args = MagicMock()
+        mock_args.dry_run = True
+        mock_parse_args.return_value = mock_args
+
+        # Mock asyncio.run to return success
+        mock_asyncio_run.return_value = 0
+
+        result = main()
+
+        self.assertEqual(result, 0)
+        mock_asyncio_run.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
