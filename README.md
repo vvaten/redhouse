@@ -107,7 +107,7 @@ python -c "from src.common.config import get_config; print(get_config().influxdb
 
 ```bash
 source venv/bin/activate
-python scripts/run_all_checks.py
+python -u scripts/run_all_checks.py
 ```
 
 This runs:
@@ -121,13 +121,13 @@ This runs:
 **Quick options:**
 ```bash
 # Auto-fix formatting and linting
-python scripts/run_all_checks.py --fix
+python -u scripts/run_all_checks.py --fix
 
 # Skip coverage for faster checks
-python scripts/run_all_checks.py --quick
+python -u scripts/run_all_checks.py --quick
 
 # Format/lint only, skip tests
-python scripts/run_all_checks.py --no-tests
+python -u scripts/run_all_checks.py --no-tests
 ```
 
 ### Running Tests

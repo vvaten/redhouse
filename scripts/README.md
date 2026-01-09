@@ -19,16 +19,16 @@ Comprehensive quality check script that runs before committing to git.
 **Usage:**
 ```bash
 # Run all checks
-python scripts/run_all_checks.py
+python -u scripts/run_all_checks.py
 
 # Quick mode (skip coverage)
-python scripts/run_all_checks.py --quick
+python -u scripts/run_all_checks.py --quick
 
 # Auto-fix formatting and linting
-python scripts/run_all_checks.py --fix
+python -u scripts/run_all_checks.py --fix
 
 # Skip tests (format/lint only)
-python scripts/run_all_checks.py --no-tests
+python -u scripts/run_all_checks.py --no-tests
 ```
 
 **When to use:**
@@ -69,14 +69,14 @@ To automatically run checks before every commit, you can install a git pre-commi
 # Create pre-commit hook (Linux/Mac)
 cat > .git/hooks/pre-commit << 'EOF'
 #!/bin/bash
-python scripts/run_all_checks.py --quick
+python -u scripts/run_all_checks.py --quick
 EOF
 chmod +x .git/hooks/pre-commit
 
 # Create pre-commit hook (Windows Git Bash)
 cat > .git/hooks/pre-commit << 'EOF'
 #!/bin/bash
-python scripts/run_all_checks.py --quick
+python -u scripts/run_all_checks.py --quick
 EOF
 ```
 

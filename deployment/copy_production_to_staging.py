@@ -6,9 +6,9 @@ This allows testing the heating program generator with real production data
 before switching to staging mode.
 
 Usage:
-    python copy_production_to_staging.py --days 30
-    python copy_production_to_staging.py --start 2024-10-01 --end 2024-10-31
-    python copy_production_to_staging.py --days 7 --dry-run
+    python -u copy_production_to_staging.py --days 30
+    python -u copy_production_to_staging.py --start 2024-10-01 --end 2024-10-31
+    python -u copy_production_to_staging.py --days 7 --dry-run
 
 Requirements:
     pip install influxdb-client

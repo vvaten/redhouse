@@ -164,10 +164,10 @@ Phase 1 is now 100% complete with git repository initialized and pushed to GitHu
 pytest tests/unit/test_temperature.py -v
 
 # Integration tests (writes to test bucket)
-python tests/integration/test_influx_connection.py
+python -u tests/integration/test_influx_connection.py
 
 # Dry-run on actual hardware
-python collect_temperatures.py --dry-run --verbose
+python -u collect_temperatures.py --dry-run --verbose
 ```
 
 ### [DONE] Weather Data Collection - COMPLETE
@@ -189,10 +189,10 @@ python collect_temperatures.py --dry-run --verbose
 pytest tests/unit/test_weather.py -v
 
 # Dry-run (makes real API call, doesn't write to DB)
-python collect_weather.py --dry-run --verbose
+python -u collect_weather.py --dry-run --verbose
 
 # With file backup
-python collect_weather.py --dry-run --save-file
+python -u collect_weather.py --dry-run --save-file
 ```
 
 ### [DONE] Spot Prices Collection - COMPLETE
@@ -215,7 +215,7 @@ python collect_weather.py --dry-run --save-file
 pytest tests/unit/test_spot_prices.py -v
 
 # Dry-run (makes real API call, doesn't write to DB)
-python collect_spot_prices.py --dry-run
+python -u collect_spot_prices.py --dry-run
 ```
 
 ### [DONE] CheckWatt Data Collection - COMPLETE
@@ -238,7 +238,7 @@ python collect_spot_prices.py --dry-run
 pytest tests/unit/test_checkwatt.py -v
 
 # Dry-run (makes real API call, doesn't write to DB)
-python collect_checkwatt.py --dry-run --last-hour
+python -u collect_checkwatt.py --dry-run --last-hour
 ```
 
 **⚠️ Important Note:**

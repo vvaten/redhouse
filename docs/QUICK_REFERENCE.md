@@ -48,7 +48,7 @@ pytest tests/unit/ --cov=src --cov-report=html
 
 ```bash
 # Temperature collection (reads sensors, doesn't write)
-python collect_temperatures.py --dry-run --verbose
+python -u collect_temperatures.py --dry-run --verbose
 
 # See exactly what would be written
 # No changes to database
@@ -58,20 +58,20 @@ python collect_temperatures.py --dry-run --verbose
 
 ```bash
 # Verify test buckets exist
-python scripts/setup_test_buckets.py
+python -u scripts/setup_test_buckets.py
 
 # Test InfluxDB connection and write
-python tests/integration/test_influx_connection.py
+python -u tests/integration/test_influx_connection.py
 
 # Run actual collection (writes to test bucket)
-python collect_temperatures.py
+python -u collect_temperatures.py
 ```
 
 ### 4. Data Verification
 
 ```bash
 # Check if test data exists
-python scripts/find_test_data.py
+python -u scripts/find_test_data.py
 
 # View in Grafana
 # 1. Create temporary dashboard
@@ -87,37 +87,37 @@ python scripts/find_test_data.py
 
 ```bash
 # Dry-run (no writes)
-python collect_temperatures.py --dry-run
+python -u collect_temperatures.py --dry-run
 
 # Write to test bucket
-python collect_temperatures.py
+python -u collect_temperatures.py
 
 # Verbose logging
-python collect_temperatures.py --verbose
+python -u collect_temperatures.py --verbose
 
 # Combined
-python collect_temperatures.py --dry-run --verbose
+python -u collect_temperatures.py --dry-run --verbose
 ```
 
 ### Managing Test Data
 
 ```bash
 # Find test sensor data
-python scripts/find_test_data.py
+python -u scripts/find_test_data.py
 
 # Remove test data at specific timestamp (dry-run first!)
-python scripts/fix_test_data.py "2025-10-18T18:30:53.770991Z" --dry-run
-python scripts/fix_test_data.py "2025-10-18T18:30:53.770991Z" --confirm
+python -u scripts/fix_test_data.py "2025-10-18T18:30:53.770991Z" --dry-run
+python -u scripts/fix_test_data.py "2025-10-18T18:30:53.770991Z" --confirm
 ```
 
 ### InfluxDB Management
 
 ```bash
 # List buckets
-python scripts/setup_test_buckets.py
+python -u scripts/setup_test_buckets.py
 
 # Test connection
-python tests/integration/test_influx_connection.py
+python -u tests/integration/test_influx_connection.py
 ```
 
 ---
@@ -229,12 +229,12 @@ cp .env.example .env
 nano .env  # Add actual credentials
 
 # Test manually
-python collect_temperatures.py --dry-run
-python collect_temperatures.py
+python -u collect_temperatures.py --dry-run
+python -u collect_temperatures.py
 
 # Add to crontab
 crontab -e
-# Add: * * * * * cd /opt/home-automation && venv/bin/python collect_temperatures.py
+# Add: * * * * * cd /opt/home-automation && venv/bin/python -u collect_temperatures.py
 ```
 
 ---
@@ -261,7 +261,7 @@ python -c "import sys; print('\n'.join(sys.path))"
 curl -I http://192.168.1.164:8086/health
 
 # Test with Python
-python tests/integration/test_influx_connection.py
+python -u tests/integration/test_influx_connection.py
 
 # Check credentials in .env
 cat .env | grep INFLUX
@@ -277,7 +277,7 @@ ls /sys/bus/w1/devices/
 cat /sys/bus/w1/devices/28-*/w1_slave
 
 # Run with verbose logging
-python collect_temperatures.py --dry-run --verbose
+python -u collect_temperatures.py --dry-run --verbose
 ```
 
 ---
@@ -363,16 +363,16 @@ du -sh /var/log/home-automation/
 
 ```bash
 # 1. Find the bad data
-python scripts/find_test_data.py
+python -u scripts/find_test_data.py
 
 # 2. Check what would be removed (dry-run)
-python scripts/fix_test_data.py "TIMESTAMP" --dry-run
+python -u scripts/fix_test_data.py "TIMESTAMP" --dry-run
 
 # 3. Remove it
-python scripts/fix_test_data.py "TIMESTAMP" --confirm
+python -u scripts/fix_test_data.py "TIMESTAMP" --confirm
 
 # 4. Verify it's gone
-python scripts/find_test_data.py
+python -u scripts/find_test_data.py
 ```
 
 ### "System is not collecting data!"
@@ -385,7 +385,7 @@ ps aux | grep collect_temperatures
 tail -f logs/temperature.log
 
 # Run manually to see errors
-python collect_temperatures.py --verbose
+python -u collect_temperatures.py --verbose
 
 # Check crontab
 crontab -l
@@ -421,7 +421,7 @@ git push
 
 3. **Run with verbose mode**
    ```bash
-   python collect_temperatures.py --dry-run --verbose
+   python -u collect_temperatures.py --dry-run --verbose
    ```
 
 4. **Check GitHub Issues**

@@ -21,18 +21,18 @@ During initial integration testing, test data was accidentally written to the **
 
 1. **Located the test data**:
    ```bash
-   python scripts/find_test_data.py
+   python -u scripts/find_test_data.py
    ```
 
 2. **Removed test data** using timestamp-specific deletion:
    ```bash
-   python scripts/fix_test_data.py "2025-10-18T18:30:53.770991Z" --dry-run
-   python scripts/fix_test_data.py "2025-10-18T18:30:53.770991Z" --confirm
+   python -u scripts/fix_test_data.py "2025-10-18T18:30:53.770991Z" --dry-run
+   python -u scripts/fix_test_data.py "2025-10-18T18:30:53.770991Z" --confirm
    ```
 
 3. **Verified cleanup**:
    ```bash
-   python scripts/find_test_data.py
+   python -u scripts/find_test_data.py
    ```
 
 ### InfluxDB Delete API Limitations Discovered
@@ -56,7 +56,7 @@ During initial integration testing, test data was accidentally written to the **
 
 2. **Use `--dry-run` first** for any database writes:
    ```bash
-   python collect_temperatures.py --dry-run --verbose
+   python -u collect_temperatures.py --dry-run --verbose
    ```
 
 3. **Check bucket in test output**:
@@ -175,7 +175,7 @@ pytest tests/unit/test_temperature.py -v
 
 #### Level 2: Dry-Run Mode (Very Safe)
 ```bash
-python collect_temperatures.py --dry-run --verbose
+python -u collect_temperatures.py --dry-run --verbose
 ```
 - ✅ Reads real sensors (if available)
 - ✅ No database writes
@@ -188,7 +188,7 @@ python collect_temperatures.py --dry-run --verbose
 cat .env | grep BUCKET
 
 # Run collection
-python collect_temperatures.py
+python -u collect_temperatures.py
 
 # Verify in Grafana using test bucket
 ```
@@ -271,16 +271,16 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ```bash
 # 1. Find it
-python scripts/find_test_data.py
+python -u scripts/find_test_data.py
 
 # 2. Review what would be deleted
-python scripts/fix_test_data.py "TIMESTAMP" --dry-run
+python -u scripts/fix_test_data.py "TIMESTAMP" --dry-run
 
 # 3. Fix it
-python scripts/fix_test_data.py "TIMESTAMP" --confirm
+python -u scripts/fix_test_data.py "TIMESTAMP" --confirm
 
 # 4. Verify
-python scripts/find_test_data.py
+python -u scripts/find_test_data.py
 ```
 
 ### "Is my .env configured correctly?"
@@ -304,7 +304,7 @@ cat .env | grep BUCKET | grep -v "_test$"
 # 3. Recreate with same name
 
 # Or via script (if we create one):
-python scripts/reset_test_buckets.py --confirm
+python -u scripts/reset_test_buckets.py --confirm
 ```
 
 ---
@@ -322,7 +322,7 @@ python scripts/reset_test_buckets.py --confirm
 
 2. **Require explicit flag for production writes**
    ```bash
-   python collect_temperatures.py --production
+   python -u collect_temperatures.py --production
    # Without flag, default to test bucket
    ```
 
@@ -339,7 +339,7 @@ python scripts/reset_test_buckets.py --confirm
 4. **Automated backup before deployment**
    ```bash
    # Before switching to production
-   python scripts/backup_influx_bucket.py temperatures
+   python -u scripts/backup_influx_bucket.py temperatures
    ```
 
 ---

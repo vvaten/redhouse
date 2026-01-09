@@ -258,16 +258,16 @@ To test program generation with real data, copy production data to staging:
 cd /opt/redhouse
 
 # Dry-run first (see what would be copied)
-venv/bin/python deployment/copy_production_to_staging.py --days 30 --dry-run
+venv/bin/python -u deployment/copy_production_to_staging.py --days 30 --dry-run
 
 # Copy last 30 days of data
-venv/bin/python deployment/copy_production_to_staging.py --days 30
+venv/bin/python -u deployment/copy_production_to_staging.py --days 30
 
 # Or copy specific date range
-venv/bin/python deployment/copy_production_to_staging.py --start 2024-10-01 --end 2024-10-31
+venv/bin/python -u deployment/copy_production_to_staging.py --start 2024-10-01 --end 2024-10-31
 
 # Or copy only specific buckets
-venv/bin/python deployment/copy_production_to_staging.py --days 7 --buckets temperatures weather spotprice
+venv/bin/python -u deployment/copy_production_to_staging.py --days 7 --buckets temperatures weather spotprice
 ```
 
 **Note:** This copies data over the network and may take 15-30 minutes for 30 days of data.
@@ -297,7 +297,7 @@ INFLUXDB_ORG=area51
 EOF
 
 # Run copy script
-venv/bin/python deployment/copy_production_to_staging.py --days 30
+venv/bin/python -u deployment/copy_production_to_staging.py --days 30
 
 # Cleanup when done
 cd /tmp
@@ -341,11 +341,11 @@ GRAFANA_API_KEY=your-copied-api-key-here
 cd /opt/redhouse
 
 # Dry-run first (see what would change)
-venv/bin/python deployment/clone_grafana_dashboard_to_staging.py \
+venv/bin/python -u deployment/clone_grafana_dashboard_to_staging.py \
   --dashboard-uid ABC123 --dry-run
 
 # Actually create the staging dashboard
-venv/bin/python deployment/clone_grafana_dashboard_to_staging.py \
+venv/bin/python -u deployment/clone_grafana_dashboard_to_staging.py \
   --dashboard-uid ABC123
 ```
 
@@ -495,7 +495,7 @@ grep INFLUXDB_BUCKET /opt/redhouse/.env
 
 # Test InfluxDB connection
 cd /opt/redhouse
-venv/bin/python -c "from src.common.influx_client import InfluxClient; from src.common.config import get_config; c = InfluxClient(get_config()); print('Connection OK')"
+venv/bin/python -u -c "from src.common.influx_client import InfluxClient; from src.common.config import get_config; c = InfluxClient(get_config()); print('Connection OK')"
 ```
 
 ### Hardware Still Being Controlled in Staging
@@ -527,7 +527,7 @@ journalctl -u redhouse-generate-program.service -n 100
 
 # Test manually
 cd /opt/redhouse
-venv/bin/python generate_heating_program_v2.py --verbose --dry-run
+venv/bin/python -u generate_heating_program_v2.py --verbose --dry-run
 ```
 
 ### Grafana Dashboard Clone Failed

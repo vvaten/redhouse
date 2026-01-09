@@ -6,8 +6,8 @@ This creates a copy of your production dashboard that reads from *_staging
 buckets instead of production buckets, allowing side-by-side comparison.
 
 Usage:
-    python clone_grafana_dashboard_to_staging.py --dashboard-uid ABC123
-    python clone_grafana_dashboard_to_staging.py --dashboard-uid ABC123 --dry-run
+    python -u clone_grafana_dashboard_to_staging.py --dashboard-uid ABC123
+    python -u clone_grafana_dashboard_to_staging.py --dashboard-uid ABC123 --dry-run
 
 Requirements:
     pip install requests

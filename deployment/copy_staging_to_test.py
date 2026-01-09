@@ -3,9 +3,9 @@
 Copy data from staging buckets to test buckets for local development.
 
 Usage:
-    python deployment/copy_staging_to_test.py --minutes 30
-    python deployment/copy_staging_to_test.py --hours 2
-    python deployment/copy_staging_to_test.py --minutes 30 --dry-run
+    python -u deployment/copy_staging_to_test.py --minutes 30
+    python -u deployment/copy_staging_to_test.py --hours 2
+    python -u deployment/copy_staging_to_test.py --minutes 30 --dry-run
 """
 
 import argparse
