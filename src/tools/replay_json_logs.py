@@ -135,6 +135,19 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
 
             success = write_temperatures_to_influx(data)
 
+        elif data_source == "shelly_em3":
+            from src.data_collection.shelly_em3 import (
+                process_shelly_em3_data,
+                write_shelly_em3_to_influx,
+            )
+
+            if not data:
+                logger.error("No data to replay")
+                return False
+
+            processed = process_shelly_em3_data(data)
+            success = await write_shelly_em3_to_influx(processed)
+
         else:
             logger.error(f"Unknown data source: {data_source}")
             return False
