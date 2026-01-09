@@ -67,3 +67,18 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+# Ignore missing stubs for third-party libraries
+[[tool.mypy.overrides]]
+module = [
+    "influxdb_client",
+    "influxdb_client.*",
+    "fmiopendata.*",
+]
+ignore_missing_imports = true

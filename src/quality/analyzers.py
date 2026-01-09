@@ -6,6 +6,7 @@ Provides cyclomatic complexity calculation and file/function analysis.
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Union
 
 
 @dataclass
@@ -91,7 +92,7 @@ def calculate_complexity(node: ast.AST) -> int:
 
 
 def analyze_function(
-    node: ast.FunctionDef | ast.AsyncFunctionDef, file_path: Path
+    node: Union[ast.FunctionDef, ast.AsyncFunctionDef], file_path: Path
 ) -> FunctionMetrics:
     """Analyze a single function."""
     line_start = node.lineno

@@ -5,7 +5,7 @@ import datetime
 import json
 import math
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
@@ -225,7 +225,9 @@ class HeatingProgramGenerator:
         # Find expensive hours above threshold
         expensive_hours = day_priorities[
             day_priorities["heating_prio"] > self.EVU_OFF_THRESHOLD_PRICE
-        ].sort_values(by="heating_prio", ascending=False)
+        ].sort_values(
+            by="heating_prio", ascending=False
+        )  # type: ignore[call-overload]
 
         expensive_hours = expensive_hours.head(evu_off_max_hours)
 
@@ -266,7 +268,7 @@ class HeatingProgramGenerator:
         Returns:
             List of groups with 'first' and 'last' timestamps
         """
-        groups = []
+        groups: list[dict[str, Any]] = []
 
         for hour in expensive_hours_df.index:
             if not groups:

@@ -5,7 +5,7 @@ Provides formatted output for project metrics.
 
 from pathlib import Path
 
-from quality.analyzers import ProjectMetrics
+from src.quality.analyzers import ProjectMetrics
 
 # Quality limits (shared with main module)
 LIMITS = {

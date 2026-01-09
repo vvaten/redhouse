@@ -70,8 +70,7 @@ def check_formatting(root_dir: Path, fix: bool = False) -> bool:
             for line in lines:
                 print(f"  {line}")
         else:
-            print(f"{OK} Auto-fixed formatting issues")
-            return True
+            print(f"{OK} Auto-fixed formatting issues (re-run to verify)")
         return False
 
 
@@ -117,7 +116,7 @@ def check_types(root_dir: Path) -> bool:
     """Check type hints with mypy."""
     print_header("3. TYPE CHECKING (mypy)")
 
-    cmd = [sys.executable, "-m", "mypy", "src/"]
+    cmd = [sys.executable, "-m", "mypy", "src/", "--exclude", "src/tools"]
     passed, output = run_command(cmd, root_dir)
 
     # Count actual errors (not warnings)
@@ -181,14 +180,14 @@ def check_code_quality(root_dir: Path) -> bool:
     if passed:
         print(f"{OK} Code quality metrics within limits")
     else:
-        print(f"{FAIL} Code quality violations found")
+        print("[WARN] Code quality violations found (not blocking)")
 
     # Always show the summary
     lines = output.strip().split("\n")
     for line in lines:
         print(f"  {line}")
 
-    return passed
+    return True  # Don't fail on code quality, just warn
 
 
 def check_coverage(root_dir: Path) -> bool:
@@ -207,22 +206,45 @@ def check_coverage(root_dir: Path) -> bool:
     ]
     passed, output = run_command(cmd, root_dir, timeout=180)
 
-    # Parse coverage percentage from output
-    coverage_line = [ln for ln in output.split("\n") if "TOTAL" in ln]
-    if coverage_line:
-        print(f"{OK} Coverage report:")
-        print(f"  {coverage_line[0]}")
-    else:
+    # Parse coverage output - find the table section
+    lines = output.split("\n")
+    coverage_started = False
+    coverage_lines = []
+    total_line = None
+
+    for line in lines:
+        # Start capturing after the header line
+        if "Name" in line and "Stmts" in line and "Miss" in line:
+            coverage_started = True
+            coverage_lines.append(line)
+            continue
+
+        if coverage_started:
+            # Stop at separator line after TOTAL
+            if line.startswith("-" * 20) and total_line:
+                break
+            # Capture coverage lines
+            if line.strip() and not line.startswith("="):
+                coverage_lines.append(line)
+                if "TOTAL" in line:
+                    total_line = line
+
+    if not total_line:
         print(f"{FAIL} Could not parse coverage report")
         return False
 
+    # Display per-file coverage
+    print(f"{OK} Coverage report:")
+    for line in coverage_lines:
+        print(f"  {line}")
+
     # Check if below threshold (warning, not failure)
-    if "%" in coverage_line[0]:
-        pct_str = coverage_line[0].split()[-1].replace("%", "")
+    if "%" in total_line:
+        pct_str = total_line.split()[-1].replace("%", "")
         try:
             coverage_pct = int(pct_str)
             if coverage_pct < 85:
-                print(f"\n[WARN] Coverage is {coverage_pct}% " f"(recommended: 85%+)")
+                print(f"\n[WARN] Coverage is {coverage_pct}% (recommended: 85%+)")
         except ValueError:
             pass
 

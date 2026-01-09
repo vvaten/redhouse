@@ -5,7 +5,7 @@ import asyncio
 import datetime
 import json
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import aiohttp
 import pytz
@@ -92,7 +92,7 @@ def process_spot_prices(spot_prices_raw: list[dict], config) -> list[dict]:
 
     for hour_entry in spot_prices_raw:
         try:
-            data = {}
+            data: dict[str, Any] = {}
 
             # Parse datetime
             entry_datetime = datetime.datetime.fromisoformat(hour_entry["DateTime"])

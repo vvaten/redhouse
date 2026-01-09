@@ -4,7 +4,7 @@
 import asyncio
 import datetime
 import time
-from typing import Optional
+from typing import Any, Optional, Union
 
 import aiohttp
 import influxdb_client
@@ -151,7 +151,7 @@ async def fetch_all_windpower_data(
     start_time_utc = datetime.datetime.utcfromtimestamp(start_time_local.timestamp())
     end_time_utc = datetime.datetime.utcfromtimestamp(end_time_local.timestamp())
 
-    responses = {}
+    responses: dict[str, Any] = {}
 
     # Fetch Fingrid data for all variables
     for variable_id, field_name in FINGRID_VARIABLES.items():
@@ -178,7 +178,7 @@ def process_windpower_data(responses: dict) -> dict[datetime.datetime, dict]:
         Dict mapping timestamps to field values
     """
     logger.info("Processing wind power data")
-    processed_rows = {}
+    processed_rows: dict[Any, Any] = {}
 
     for field, data in responses.items():
         if field == "FMI forecast":
@@ -219,6 +219,7 @@ def process_windpower_data(responses: dict) -> dict[datetime.datetime, dict]:
                     )
 
                     # Convert value based on field type
+                    value: Union[int, float, Any]
                     if field in ["Production", "Max capacity"]:
                         value = int(round(row["value"]))
                     elif field in ["Hourly forecast", "Daily forecast"]:

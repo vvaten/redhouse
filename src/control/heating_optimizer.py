@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 """Calculate heating priorities based on electricity prices and solar production."""
 
+from typing import Optional, Union
+
 import pandas as pd
 
 from src.common.logger import setup_logger
@@ -27,8 +29,8 @@ class HeatingOptimizer:
 
     def __init__(
         self,
-        base_load_kw: float = None,
-        heating_load_kw: float = None,
+        base_load_kw: Optional[float] = None,
+        heating_load_kw: Optional[float] = None,
         resolution_minutes: int = 60,
     ):
         """
@@ -79,22 +81,23 @@ class HeatingOptimizer:
         df = df.copy()
 
         # Check if time_floor_local is in index or columns
+        time_col: Union[pd.Series, pd.DatetimeIndex]
         if "time_floor_local" in df.columns:
             time_col = df["time_floor_local"]
         elif df.index.name == "time_floor_local" or isinstance(df.index, pd.DatetimeIndex):
-            time_col = df.index
+            time_col = df.index  # type: ignore[assignment]
         else:
             raise ValueError("DataFrame must have 'time_floor_local' column or DatetimeIndex")
 
         if self.resolution_minutes == 15:
             # Round to 15-minute intervals
             df["time_resolution"] = (
-                time_col.dt.floor("15T") if hasattr(time_col, "dt") else time_col.floor("15T")
+                time_col.dt.floor("15T") if hasattr(time_col, "dt") else time_col.floor("15T")  # type: ignore[arg-type]
             )
         else:
             # Use hourly resolution
             df["time_resolution"] = (
-                time_col.dt.floor("H") if hasattr(time_col, "dt") else time_col.floor("H")
+                time_col.dt.floor("H") if hasattr(time_col, "dt") else time_col.floor("H")  # type: ignore[arg-type]
             )
 
         # Group by time resolution and average the values
@@ -151,7 +154,7 @@ class HeatingOptimizer:
             f"({self.resolution_minutes} minute resolution)"
         )
 
-        return grouped
+        return grouped  # type: ignore[return-value]
 
     def filter_day_priorities(self, df: pd.DataFrame, date_offset: int = 1) -> pd.DataFrame:
         """

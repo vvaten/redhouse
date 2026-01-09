@@ -2,6 +2,7 @@
 """Fetch data needed for heating optimization from InfluxDB."""
 
 import datetime
+from typing import Any
 
 import pandas as pd
 
@@ -98,7 +99,7 @@ class HeatingDataFetcher:
         try:
             result = self.influx.query_api.query(org=self.config.influxdb_org, query=query)
 
-            data = {}
+            data: dict[Any, Any] = {}
             for table in result:
                 for record in table.records:
                     timestamp = record.get_time()
@@ -137,7 +138,7 @@ class HeatingDataFetcher:
         try:
             result = self.influx.query_api.query(org=self.config.influxdb_org, query=query)
 
-            data = {}
+            data: dict[Any, Any] = {}
             for table in result:
                 for record in table.records:
                     timestamp = record.get_time()
@@ -178,7 +179,7 @@ class HeatingDataFetcher:
         try:
             result = self.influx.query_api.query(org=self.config.influxdb_org, query=query)
 
-            data = {}
+            data: dict[Any, Any] = {}
             for table in result:
                 for record in table.records:
                     timestamp = record.get_time()
@@ -211,7 +212,7 @@ class HeatingDataFetcher:
             Merged DataFrame with all data, sorted by timestamp
         """
         # Merge all dictionaries
-        all_data = {}
+        all_data: dict[Any, Any] = {}
 
         for timestamp, values in solar_data.items():
             if timestamp not in all_data:

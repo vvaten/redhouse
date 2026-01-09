@@ -5,7 +5,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -67,8 +67,8 @@ class PumpController:
     def __init__(
         self,
         dry_run: bool = False,
-        state_file: str = None,
-        shelly_url: str = None,
+        state_file: Optional[str] = None,
+        shelly_url: Optional[str] = None,
     ):
         """
         Initialize pump controller with direct I2C control.
@@ -92,9 +92,9 @@ class PumpController:
 
         # EVU cycle state tracking
         self.on_time_accumulated = 0  # Total ON time since last EVU cycle (seconds)
-        self.last_command = None
-        self.last_command_time = None
-        self.last_evu_cycle_time = None
+        self.last_command: Optional[str] = None
+        self.last_command_time: Optional[int] = None
+        self.last_evu_cycle_time: Optional[int] = None
 
         # Load saved state
         self._load_state()
@@ -159,7 +159,7 @@ class PumpController:
                     f"(threshold={self.EVU_CYCLE_THRESHOLD}s)"
                 )
 
-    def check_evu_cycle_needed(self, current_time: int = None) -> bool:
+    def check_evu_cycle_needed(self, current_time: Optional[int] = None) -> bool:
         """
         Check if EVU-OFF cycle is needed to prevent direct heating mode.
 
@@ -290,7 +290,7 @@ class PumpController:
         """
         logger.info(f"Performing EVU cycle (ON time was {self.on_time_accumulated}s)")
 
-        result = {"success": False, "on_time_before": self.on_time_accumulated}
+        result: dict[str, Any] = {"success": False, "on_time_before": self.on_time_accumulated}
 
         # Step 1: Enable EVU-OFF
         evu_result = self._execute_raw_command("EVU")
@@ -315,7 +315,7 @@ class PumpController:
         logger.info("EVU cycle completed, ON time reset to 0")
         return result
 
-    def perform_evu_cycle(self, current_time: int = None) -> dict:
+    def perform_evu_cycle(self, current_time: Optional[int] = None) -> dict:
         """
         Perform EVU-OFF cycle to reset pump's direct heating timer.
 

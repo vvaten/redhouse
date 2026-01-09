@@ -43,7 +43,7 @@ class HeatingCurve:
 
             if curve_points is None:
                 logger.info("No heating curve in config, using default")
-                curve_points = self.DEFAULT_CURVE.copy()
+                curve_points = {float(k): v for k, v in self.DEFAULT_CURVE.items()}
             else:
                 logger.info(f"Loaded heating curve from config with {len(curve_points)} points")
         else:

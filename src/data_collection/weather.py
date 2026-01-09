@@ -4,7 +4,7 @@
 import datetime
 import json
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from fmiopendata.wfs import download_stored_query
 
@@ -63,7 +63,7 @@ def fetch_weather_forecast(latlon: str) -> dict[datetime.datetime, dict[str, flo
         )
 
         # Process data
-        processed_data = {}
+        processed_data: dict[Any, Any] = {}
 
         for timestamp in valid_times:
             processed_data[timestamp] = {}

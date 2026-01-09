@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 from dotenv import load_dotenv
@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 class Config:
     """Configuration manager that loads from .env and config.yaml"""
 
-    def __init__(self, config_path: str = None, env_path: str = None):
+    def __init__(self, config_path: Optional[str] = None, env_path: Optional[str] = None):
         """
         Initialize configuration
 
@@ -28,9 +28,9 @@ class Config:
         # Load YAML config
         if config_path is None:
             project_root = Path(__file__).parent.parent.parent
-            config_path = project_root / "config" / "config.yaml"
+            config_path = str(project_root / "config" / "config.yaml")
 
-        self._yaml_config = {}
+        self._yaml_config: dict[str, Any] = {}
         if os.path.exists(config_path):
             with open(config_path) as f:
                 self._yaml_config = yaml.safe_load(f) or {}
@@ -110,6 +110,14 @@ class Config:
     @property
     def influxdb_bucket_analytics_1hour(self) -> str:
         return self.get("INFLUXDB_BUCKET_ANALYTICS_1HOUR", "analytics_1hour")
+
+    @property
+    def influxdb_bucket_windpower(self) -> str:
+        return self.get("INFLUXDB_BUCKET_WINDPOWER", "windpower")
+
+    @property
+    def influxdb_bucket_energy(self) -> str:
+        return self.get("INFLUXDB_BUCKET_ENERGY", "emeters")
 
     # Weather configuration
     @property

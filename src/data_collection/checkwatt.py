@@ -4,7 +4,7 @@
 import asyncio
 import datetime
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import aiohttp
 import influxdb_client
@@ -175,7 +175,7 @@ def process_checkwatt_data(json_data: dict) -> list[dict]:
 
     # Initialize data points with timestamps (1-minute intervals)
     measurements_soc = json_data["Meters"][0]["Measurements"]
-    data_points = []
+    data_points: list[dict[str, Any]] = []
 
     for i in range(len(measurements_soc)):
         data_points.append({"epoch_timestamp": start_timestamp + i * 60})

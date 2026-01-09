@@ -3,14 +3,14 @@
 Provides AST-based metrics analysis and reporting.
 """
 
-from quality.analyzers import (
+from src.quality.analyzers import (
     FileMetrics,
     FunctionMetrics,
     ProjectMetrics,
     analyze_file,
     calculate_complexity,
 )
-from quality.report import FAIL, LIMITS, OK, print_report
+from src.quality.report import FAIL, LIMITS, OK, print_report
 
 __all__ = [
     "ProjectMetrics",
