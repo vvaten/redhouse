@@ -108,7 +108,7 @@ def process_spot_prices(spot_prices_raw: list[dict], config) -> list[dict]:
 
             # Store datetime in various formats
             data["datetime_utc"] = (
-                datetime.datetime.utcfromtimestamp(data["epoch_timestamp"])
+                datetime.datetime.fromtimestamp(data["epoch_timestamp"], tz=datetime.timezone.utc)
                 .replace(tzinfo=pytz.utc)
                 .isoformat()
             )
@@ -212,10 +212,11 @@ async def write_spot_prices_to_influx(
 
         if success:
             latest_timestamp = max(entry["epoch_timestamp"] for entry in processed_spot_prices)
-            earliest_dt = datetime.datetime.utcfromtimestamp(
-                min(entry["epoch_timestamp"] for entry in processed_spot_prices)
+            earliest_dt = datetime.datetime.fromtimestamp(
+                min(entry["epoch_timestamp"] for entry in processed_spot_prices),
+                tz=datetime.timezone.utc,
             )
-            latest_dt = datetime.datetime.utcfromtimestamp(latest_timestamp)
+            latest_dt = datetime.datetime.fromtimestamp(latest_timestamp, tz=datetime.timezone.utc)
 
             logger.info(
                 f"Wrote {len(processed_spot_prices)} spot prices to InfluxDB "
@@ -274,11 +275,11 @@ async def collect_spot_prices(dry_run: bool = False) -> int:
     # Load status to check if we already have tomorrow's prices
     status = load_status()
     latest_uploaded_price_epoch = status.get("latest_epoch_timestamp", 0)
-    current_time_epoch = int(datetime.datetime.utcnow().timestamp())
+    current_time_epoch = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
 
     logger.info(
         f"Latest uploaded price: "
-        f"{datetime.datetime.utcfromtimestamp(latest_uploaded_price_epoch)}"
+        f"{datetime.datetime.fromtimestamp(latest_uploaded_price_epoch, tz=datetime.timezone.utc)}"
     )
 
     # Check if we already have prices for tomorrow

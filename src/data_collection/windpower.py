@@ -69,8 +69,9 @@ async def fetch_fingrid_data(
 
     while tries_left > 0 and status != 200:
         try:
+            timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
+                async with session.get(url, headers=headers, timeout=timeout) as response:
                     status = response.status
 
                     if status == 200:
@@ -122,8 +123,9 @@ async def fetch_fmi_windpower_forecast() -> Optional[dict]:
     }
 
     try:
+        timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession() as session:
-            async with session.get(FMI_WINDPOWER_URL, headers=headers) as response:
+            async with session.get(FMI_WINDPOWER_URL, headers=headers, timeout=timeout) as response:
                 if response.status == 200:
                     response_json = await response.json()
                     logger.info("Successfully fetched FMI wind power forecast")
@@ -154,8 +156,12 @@ async def fetch_all_windpower_data(
     logger.info(f"Fetching wind power data from {start_time_local} to {end_time_local}")
 
     # Convert to UTC
-    start_time_utc = datetime.datetime.utcfromtimestamp(start_time_local.timestamp())
-    end_time_utc = datetime.datetime.utcfromtimestamp(end_time_local.timestamp())
+    start_time_utc = datetime.datetime.fromtimestamp(
+        start_time_local.timestamp(), tz=datetime.timezone.utc
+    )
+    end_time_utc = datetime.datetime.fromtimestamp(
+        end_time_local.timestamp(), tz=datetime.timezone.utc
+    )
 
     responses: dict[str, Any] = {}
 
@@ -203,7 +209,9 @@ def process_windpower_data(responses: dict) -> dict[datetime.datetime, dict]:
                     value_kw = row[1]
 
                     # Convert to UTC datetime and MW
-                    timestamp = datetime.datetime.utcfromtimestamp(timestamp_ms / 1000)
+                    timestamp = datetime.datetime.fromtimestamp(
+                        timestamp_ms / 1000, tz=datetime.timezone.utc
+                    )
                     value_mw = value_kw * 1000.0
 
                     if timestamp not in processed_rows:
@@ -218,10 +226,11 @@ def process_windpower_data(responses: dict) -> dict[datetime.datetime, dict]:
             for row in data:
                 try:
                     # Parse timestamp
-                    timestamp = datetime.datetime.utcfromtimestamp(
+                    timestamp = datetime.datetime.fromtimestamp(
                         datetime.datetime.strptime(row["startTime"], DATEFORMAT_DATA)
                         .replace(tzinfo=datetime.timezone.utc)
-                        .timestamp()
+                        .timestamp(),
+                        tz=datetime.timezone.utc,
                     )
 
                     # Convert value based on field type

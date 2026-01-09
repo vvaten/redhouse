@@ -64,7 +64,7 @@ class InfluxClient:
         """
         try:
             if timestamp is None:
-                timestamp = datetime.datetime.utcnow()
+                timestamp = datetime.datetime.now(datetime.timezone.utc)
 
             if bucket is None:
                 bucket = self.config.influxdb_bucket_temperatures
@@ -121,7 +121,7 @@ class InfluxClient:
         """
         try:
             if timestamp is None:
-                timestamp = datetime.datetime.utcnow()
+                timestamp = datetime.datetime.now(datetime.timezone.utc)
 
             point = influxdb_client.Point("temperatures")
 
@@ -164,7 +164,7 @@ class InfluxClient:
         """
         try:
             if timestamp is None:
-                timestamp = datetime.datetime.utcnow()
+                timestamp = datetime.datetime.now(datetime.timezone.utc)
 
             point = influxdb_client.Point("humidities")
 
@@ -239,7 +239,9 @@ class InfluxClient:
             points = []
 
             for entry in spot_price_data:
-                timestamp = datetime.datetime.utcfromtimestamp(entry["epoch_timestamp"])
+                timestamp = datetime.datetime.fromtimestamp(
+                    entry["epoch_timestamp"], tz=datetime.timezone.utc
+                )
 
                 point = (
                     influxdb_client.Point("spot")

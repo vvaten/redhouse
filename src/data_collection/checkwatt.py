@@ -60,8 +60,11 @@ async def get_auth_token(username: str, password: str) -> Optional[str]:
     payload = '{"OneTimePassword":""}'
 
     try:
+        timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession() as session:
-            async with session.post(AUTH_URL, data=payload, headers=headers) as response:
+            async with session.post(
+                AUTH_URL, data=payload, headers=headers, timeout=timeout
+            ) as response:
                 if response.status == 200:
                     json_data = await response.json()
                     if "JwtToken" in json_data:
@@ -130,8 +133,9 @@ async def fetch_checkwatt_data(
     }
 
     try:
+        timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, headers=headers, timeout=timeout) as response:
                 if response.status == 200:
                     json_data = await response.json()
                     logger.info("Successfully fetched CheckWatt data")
