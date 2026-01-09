@@ -22,10 +22,39 @@ After cloning this repository, set up git hooks to prevent accidental credential
 ./deployment/setup-git-hooks.sh
 ```
 
-This installs a pre-commit hook that:
-- Blocks commits of `.env.staging`, `.env.prod`, etc.
-- Scans for patterns like `PASSWORD=`, `TOKEN=`, `API_KEY=`
-- Prevents real credentials from being committed
+This installs a pre-commit hook that provides three layers of protection:
+
+### Check 1: Block Production Files
+- Prevents commits of `.env.staging`, `.env.prod`, `.env.production`
+- Blocks known files that contain production credentials
+
+### Check 2: Scan Environment Files
+- Scans `.env` files for patterns like `PASSWORD=`, `TOKEN=`, `API_KEY=`
+- Allows `.env.example` files with placeholder values
+- Detects real credentials vs. dummy values (`your-`, `example`, `test`, etc.)
+
+### Check 3: Scan Python Source Files (NEW)
+- Detects hardcoded secrets in Python files (e.g., `API_KEY = "..."`)
+- Identifies hex strings 32+ characters (common API key format)
+- Recognizes long alphanumeric tokens (40+ characters)
+- Allows safe patterns: `config.get()`, `os.getenv()`, `os.environ[]`
+- Skips test files which may contain mock credentials
+
+**Example patterns detected:**
+```python
+# BLOCKED - Hardcoded hex API key
+FINGRID_API_KEY = "779865ac3644488cb77186b98df787cb"
+
+# BLOCKED - Hardcoded token
+AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+# ALLOWED - Reading from config
+api_key = config.get("FINGRID_API_KEY")
+api_key = os.getenv("FINGRID_API_KEY")
+
+# ALLOWED - Placeholder value
+API_KEY = "your-api-key-here"
+```
 
 ## If Credentials Are Exposed
 
