@@ -5,30 +5,24 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional
-
-import requests
+from typing import Any, Callable, Optional
 
 from src.common.logger import setup_logger
+from src.control.hardware_implementations import (
+    CombinedHardwareInterface,
+    MockHardwareInterface,
+)
+from src.control.hardware_interface import PumpHardwareInterface
 
 logger = setup_logger(__name__)
-
-# Try to import smbus2 for I2C communication
-try:
-    from smbus2 import SMBus
-
-    I2C_AVAILABLE = True
-except ImportError:
-    I2C_AVAILABLE = False
-    logger.warning("smbus2 not available - I2C control will use dry-run mode")
 
 
 class PumpController:
     """
     Safe interface to geothermal heat pump control via I2C.
 
-    Controls the heat pump through mlp_control.sh script which
-    communicates via I2C bus with the pump controller.
+    Business logic for pump control with hardware access via dependency injection.
+    Uses hardware interface for all physical device interactions.
 
     Commands:
     - ON: Force heating on
@@ -48,49 +42,38 @@ class PumpController:
     EVU_CYCLE_THRESHOLD = 105 * 60  # 1h45min = 6300 seconds (15min safety margin)
     EVU_CYCLE_DURATION = 30  # Cycle EVU-OFF for 30 seconds
 
-    # I2C configuration
-    I2C_BUS = 1
-    I2C_ADDRESS = 0x10
-    I2C_REG1 = 0x01
-    I2C_REG2 = 0x02
-
-    # I2C command values
-    I2C_COMMANDS = {
-        "ON": (0x00, 0x00),  # Normal heating mode
-        "ALE": (0xFF, 0x00),  # Lower temperature mode
-        "EVU": (0xFF, 0xFF),  # EVU-OFF (pump disabled)
-    }
-
-    # AC pump (Shelly relay) configuration
-    SHELLY_RELAY_URL = "http://192.168.1.5/relay/0"
-
     def __init__(
         self,
-        dry_run: bool = False,
+        hardware: Optional[PumpHardwareInterface] = None,
         state_file: Optional[str] = None,
+        clock: Optional[Callable[[], int]] = None,
+        dry_run: bool = False,
         shelly_url: Optional[str] = None,
     ):
         """
-        Initialize pump controller with direct I2C control.
+        Initialize pump controller with dependency injection.
 
         Args:
-            dry_run: If True, log commands but don't execute (also enabled by STAGING_MODE env var)
+            hardware: Hardware interface implementation (defaults to auto-detect)
             state_file: Path to state file (default: data/pump_state.json)
-            shelly_url: Shelly relay URL (default: http://192.168.1.5/relay/0)
+            clock: Time source for testing (defaults to time.time)
+            dry_run: DEPRECATED - use hardware=MockHardwareInterface() instead
+            shelly_url: DEPRECATED - configure hardware interface directly
         """
-        # Determine operating mode from environment
-        staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
-        test_mode = os.getenv("TEST_MODE", "false").lower() in ("true", "1", "yes")
+        # Auto-detect hardware if not provided (backward compatibility)
+        if hardware is None:
+            hardware = self._create_default_hardware(dry_run, shelly_url)
 
-        # dry_run: Don't execute hardware commands (staging or test mode)
-        # test_mode: Also skip delays for fast unit tests
-        self.dry_run = dry_run or not I2C_AVAILABLE or staging_mode or test_mode
-        self.test_mode = test_mode
-        self.staging_mode = staging_mode
+        self.hardware = hardware
         self.state_file = Path(state_file or "data/pump_state.json")
-        self.shelly_url = shelly_url or self.SHELLY_RELAY_URL
+        self.clock = clock or (lambda: int(time.time()))
 
-        # EVU cycle state tracking
+        # Check if using mock hardware (for test mode detection)
+        self.test_mode = isinstance(hardware, MockHardwareInterface) and os.getenv(
+            "TEST_MODE", "false"
+        ).lower() in ("true", "1", "yes")
+
+        # EVU cycle state tracking (pure business logic)
         self.on_time_accumulated = 0  # Total ON time since last EVU cycle (seconds)
         self.last_command: Optional[str] = None
         self.last_command_time: Optional[int] = None
@@ -100,16 +83,36 @@ class PumpController:
         self._load_state()
 
         # Log initialization mode
-        if self.staging_mode:
-            logger.info(
-                "PumpController initialized in STAGING mode (no hardware control, realistic timing)"
-            )
-        elif self.test_mode:
-            logger.info("PumpController initialized in TEST mode (no hardware, no delays)")
-        elif self.dry_run:
-            logger.info("PumpController initialized in DRY-RUN mode")
-        else:
-            logger.info("PumpController initialized in PRODUCTION mode with I2C direct control")
+        logger.info(f"PumpController initialized with {type(hardware).__name__}")
+
+    def _create_default_hardware(
+        self, dry_run: bool = False, shelly_url: Optional[str] = None
+    ) -> PumpHardwareInterface:
+        """
+        Create default hardware interface based on environment.
+
+        Args:
+            dry_run: If True, use mock hardware
+            shelly_url: Optional Shelly relay URL (deprecated)
+
+        Returns:
+            Hardware interface implementation
+        """
+        # Check for test/staging mode
+        staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
+        test_mode = os.getenv("TEST_MODE", "false").lower() in ("true", "1", "yes")
+
+        if dry_run or test_mode or staging_mode:
+            logger.info("Using mock hardware interface (test/staging/dry-run mode)")
+            return MockHardwareInterface()
+
+        # Try real hardware
+        try:
+            logger.info("Using combined I2C + Shelly hardware interface")
+            return CombinedHardwareInterface(relay_url=shelly_url)
+        except Exception as e:
+            logger.warning(f"Hardware initialization failed, using mock: {e}")
+            return MockHardwareInterface()
 
     def _load_state(self):
         """Load EVU cycle state from file."""
@@ -173,7 +176,7 @@ class PumpController:
             True if EVU cycle should be performed
         """
         if current_time is None:
-            current_time = int(time.time())
+            current_time = self.clock()
 
         # Update accumulated ON time
         self._update_on_time(current_time)
@@ -186,60 +189,6 @@ class PumpController:
             return True
 
         return False
-
-    def _control_ac_pump(self, turn_on: bool) -> bool:
-        """
-        Control AC pump via Shelly relay.
-
-        Args:
-            turn_on: True to turn on, False to turn off
-
-        Returns:
-            True if successful
-        """
-        action = "on" if turn_on else "off"
-        url = f"{self.shelly_url}?turn={action}"
-
-        if self.dry_run:
-            logger.info(f"DRY-RUN: Would control AC pump: {action}")
-            return True
-
-        try:
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                logger.info(f"AC pump turned {action}")
-                return True
-            else:
-                logger.error(f"Failed to control AC pump: HTTP {response.status_code}")
-                return False
-        except Exception as e:
-            logger.error(f"Failed to control AC pump: {e}")
-            return False
-
-    def _write_i2c(self, reg1_value: int, reg2_value: int) -> bool:
-        """
-        Write values to I2C pump controller.
-
-        Args:
-            reg1_value: Value for register 0x01
-            reg2_value: Value for register 0x02
-
-        Returns:
-            True if successful
-        """
-        if self.dry_run:
-            logger.info(f"DRY-RUN: Would write I2C: 0x{reg1_value:02X}, 0x{reg2_value:02X}")
-            return True
-
-        try:
-            with SMBus(self.I2C_BUS) as bus:
-                bus.write_byte_data(self.I2C_ADDRESS, self.I2C_REG1, reg1_value)
-                bus.write_byte_data(self.I2C_ADDRESS, self.I2C_REG2, reg2_value)
-            logger.debug(f"I2C write successful: 0x{reg1_value:02X}, 0x{reg2_value:02X}")
-            return True
-        except Exception as e:
-            logger.error(f"I2C write failed: {e}")
-            return False
 
     def _execute_raw_command(self, command: str) -> dict:
         """
@@ -254,26 +203,20 @@ class PumpController:
         """
         result = {"success": False, "output": "", "error": None}
 
-        if command not in self.I2C_COMMANDS:
+        if command not in self.VALID_COMMANDS:
             result["error"] = f"Unknown command: {command}"
             return result
 
-        # Get I2C values for command
-        reg1, reg2 = self.I2C_COMMANDS[command]
+        # Execute via hardware interface
+        success = self.hardware.write_pump_command(command)
 
-        if self.dry_run:
-            result["success"] = True
-            result["output"] = f"DRY-RUN: {command} (0x{reg1:02X}, 0x{reg2:02X})"
-            return result
-
-        # Write to I2C
-        if not self._write_i2c(reg1, reg2):
-            result["error"] = "I2C write failed"
+        if not success:
+            result["error"] = "Hardware command failed"
             return result
 
         result["success"] = True
         result["output"] = f"{command} executed successfully"
-        logger.info(f"Pump command {command} executed via I2C")
+        logger.info(f"Pump command {command} executed via hardware interface")
 
         return result
 
@@ -329,7 +272,7 @@ class PumpController:
             Dict with cycle results
         """
         if current_time is None:
-            current_time = int(time.time())
+            current_time = self.clock()
 
         logger.info(
             f"Performing EVU cycle: ON time was {self.on_time_accumulated}s "
@@ -450,41 +393,30 @@ class PumpController:
         if command in ("ON", "ALE") and self.last_command == "EVU":
             # Going from EVU to ON/ALE: turn on AC pump
             logger.info(f"Transitioning from EVU to {command}: turning on AC pump")
-            self._control_ac_pump(turn_on=True)
+            self.hardware.control_circulation_pump(turn_on=True)
         elif command == "EVU" and self.last_command in ("ON", "ALE"):
             # Going from ON/ALE to EVU: turn off AC pump (after executing EVU command)
-            pass  # Will turn off after I2C write
-
-        if self.dry_run:
-            logger.info(f"DRY-RUN: Would execute pump command: {command}")
-            result["success"] = True
-            result["output"] = f"DRY-RUN: Command {command} logged but not executed"
-            # Update state tracking even in dry-run
-            self.last_command = command
-            self.last_command_time = actual_time
-            self._save_state()
-            return result
+            pass  # Will turn off after hardware write
 
         try:
             logger.info(f"Executing pump command: {command} (delay: {delay}s)")
 
-            # Get I2C values for command
-            reg1, reg2 = self.I2C_COMMANDS[command]
+            # Execute via hardware interface
+            success = self.hardware.write_pump_command(command)
 
-            # Execute via I2C
-            if not self._write_i2c(reg1, reg2):
-                result["error"] = "I2C write failed"
-                logger.error(f"Pump command '{command}' failed: I2C write error")
+            if not success:
+                result["error"] = "Hardware command failed"
+                logger.error(f"Pump command '{command}' failed: hardware error")
                 return result
 
             result["success"] = True
-            result["output"] = f"Pump command {command} executed via I2C"
+            result["output"] = f"Pump command {command} executed via hardware interface"
             logger.info(f"Pump command '{command}' executed successfully")
 
-            # Handle AC pump for EVU transition (turn off after successful I2C write)
+            # Handle AC pump for EVU transition (turn off after successful write)
             if command == "EVU" and self.last_command in ("ON", "ALE"):
                 logger.info("Transitioning to EVU: turning off AC pump")
-                self._control_ac_pump(turn_on=False)
+                self.hardware.control_circulation_pump(turn_on=False)
 
             # Update state tracking on success
             self.last_command = command
@@ -504,15 +436,7 @@ class PumpController:
         Returns:
             Dict with pump status or None if unavailable
         """
-        if self.dry_run:
-            return {
-                "mode": "DRY-RUN",
-                "status": "simulated",
-            }
-
-        # TODO: Implement status reading if mlp_control.sh supports it
-        logger.debug("Pump status reading not yet implemented")
-        return None
+        return self.hardware.get_pump_status()
 
     def validate_command(self, command: str) -> bool:
         """

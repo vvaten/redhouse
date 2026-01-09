@@ -4,6 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+from src.control.hardware_implementations import MockHardwareInterface
 from src.control.pump_controller import MultiLoadController, PumpController
 
 
@@ -11,10 +12,9 @@ class TestPumpController(unittest.TestCase):
     """Test cases for PumpController class."""
 
     def test_initialization(self):
-        """Test controller initialization."""
+        """Test controller initialization with mock hardware."""
         controller = PumpController(dry_run=True)
-        self.assertTrue(controller.dry_run)
-        self.assertEqual(controller.shelly_url, "http://192.168.1.5/relay/0")
+        self.assertIsInstance(controller.hardware, MockHardwareInterface)
 
     def test_valid_commands(self):
         """Test valid command validation."""
@@ -25,24 +25,25 @@ class TestPumpController(unittest.TestCase):
         self.assertFalse(controller.validate_command("INVALID"))
 
     def test_execute_command_dry_run(self):
-        """Test command execution in dry-run mode."""
-        controller = PumpController(dry_run=True)
+        """Test command execution with mock hardware."""
+        mock_hw = MockHardwareInterface()
+        controller = PumpController(hardware=mock_hw)
         result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
 
         self.assertTrue(result["success"])
         self.assertEqual(result["command"], "ON")
         self.assertEqual(result["delay_seconds"], 10)
-        self.assertIn("DRY-RUN", result["output"])
+        # Check that command was recorded in mock hardware
+        self.assertIn("ON", mock_hw.commands_executed)
 
     @patch.dict(os.environ, {"STAGING_MODE": "true"})
     def test_staging_mode_from_env(self):
-        """Test that STAGING_MODE environment variable enables dry-run."""
+        """Test that STAGING_MODE environment variable uses mock hardware."""
         controller = PumpController(dry_run=False)
-        self.assertTrue(controller.dry_run)  # Should be enabled by STAGING_MODE
+        self.assertIsInstance(controller.hardware, MockHardwareInterface)
 
         result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
         self.assertTrue(result["success"])
-        self.assertIn("DRY-RUN", result["output"])
 
     def test_execute_command_invalid(self):
         """Test that invalid commands raise ValueError."""
@@ -58,41 +59,31 @@ class TestPumpController(unittest.TestCase):
         # 2000 second delay (more than MAX_EXECUTION_DELAY)
         result = controller.execute_command("ON", scheduled_time=1000, actual_time=3000)
 
-        self.assertTrue(result["success"])  # Still executes in dry-run
+        self.assertTrue(result["success"])  # Still executes with mock hardware
         self.assertEqual(result["delay_seconds"], 2000)
 
-    @patch("src.control.pump_controller.I2C_AVAILABLE", True)
-    def test_execute_command_i2c_success(self):
-        """Test successful I2C execution (mocked)."""
-        controller = PumpController(dry_run=False)
+    def test_execute_command_hardware_success(self):
+        """Test successful hardware execution."""
+        mock_hw = MockHardwareInterface()
+        mock_hw.command_success = True
+        controller = PumpController(hardware=mock_hw)
 
-        # Mock the I2C write method to succeed
-        with patch.object(controller, "_write_i2c", return_value=True):
-            result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
+        result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
 
-            self.assertTrue(result["success"])
-            # In staging mode (dry_run), expect DRY-RUN message; otherwise expect I2C message
-            if controller.dry_run:
-                self.assertIn("DRY-RUN", result["output"])
-            else:
-                self.assertIn("I2C", result["output"])
+        self.assertTrue(result["success"])
+        self.assertIn("hardware interface", result["output"])
+        self.assertIn("ON", mock_hw.commands_executed)
 
-    @patch("src.control.pump_controller.I2C_AVAILABLE", True)
-    def test_execute_command_i2c_failure(self):
-        """Test failed I2C execution (mocked)."""
-        controller = PumpController(dry_run=False)
+    def test_execute_command_hardware_failure(self):
+        """Test failed hardware execution."""
+        mock_hw = MockHardwareInterface()
+        mock_hw.command_success = False
+        controller = PumpController(hardware=mock_hw)
 
-        # Mock the I2C write method to fail
-        with patch.object(controller, "_write_i2c", return_value=False):
-            result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
+        result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
 
-            # In staging mode (dry_run), commands always succeed; otherwise expect failure
-            if controller.dry_run:
-                self.assertTrue(result["success"])
-                self.assertIn("DRY-RUN", result["output"])
-            else:
-                self.assertFalse(result["success"])
-                self.assertIn("I2C write failed", result["error"])
+        self.assertFalse(result["success"])
+        self.assertIn("Hardware command failed", result["error"])
 
 
 class TestMultiLoadController(unittest.TestCase):
