@@ -130,13 +130,6 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
             latest_timestamp = await write_windpower_to_influx(processed)
             success = latest_timestamp is not None
 
-        elif data_source == "energy_meter":
-            logger.error(
-                "Energy meter logs require previous measurement context "
-                "and cannot be replayed automatically"
-            )
-            return False
-
         elif data_source == "temperature":
             from src.data_collection.temperature import write_temperatures_to_influx
 

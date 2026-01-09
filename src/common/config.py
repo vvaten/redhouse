@@ -115,10 +115,6 @@ class Config:
     def influxdb_bucket_windpower(self) -> str:
         return self.get("INFLUXDB_BUCKET_WINDPOWER", "windpower")
 
-    @property
-    def influxdb_bucket_energy(self) -> str:
-        return self.get("INFLUXDB_BUCKET_ENERGY", "emeters")
-
     # Weather configuration
     @property
     def weather_latlon(self) -> str:
