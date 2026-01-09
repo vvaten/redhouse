@@ -151,6 +151,67 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
         duration = (groups[0]["last"].timestamp() - groups[0]["first"].timestamp()) / 3600
         self.assertEqual(duration, 3)  # 4 hours = 3 hour intervals
 
+    def test_optimize_evu_off_groups_extend_backward(self):
+        """Test extending a group backward."""
+        # Create non-consecutive hours that will extend backward
+        timestamps = pd.date_range(
+            start="2025-01-15 10:00:00", periods=24, freq="H", tz="Europe/Helsinki"
+        )
+
+        # Hours in reverse order: 13, 12, 11 (will extend backward)
+        selected_timestamps = [timestamps[13], timestamps[12], timestamps[11]]
+
+        df = pd.DataFrame({"heating_prio": [20.0, 21.0, 22.0]}, index=selected_timestamps)
+
+        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+
+        # Should create one group extending backward
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]["first"], timestamps[11])
+        self.assertEqual(groups[0]["last"], timestamps[13])
+
+    def test_optimize_evu_off_groups_reject_when_max_reached(self):
+        """Test that hours are rejected when max continuous hours is reached."""
+        # Create 5 consecutive hours with max=4
+        timestamps = pd.date_range(
+            start="2025-01-15 10:00:00", periods=5, freq="H", tz="Europe/Helsinki"
+        )
+
+        # Add them in order to fill up a group, then try to extend past max
+        df = pd.DataFrame({"heating_prio": [20.0] * 5}, index=timestamps)
+
+        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+
+        # Should have limited duration
+        for group in groups:
+            duration = (group["last"].timestamp() - group["first"].timestamp()) / 3600
+            self.assertLessEqual(duration, 3)  # Max 4 hours means 3-hour duration
+
+    def test_optimize_evu_off_groups_no_merge_when_exceeds_max(self):
+        """Test that groups are not merged when result would exceed max."""
+        # Create two groups of 3 hours each with max=4
+        timestamps = pd.date_range(
+            start="2025-01-15 10:00:00", periods=24, freq="H", tz="Europe/Helsinki"
+        )
+
+        # Group 1: 10, 11, 12 (3 hours)
+        # Gap at 13
+        # Group 2: 14, 15 (2 hours)
+        selected_timestamps = [
+            timestamps[0],
+            timestamps[1],
+            timestamps[2],
+            timestamps[4],
+            timestamps[5],
+        ]
+
+        df = pd.DataFrame({"heating_prio": [20.0] * 5}, index=selected_timestamps)
+
+        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+
+        # Should have 2 groups due to gap
+        self.assertEqual(len(groups), 2)
+
 
 class TestScheduleGeneration(unittest.TestCase):
     """Test schedule generation logic."""
@@ -492,6 +553,503 @@ class TestInfluxDBSaving(unittest.TestCase):
             self.mock_influx.write_api.write.reset_mock()
             self.generator.save_program_influxdb(program, data_type=data_type)
             self.mock_influx.write_api.write.assert_called_once()
+
+    def test_save_program_influxdb_error_handling(self):
+        """Test error handling when InfluxDB write fails."""
+        program = {
+            "version": "2.0.0",
+            "program_date": "2025-01-15",
+            "generator_version": "redhouse-2.0.0",
+            "input_parameters": {"avg_temperature_c": -5.2},
+            "planning_results": {
+                "total_heating_hours_needed": 9.0,
+                "total_heating_intervals_planned": 1,
+                "total_evu_off_intervals": 0,
+                "estimated_total_cost_eur": 1.50,
+                "cheapest_interval_price": 3.0,
+                "most_expensive_interval_price": 18.0,
+                "average_heating_price": 9.5,
+            },
+            "loads": {
+                "geothermal_pump": {
+                    "power_kw": 3.0,
+                    "schedule": [
+                        {
+                            "timestamp": 1736895600,
+                            "command": "ON",
+                            "reason": "cheap_electricity",
+                            "duration_minutes": 60,
+                        }
+                    ],
+                }
+            },
+        }
+
+        # Make write raise an exception
+        self.mock_influx.write_api.write.side_effect = Exception("Connection failed")
+
+        # Should raise the exception
+        with self.assertRaises(Exception) as context:
+            self.generator.save_program_influxdb(program, data_type="plan")
+        self.assertIn("Connection failed", str(context.exception))
+
+
+class TestGenerateDailyProgram(unittest.TestCase):
+    """Test generate_daily_program method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mock_config = MagicMock()
+        self.mock_data_fetcher = MagicMock()
+        self.mock_heating_curve = MagicMock()
+        self.mock_optimizer = MagicMock()
+
+        with (
+            patch("src.control.program_generator.get_config", return_value=self.mock_config),
+            patch("src.control.program_generator.InfluxClient"),
+            patch(
+                "src.control.program_generator.HeatingDataFetcher",
+                return_value=self.mock_data_fetcher,
+            ),
+            patch(
+                "src.control.program_generator.HeatingCurve", return_value=self.mock_heating_curve
+            ),
+            patch(
+                "src.control.program_generator.HeatingOptimizer",
+                return_value=self.mock_optimizer,
+            ),
+        ):
+            self.generator = HeatingProgramGenerator()
+
+    def test_generate_daily_program_empty_data(self):
+        """Test error handling when no data is available."""
+        # Mock empty DataFrame
+        self.mock_data_fetcher.fetch_heating_data.return_value = pd.DataFrame()
+
+        with self.assertRaises(ValueError) as context:
+            self.generator.generate_daily_program(date_offset=1)
+
+        self.assertIn("No data available", str(context.exception))
+
+    def test_generate_daily_program_no_priority_data(self):
+        """Test error handling when priority data is empty."""
+        # Mock data fetcher to return data
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=48, freq="H", tz="Europe/Helsinki"
+        )
+        df = pd.DataFrame(
+            {
+                "price_total": [10.0] * 48,
+                "solar_yield_avg_prediction": [0.5] * 48,
+                "Air temperature": [-5.0] * 48,
+            },
+            index=timestamps,
+        )
+
+        self.mock_data_fetcher.fetch_heating_data.return_value = df
+        self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
+        self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
+        self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
+
+        # Mock optimizer to return priorities but filter returns empty
+        priorities_df = pd.DataFrame(
+            {"heating_prio": [5.0] * 48, "base_load": [1.0] * 48}, index=timestamps
+        )
+        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
+        self.mock_optimizer.filter_day_priorities.return_value = pd.DataFrame()
+
+        with self.assertRaises(ValueError) as context:
+            self.generator.generate_daily_program(date_offset=1)
+
+        self.assertIn("No priority data available", str(context.exception))
+
+    def test_generate_daily_program_success(self):
+        """Test successful program generation."""
+        # Mock data fetcher
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=48, freq="H", tz="Europe/Helsinki"
+        )
+        df = pd.DataFrame(
+            {
+                "price_total": [10.0] * 48,
+                "solar_yield_avg_prediction": [0.5] * 48,
+                "Air temperature": [-5.0] * 48,
+                "price_sell": [5.0] * 48,
+            },
+            index=timestamps,
+        )
+
+        self.mock_data_fetcher.fetch_heating_data.return_value = df
+        self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
+        self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
+        self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
+
+        # Mock optimizer
+        priorities_df = pd.DataFrame(
+            {
+                "heating_prio": [5.0] * 48,
+                "base_load": [1.0] * 48,
+                "solar_yield_avg_prediction": [0.5] * 48,
+                "price_total": [10.0] * 48,
+            },
+            index=timestamps,
+        )
+        day_priorities = priorities_df[24:48]
+
+        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
+        self.mock_optimizer.filter_day_priorities.return_value = day_priorities
+        self.mock_optimizer.select_cheapest_hours.return_value = day_priorities[:8]
+        self.mock_optimizer.base_load_kw = 1.0
+        self.mock_optimizer.heating_load_kw = 3.0
+
+        # Generate program
+        program = self.generator.generate_daily_program(date_offset=1, simulation_mode=False)
+
+        # Verify structure
+        self.assertIn("version", program)
+        self.assertIn("program_date", program)
+        self.assertIn("input_parameters", program)
+        self.assertIn("planning_results", program)
+        self.assertIn("loads", program)
+        self.assertIn("execution_status", program)
+
+        # Verify simulation data is None (not simulation mode)
+        self.assertIsNone(program["simulation_data"])
+
+    def test_generate_daily_program_simulation_mode(self):
+        """Test program generation in simulation mode."""
+        # Mock data fetcher
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=48, freq="H", tz="Europe/Helsinki"
+        )
+        df = pd.DataFrame(
+            {
+                "price_total": [10.0] * 48,
+                "solar_yield_avg_prediction": [0.5] * 48,
+                "Air temperature": [-5.0] * 48,
+                "price_sell": [5.0] * 48,
+            },
+            index=timestamps,
+        )
+
+        self.mock_data_fetcher.fetch_heating_data.return_value = df
+        self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
+        self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
+        self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
+
+        # Mock optimizer
+        priorities_df = pd.DataFrame(
+            {
+                "heating_prio": [5.0] * 48,
+                "base_load": [1.0] * 48,
+                "solar_yield_avg_prediction": [0.5] * 48,
+                "price_total": [10.0] * 48,
+            },
+            index=timestamps,
+        )
+        day_priorities = priorities_df[24:48]
+
+        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
+        self.mock_optimizer.filter_day_priorities.return_value = day_priorities
+        self.mock_optimizer.select_cheapest_hours.return_value = day_priorities[:8]
+        self.mock_optimizer.base_load_kw = 1.0
+        self.mock_optimizer.heating_load_kw = 3.0
+
+        # Generate program in simulation mode
+        program = self.generator.generate_daily_program(date_offset=1, simulation_mode=True)
+
+        # Verify simulation data is present
+        self.assertIsNotNone(program["simulation_data"])
+        self.assertEqual(program["simulation_data"]["mode"], "live")
+
+    def test_generate_daily_program_with_base_date(self):
+        """Test program generation with historical base date."""
+        # Mock data fetcher
+        timestamps = pd.date_range(
+            start="2024-12-01 00:00:00", periods=72, freq="H", tz="Europe/Helsinki"
+        )
+        df = pd.DataFrame(
+            {
+                "price_total": [10.0] * 72,
+                "solar_yield_avg_prediction": [0.5] * 72,
+                "Air temperature": [-5.0] * 72,
+                "price_sell": [5.0] * 72,
+            },
+            index=timestamps,
+        )
+
+        self.mock_data_fetcher.fetch_heating_data.return_value = df
+        self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
+        self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
+        self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
+
+        # Mock optimizer
+        priorities_df = pd.DataFrame(
+            {
+                "heating_prio": [5.0] * 72,
+                "base_load": [1.0] * 72,
+                "solar_yield_avg_prediction": [0.5] * 72,
+                "price_total": [10.0] * 72,
+            },
+            index=timestamps,
+        )
+        day_priorities = priorities_df[24:48]
+
+        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
+        self.mock_optimizer.filter_day_priorities.return_value = day_priorities
+        self.mock_optimizer.select_cheapest_hours.return_value = day_priorities[:8]
+        self.mock_optimizer.base_load_kw = 1.0
+        self.mock_optimizer.heating_load_kw = 3.0
+
+        # Generate program with base date
+        program = self.generator.generate_daily_program(
+            date_offset=1, simulation_mode=True, base_date="2024-12-01"
+        )
+
+        # Verify program date is correct
+        self.assertEqual(program["program_date"], "2024-12-02")
+
+        # Verify simulation data indicates historical mode
+        self.assertIsNotNone(program["simulation_data"])
+        self.assertEqual(program["simulation_data"]["mode"], "historical")
+        self.assertEqual(program["simulation_data"]["base_date"], "2024-12-01")
+
+
+class TestGenerateEvuOffPeriods(unittest.TestCase):
+    """Test _generate_evu_off_periods method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer") as mock_optimizer_class,
+        ):
+            self.mock_optimizer = MagicMock()
+            mock_optimizer_class.return_value = self.mock_optimizer
+            self.generator = HeatingProgramGenerator()
+            self.generator.optimizer = self.mock_optimizer
+
+    def test_generate_evu_off_periods_no_room(self):
+        """Test when heating all day, no EVU-OFF periods."""
+        # Hours to heat = 22, so max_evu_off = 24 - 22 - 2 = 0
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=24, freq="H", tz="Europe/Helsinki"
+        )
+        df = pd.DataFrame({"price_total": [10.0] * 24}, index=timestamps)
+        priorities_df = pd.DataFrame({"heating_prio": [10.0] * 24}, index=timestamps)
+
+        self.mock_optimizer.filter_day_priorities.return_value = priorities_df
+
+        result = self.generator._generate_evu_off_periods(df, priorities_df, 22.0, 0)
+
+        self.assertEqual(result, [])
+
+    def test_generate_evu_off_periods_no_expensive_hours(self):
+        """Test when no hours are expensive enough."""
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=24, freq="H", tz="Europe/Helsinki"
+        )
+        df = pd.DataFrame({"price_total": [5.0] * 24}, index=timestamps)
+        priorities_df = pd.DataFrame({"heating_prio": [5.0] * 24}, index=timestamps)
+
+        self.mock_optimizer.filter_day_priorities.return_value = priorities_df
+
+        result = self.generator._generate_evu_off_periods(df, priorities_df, 8.0, 0)
+
+        self.assertEqual(result, [])
+
+    def test_generate_evu_off_periods_with_expensive_hours(self):
+        """Test EVU-OFF period generation with expensive hours."""
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=24, freq="H", tz="Europe/Helsinki"
+        )
+
+        # Make hours 12-15 expensive (above threshold of 15.0)
+        prices = [5.0] * 12 + [20.0] * 4 + [5.0] * 8
+        priorities_df = pd.DataFrame({"heating_prio": prices}, index=timestamps)
+
+        self.mock_optimizer.filter_day_priorities.return_value = priorities_df
+
+        # Mock _optimize_evu_off_groups to return a simple group
+        groups = [{"first": timestamps[12], "last": timestamps[15]}]
+        with patch.object(self.generator, "_optimize_evu_off_groups", return_value=groups):
+            result = self.generator._generate_evu_off_periods(
+                pd.DataFrame(index=timestamps), priorities_df, 8.0, 0
+            )
+
+        # Should return one EVU-OFF period
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["group_id"], 1)
+        self.assertIn("start", result[0])
+        self.assertIn("stop", result[0])
+
+
+class TestGenerateLoadSchedules(unittest.TestCase):
+    """Test _generate_load_schedules method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer"),
+        ):
+            self.generator = HeatingProgramGenerator()
+
+    def test_generate_load_schedules_includes_disabled_loads(self):
+        """Test that disabled loads are included with empty schedules."""
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=4, freq="H", tz="Europe/Helsinki"
+        )
+
+        selected_hours = pd.DataFrame({"heating_prio": [3.0, 3.5, 4.0, 5.0]}, index=timestamps)
+
+        day_priorities = pd.DataFrame(
+            {
+                "price_total": [3.0, 3.5, 4.0, 5.0],
+                "solar_yield_avg_prediction": [0.0] * 4,
+                "heating_prio": [3.0, 3.5, 4.0, 5.0],
+            },
+            index=timestamps,
+        )
+
+        evu_off_periods = []
+        program_date = datetime.datetime(2025, 1, 15)
+
+        result = self.generator._generate_load_schedules(
+            selected_hours, evu_off_periods, day_priorities, program_date
+        )
+
+        # Should have geothermal pump (enabled) and disabled loads
+        self.assertIn("geothermal_pump", result)
+        self.assertIn("garage_heater", result)
+        self.assertIn("ev_charger", result)
+
+        # Disabled loads should have zero intervals
+        self.assertEqual(result["garage_heater"]["total_intervals_on"], 0)
+        self.assertEqual(result["garage_heater"]["total_hours_on"], 0.0)
+        self.assertEqual(result["garage_heater"]["estimated_cost_eur"], 0.0)
+        self.assertEqual(result["garage_heater"]["schedule"], [])
+
+
+class TestALETransitionLogic(unittest.TestCase):
+    """Test ALE (auto mode) transition logic in schedule generation."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer"),
+        ):
+            self.generator = HeatingProgramGenerator()
+
+    def test_ale_added_after_on_period(self):
+        """Test that ALE is added after ON period."""
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=2, freq="H", tz="Europe/Helsinki"
+        )
+
+        selected_hours = pd.DataFrame({"heating_prio": [3.0, 4.0]}, index=timestamps)
+
+        day_priorities = pd.DataFrame(
+            {
+                "price_total": [3.0, 4.0],
+                "solar_yield_avg_prediction": [0.0, 0.0],
+                "heating_prio": [3.0, 4.0],
+            },
+            index=timestamps,
+        )
+
+        evu_off_periods = []
+        program_date = datetime.datetime(2025, 1, 15)
+
+        result = self.generator._generate_geothermal_pump_schedule(
+            selected_hours, evu_off_periods, day_priorities, program_date
+        )
+
+        # Find ALE commands
+        ale_commands = [e for e in result["schedule"] if e["command"] == "ALE"]
+
+        # Should have ALE commands after ON periods
+        self.assertGreater(len(ale_commands), 0)
+
+        # Verify ALE reason
+        for ale in ale_commands:
+            self.assertIn("reason", ale)
+            self.assertIn("heating_complete", ale["reason"])
+
+    def test_no_ale_when_next_command_immediate(self):
+        """Test that ALE is skipped when next command starts immediately."""
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=3, freq="H", tz="Europe/Helsinki"
+        )
+
+        # Create consecutive heating hours
+        selected_hours = pd.DataFrame({"heating_prio": [3.0, 3.1, 3.2]}, index=timestamps)
+
+        day_priorities = pd.DataFrame(
+            {
+                "price_total": [3.0, 3.1, 3.2],
+                "solar_yield_avg_prediction": [0.0] * 3,
+                "heating_prio": [3.0, 3.1, 3.2],
+            },
+            index=timestamps,
+        )
+
+        # Add EVU period that starts immediately after first ON
+        evu_start = int(timestamps[1].timestamp())
+        evu_off_periods = [{"group_id": 1, "start": evu_start, "stop": evu_start + 3600}]
+
+        result = self.generator._generate_geothermal_pump_schedule(
+            selected_hours, evu_off_periods, day_priorities, datetime.datetime(2025, 1, 15)
+        )
+
+        # Verify schedule is sorted
+        prev_ts = 0
+        for entry in result["schedule"]:
+            self.assertGreaterEqual(entry["timestamp"], prev_ts)
+            prev_ts = entry["timestamp"]
+
+
+class TestPlanningResultsEdgeCases(unittest.TestCase):
+    """Test edge cases in planning results calculation."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        with (
+            patch("src.control.program_generator.get_config"),
+            patch("src.control.program_generator.InfluxClient"),
+            patch("src.control.program_generator.HeatingDataFetcher"),
+            patch("src.control.program_generator.HeatingCurve"),
+            patch("src.control.program_generator.HeatingOptimizer"),
+        ):
+            self.generator = HeatingProgramGenerator()
+
+    def test_calculate_planning_results_empty_selected_hours(self):
+        """Test planning results with empty selected hours."""
+        loads_schedules = {
+            "geothermal_pump": {
+                "total_intervals_on": 0,
+                "estimated_cost_eur": 0.0,
+                "schedule": [],
+            }
+        }
+
+        selected_hours = pd.DataFrame()
+
+        result = self.generator._calculate_planning_results(loads_schedules, 0.0, selected_hours)
+
+        self.assertEqual(result["cheapest_interval_price"], 0.0)
+        self.assertEqual(result["most_expensive_interval_price"], 0.0)
+        self.assertEqual(result["average_heating_price"], 0.0)
 
 
 if __name__ == "__main__":
