@@ -93,8 +93,13 @@ class TestHeatingProgramExecutorInit:
     """Tests for HeatingProgramExecutor initialization."""
 
     def test_init_default(self, mock_config, mock_influx_client, mock_load_controller):
-        """Test default initialization."""
-        with patch("src.control.program_executor.get_config", return_value=mock_config):
+        """Test default initialization (without STAGING_MODE)."""
+        # Explicitly unset STAGING_MODE for this test to verify default behavior
+        env_patch = {"STAGING_MODE": "false"} if os.getenv("STAGING_MODE") else {}
+        with (
+            patch("src.control.program_executor.get_config", return_value=mock_config),
+            patch.dict(os.environ, env_patch, clear=False),
+        ):
             executor = HeatingProgramExecutor()
 
             assert executor.config == mock_config
@@ -394,28 +399,31 @@ class TestWriteExecutionToInflux:
     def test_write_execution_to_influx_success(
         self, mock_config, mock_influx_client, mock_load_controller
     ):
-        """Test writing execution to InfluxDB."""
-        executor = HeatingProgramExecutor(config=mock_config)
+        """Test writing execution to InfluxDB (without STAGING_MODE)."""
+        # Explicitly unset STAGING_MODE for this test to ensure writes happen
+        env_patch = {"STAGING_MODE": "false"} if os.getenv("STAGING_MODE") else {}
+        with patch.dict(os.environ, env_patch, clear=False):
+            executor = HeatingProgramExecutor(config=mock_config)
 
-        entry = {"command": "ON", "power_kw": 2.2, "reason": "cheap_electricity"}
-        result = {
-            "success": True,
-            "scheduled_time": 1600000000,
-            "actual_time": 1600000010,
-            "delay_seconds": 10,
-        }
+            entry = {"command": "ON", "power_kw": 2.2, "reason": "cheap_electricity"}
+            result = {
+                "success": True,
+                "scheduled_time": 1600000000,
+                "actual_time": 1600000010,
+                "delay_seconds": 10,
+            }
 
-        # Point is imported locally in the method, so patch influxdb_client module
-        with patch("influxdb_client.Point") as mock_point:
-            mock_point_instance = Mock()
-            mock_point_instance.tag.return_value = mock_point_instance
-            mock_point_instance.field.return_value = mock_point_instance
-            mock_point_instance.time.return_value = mock_point_instance
-            mock_point.return_value = mock_point_instance
+            # Point is imported locally in the method, so patch influxdb_client module
+            with patch("influxdb_client.Point") as mock_point:
+                mock_point_instance = Mock()
+                mock_point_instance.tag.return_value = mock_point_instance
+                mock_point_instance.field.return_value = mock_point_instance
+                mock_point_instance.time.return_value = mock_point_instance
+                mock_point.return_value = mock_point_instance
 
-            executor._write_execution_to_influx("2024-01-15", "pump", entry, result)
+                executor._write_execution_to_influx("2024-01-15", "pump", entry, result)
 
-            assert mock_influx_client.return_value.write_api.write.called
+                assert mock_influx_client.return_value.write_api.write.called
 
     def test_write_execution_to_influx_dry_run(
         self, mock_config, mock_influx_client, mock_load_controller
