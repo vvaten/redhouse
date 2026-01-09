@@ -62,11 +62,34 @@ sudo -u pi $VENV_DIR/bin/pip install --upgrade pip
 sudo -u pi $VENV_DIR/bin/pip install -r requirements.txt
 echo "[OK] Dependencies installed"
 
+# Validate .env configuration
+echo ""
+echo "Validating .env configuration..."
+if [ -f "$DEPLOY_DIR/.env" ]; then
+    if sudo -u pi $VENV_DIR/bin/python -u scripts/validate_env.py $DEPLOY_DIR/.env; then
+        echo "[OK] Configuration is valid"
+    else
+        echo "[FAIL] Configuration validation failed - deployment aborted"
+        echo ""
+        echo "Please fix the configuration errors in $DEPLOY_DIR/.env"
+        echo "See .env.example for required configuration keys"
+        exit 1
+    fi
+else
+    echo "[WARNING] No .env file found at $DEPLOY_DIR/.env"
+    echo "Creating from .env.example..."
+    cp $DEPLOY_DIR/.env.example $DEPLOY_DIR/.env
+    chown pi:pi $DEPLOY_DIR/.env
+    echo ""
+    echo "[ACTION REQUIRED] Please edit $DEPLOY_DIR/.env with your configuration"
+    echo "Then run this script again"
+    exit 1
+fi
+
 # Run tests (unit tests only, skip integration tests)
 echo ""
 echo "Running unit tests..."
-sudo -u pi $VENV_DIR/bin/pytest tests/unit/ -v --tb=short
-if [ $? -eq 0 ]; then
+if sudo -u pi $VENV_DIR/bin/pytest tests/unit/ -v --tb=short; then
     echo "[OK] All tests passed"
 else
     echo "[FAIL] Tests failed - deployment aborted"

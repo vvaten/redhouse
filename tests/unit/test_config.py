@@ -35,14 +35,26 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.influxdb_token, "test-token")
             self.assertEqual(config.influxdb_org, "test-org")
 
-    def test_config_default_values(self):
-        """Test that config provides sensible defaults."""
+    def test_config_required_values(self):
+        """Test that critical config values are required (no defaults)."""
         # Create config without loading .env file
         with patch("src.common.config.load_dotenv"):
             with patch.dict(os.environ, {}, clear=True):
                 config = Config()
-                self.assertEqual(config.influxdb_url, "http://localhost:8086")
-                self.assertEqual(config.influxdb_org, "area51")
+                # Critical InfluxDB config must raise ValueError when missing
+                with self.assertRaises(ValueError) as ctx:
+                    _ = config.influxdb_url
+                self.assertIn("INFLUXDB_URL", str(ctx.exception))
+
+                with self.assertRaises(ValueError) as ctx:
+                    _ = config.influxdb_token
+                self.assertIn("INFLUXDB_TOKEN", str(ctx.exception))
+
+                with self.assertRaises(ValueError) as ctx:
+                    _ = config.influxdb_org
+                self.assertIn("INFLUXDB_ORG", str(ctx.exception))
+
+                # Non-critical config can have defaults
                 self.assertEqual(config.log_level, "INFO")
 
     def test_config_bucket_properties(self):

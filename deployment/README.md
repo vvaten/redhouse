@@ -52,6 +52,18 @@ sudo /opt/redhouse/deployment/deploy.sh
 sudo nano /opt/redhouse/.env
 ```
 
+**IMPORTANT**: Before proceeding, validate your .env configuration:
+```bash
+# Validate .env file
+python -u scripts/validate_env.py /opt/redhouse/.env
+```
+
+This will check for:
+- Missing required configuration keys
+- Placeholder values that need to be replaced
+- Proper '_staging' suffix on buckets when STAGING_MODE=true
+- Other configuration issues
+
 Add or update these lines:
 ```bash
 # Use staging buckets (temperatures can use production for read-only access)

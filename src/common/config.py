@@ -65,55 +65,104 @@ class Config:
     # InfluxDB configuration
     @property
     def influxdb_url(self) -> str:
-        return self.get("INFLUXDB_URL", "http://localhost:8086")
+        url = self.get("INFLUXDB_URL")
+        if not url:
+            raise ValueError("INFLUXDB_URL is not configured in .env!")
+        return url
 
     @property
     def influxdb_token(self) -> str:
-        return self.get("INFLUXDB_TOKEN", "")
+        token = self.get("INFLUXDB_TOKEN")
+        if not token:
+            raise ValueError("INFLUXDB_TOKEN is not configured in .env!")
+        return token
 
     @property
     def influxdb_org(self) -> str:
-        return self.get("INFLUXDB_ORG", "area51")
+        org = self.get("INFLUXDB_ORG")
+        if not org:
+            raise ValueError("INFLUXDB_ORG is not configured in .env!")
+        return org
 
     @property
     def influxdb_bucket_temperatures(self) -> str:
-        return self.get("INFLUXDB_BUCKET_TEMPERATURES", "temperatures")
+        bucket = self.get("INFLUXDB_BUCKET_TEMPERATURES")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_TEMPERATURES is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_weather(self) -> str:
-        return self.get("INFLUXDB_BUCKET_WEATHER", "weather")
+        bucket = self.get("INFLUXDB_BUCKET_WEATHER")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_WEATHER is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_spotprice(self) -> str:
-        return self.get("INFLUXDB_BUCKET_SPOTPRICE", "spotprice")
+        bucket = self.get("INFLUXDB_BUCKET_SPOTPRICE")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_SPOTPRICE is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_emeters(self) -> str:
-        return self.get("INFLUXDB_BUCKET_EMETERS", "emeters")
+        bucket = self.get("INFLUXDB_BUCKET_EMETERS")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_EMETERS is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_checkwatt(self) -> str:
-        return self.get("INFLUXDB_BUCKET_CHECKWATT", "checkwatt_full_data")
+        bucket = self.get("INFLUXDB_BUCKET_CHECKWATT")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_CHECKWATT is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_shelly_em3_raw(self) -> str:
-        return self.get("INFLUXDB_BUCKET_SHELLY_EM3_RAW", "shelly_em3_emeters_raw")
+        bucket = self.get("INFLUXDB_BUCKET_SHELLY_EM3_RAW")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_SHELLY_EM3_RAW is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_emeters_5min(self) -> str:
-        return self.get("INFLUXDB_BUCKET_EMETERS_5MIN", "emeters_5min")
+        bucket = self.get("INFLUXDB_BUCKET_EMETERS_5MIN")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_EMETERS_5MIN is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_analytics_15min(self) -> str:
-        return self.get("INFLUXDB_BUCKET_ANALYTICS_15MIN", "analytics_15min")
+        bucket = self.get("INFLUXDB_BUCKET_ANALYTICS_15MIN")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_ANALYTICS_15MIN is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_analytics_1hour(self) -> str:
-        return self.get("INFLUXDB_BUCKET_ANALYTICS_1HOUR", "analytics_1hour")
+        bucket = self.get("INFLUXDB_BUCKET_ANALYTICS_1HOUR")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_ANALYTICS_1HOUR is not configured in .env!")
+        return bucket
 
     @property
     def influxdb_bucket_windpower(self) -> str:
-        return self.get("INFLUXDB_BUCKET_WINDPOWER", "windpower")
+        bucket = self.get("INFLUXDB_BUCKET_WINDPOWER")
+        if not bucket:
+            raise ValueError("INFLUXDB_BUCKET_WINDPOWER is not configured in .env!")
+        return bucket
+
+    @property
+    def influxdb_bucket_load_control(self) -> str:
+        bucket = self.get("INFLUXDB_BUCKET_LOAD_CONTROL")
+        if not bucket:
+            raise ValueError(
+                "INFLUXDB_BUCKET_LOAD_CONTROL is not configured! "
+                "Set it in .env to 'load_control_staging' (staging) or 'load_control' (production)"
+            )
+        return bucket
 
     # Weather configuration
     @property

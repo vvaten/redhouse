@@ -334,7 +334,19 @@ class HeatingProgramExecutor:
                 .time(timestamp)
             )
 
-            bucket_name = self.config.get("influxdb_bucket_load_control", "load_control")
+            # Get bucket name - supports both Config object and dict
+            if hasattr(self.config, "influxdb_bucket_load_control"):
+                bucket_name = self.config.influxdb_bucket_load_control
+            else:
+                bucket_name = self.config.get("influxdb_bucket_load_control")
+
+            if not bucket_name:
+                logger.error(
+                    "INFLUXDB_BUCKET_LOAD_CONTROL is not configured! "
+                    "Set it in .env to 'load_control_staging' (staging) or 'load_control' (production)"
+                )
+                raise ValueError("Missing required configuration: INFLUXDB_BUCKET_LOAD_CONTROL")
+
             self.influx.write_api.write(bucket=bucket_name, record=point)
 
             logger.debug(f"Wrote execution to InfluxDB: {load_id} {command}")

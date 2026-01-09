@@ -380,7 +380,7 @@ def write_aggregated_data(
         return True
 
     config = get_config()
-    bucket = config.get("influxdb_bucket_emeters_5min", "emeters_5min")
+    bucket = config.influxdb_bucket_emeters_5min
 
     try:
         success = client.write_point(
