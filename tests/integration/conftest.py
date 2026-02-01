@@ -35,21 +35,24 @@ def influx_client(config):
 
 @pytest.fixture
 def test_timestamp():
-    """Return a consistent test timestamp."""
-    return datetime.datetime(2026, 1, 8, 12, 0, 0, tzinfo=pytz.UTC)
+    """Return a consistent test timestamp (always use current time to avoid retention policy issues)."""
+    now = datetime.datetime.now(pytz.UTC)
+    # Round to nearest hour for consistency
+    return now.replace(minute=0, second=0, microsecond=0)
 
 
 @pytest.fixture
 def cleanup_test_data(influx_client, config):
-    """Cleanup test data after each test."""
-    yield
-    # Delete test data from all test buckets
+    """Cleanup test data before and after each test."""
+    # Cleanup BEFORE test to ensure clean state
     buckets_to_clean = [
         config.influxdb_bucket_checkwatt,
         config.influxdb_bucket_shelly_em3_raw,
         config.influxdb_bucket_emeters_5min,
         config.influxdb_bucket_analytics_15min,
         config.influxdb_bucket_analytics_1hour,
+        config.influxdb_bucket_spotprice,
+        config.influxdb_bucket_temperatures,
     ]
     delete_api = influx_client.client.delete_api()
     start = "2026-01-01T00:00:00Z"
@@ -60,7 +63,22 @@ def cleanup_test_data(influx_client, config):
             delete_api.delete(
                 start=start,
                 stop=stop,
-                predicate='_measurement="checkwatt" OR _measurement="shelly_em3" OR _measurement="energy" OR _measurement="analytics"',
+                predicate='_measurement="checkwatt_v2" OR _measurement="shelly_em3" OR _measurement="energy" OR _measurement="analytics" OR _measurement="spot" OR _measurement="temperatures"',
+                bucket=bucket,
+                org=config.influxdb_org,
+            )
+        except Exception:
+            pass  # Bucket might not exist or have no data
+
+    yield
+
+    # Cleanup AFTER test
+    for bucket in buckets_to_clean:
+        try:
+            delete_api.delete(
+                start=start,
+                stop=stop,
+                predicate='_measurement="checkwatt_v2" OR _measurement="shelly_em3" OR _measurement="energy" OR _measurement="analytics" OR _measurement="spot" OR _measurement="temperatures"',
                 bucket=bucket,
                 org=config.influxdb_org,
             )
