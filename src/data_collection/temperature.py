@@ -56,6 +56,129 @@ def get_temperature_meter_ids() -> list[str]:
         return []
 
 
+def _read_sensor_once(device_path: str, upper_threshold: float) -> Optional[str]:
+    """Read sensor value once and return raw value string if valid.
+
+    Args:
+        device_path: Path to sensor device file
+        upper_threshold: Upper temperature threshold to reject readings
+
+    Returns:
+        Raw temperature value string from sensor, or None if invalid
+    """
+    try:
+        with open(device_path) as f:
+            file_contents = f.read()
+
+        lines = file_contents.split("\n")
+
+        if "YES" in lines[0]:
+            value_str = lines[1][(lines[1].index("=") + 1) :]
+            temp_celsius = float(int(value_str) / 1000.0)
+
+            if temp_celsius > upper_threshold:
+                return None
+
+            return value_str
+
+        return None
+
+    except Exception:
+        return None
+
+
+def _collect_stable_readings(
+    device_path: str, require_identical: int, max_tries: int, upper_threshold: float
+) -> tuple[dict[str, int], int]:
+    """Collect multiple sensor readings until stable values are found.
+
+    Args:
+        device_path: Path to sensor device file
+        require_identical: Number of identical readings required for success
+        max_tries: Maximum number of read attempts
+        upper_threshold: Upper temperature threshold to reject readings
+
+    Returns:
+        Tuple of (readings_dict, tries_count) where readings_dict maps
+        raw value strings to occurrence counts
+    """
+    temperatures: dict[str, int] = {}
+    tries = 0
+
+    while tries < max_tries:
+        tries += 1
+
+        value_str = _read_sensor_once(device_path, upper_threshold)
+        if value_str is not None:
+            if value_str not in temperatures:
+                temperatures[value_str] = 1
+            else:
+                temperatures[value_str] += 1
+
+            if temperatures[value_str] >= require_identical:
+                break
+
+        time.sleep(0.01)
+
+    return temperatures, tries
+
+
+def _calculate_fallback_temperature(
+    temperatures: dict[str, int], backup_identical_readings: int, meter_id: str
+) -> Optional[float]:
+    """Calculate fallback temperature using median of repeated readings.
+
+    Args:
+        temperatures: Dictionary mapping raw value strings to occurrence counts
+        backup_identical_readings: Minimum occurrences required for fallback
+        meter_id: Sensor ID for logging
+
+    Returns:
+        Median temperature in Celsius, or None if no valid fallback
+    """
+    temperatures_backup = []
+    for k, v in temperatures.items():
+        if v >= backup_identical_readings:
+            temperatures_backup.append(float(int(k) / 1000.0))
+
+    if len(temperatures_backup) > 0:
+        temperature = median(temperatures_backup)
+        logger.debug(
+            f"Sensor {meter_id} using median fallback: " f"{temperatures_backup} -> {temperature}"
+        )
+        return temperature
+
+    return None
+
+
+def _validate_temperature_reading(
+    temperature: float, meter_id: str, previous_temps: dict[str, float]
+) -> bool:
+    """Validate temperature reading is within acceptable range.
+
+    Args:
+        temperature: Temperature value to validate
+        meter_id: Sensor ID for logging
+        previous_temps: Dictionary of previous temperature readings
+
+    Returns:
+        True if temperature is valid, False otherwise
+    """
+    # DS18B20 valid range
+    if not (-55 <= temperature <= 125):
+        logger.warning(f"Sensor {meter_id} reading {temperature} out of valid range")
+        return False
+
+    # Suspicious values (common error codes)
+    if temperature == 85 or temperature == 0:
+        prev_temp = previous_temps.get(meter_id)
+        if prev_temp != temperature or prev_temp is None:
+            logger.warning(f"Sensor {meter_id} suspicious reading: {temperature}")
+            return False
+
+    return True
+
+
 def get_temperature(meter_id: str) -> Optional[float]:
     """Read temperature from a single 1-wire sensor with validation.
 
@@ -76,44 +199,18 @@ def get_temperature(meter_id: str) -> Optional[float]:
         logger.warning(f"Device file not found: {device_path}")
         return None
 
-    temperatures: dict[str, int] = {}
-    tries = 0
     tries_max = 20
     upper_threshold = 100
     require_identical_readings = 3
     backup_identical_readings = 2
-    temperature = None
 
     try:
         start_time = time.time()
 
-        # Read temperature until we get consistent readings
-        while tries < tries_max and temperature is None:
-            tries += 1
-
-            with open(device_path) as f:
-                file_contents = f.read()
-
-            lines = file_contents.split("\n")
-
-            if "YES" in lines[0]:
-                value_str = lines[1][(lines[1].index("=") + 1) :]
-                temp_celsius = float(int(value_str) / 1000.0)
-
-                if temp_celsius > upper_threshold:
-                    time.sleep(0.01)
-                    continue
-
-                if value_str not in temperatures:
-                    temperatures[value_str] = 1
-                else:
-                    temperatures[value_str] += 1
-
-                if temperatures[value_str] >= require_identical_readings:
-                    temperature = temp_celsius
-                    break
-
-            time.sleep(0.01)
+        # Collect stable readings
+        temperatures, tries = _collect_stable_readings(
+            device_path, require_identical_readings, tries_max, upper_threshold
+        )
 
         duration = time.time() - start_time
 
@@ -123,40 +220,29 @@ def get_temperature(meter_id: str) -> Optional[float]:
             f"Tries: {tries}. Duration: {duration:.3f}s"
         )
 
-        # Fallback: use median of readings with at least backup_identical_readings
-        if temperature is None:
-            temperatures_backup = []
-            for k, v in temperatures.items():
-                if v >= backup_identical_readings:
-                    temperatures_backup.append(float(int(k) / 1000.0))
+        # Calculate temperature with primary or fallback method
+        temperature = None
+        for value_str, count in temperatures.items():
+            if count >= require_identical_readings:
+                temperature = float(int(value_str) / 1000.0)
+                break
 
-            if len(temperatures_backup) > 0:
-                temperature = median(temperatures_backup)
-                logger.debug(
-                    f"Sensor {meter_id} using median fallback: "
-                    f"{temperatures_backup} -> {temperature}"
-                )
+        if temperature is None:
+            temperature = _calculate_fallback_temperature(
+                temperatures, backup_identical_readings, meter_id
+            )
 
     except Exception as e:
         logger.error(f"Exception reading sensor {meter_id}: {e}")
         return None
 
-    # Validate temperature reading
+    # Validate and return temperature
     if temperature is not None:
-        # DS18B20 valid range
-        if not (-55 <= temperature <= 125):
-            logger.warning(f"Sensor {meter_id} reading {temperature} out of valid range")
+        if _validate_temperature_reading(temperature, meter_id, _previous_temps):
+            _previous_temps[meter_id] = temperature
+            return temperature
+        else:
             return None
-
-        # Suspicious values (common error codes)
-        if temperature == 85 or temperature == 0:
-            prev_temp = _previous_temps.get(meter_id)
-            if prev_temp != temperature or prev_temp is None:
-                logger.warning(f"Sensor {meter_id} suspicious reading: {temperature}")
-                return None
-
-        _previous_temps[meter_id] = temperature
-        return temperature
     else:
         logger.warning(f"Failed to read temperature from sensor: {meter_id}")
         return None
