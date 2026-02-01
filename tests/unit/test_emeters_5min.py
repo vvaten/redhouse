@@ -1,16 +1,17 @@
 """Unit tests for 5-minute energy meter aggregation."""
 
 import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import pytz
 
-from src.aggregation.emeters_5min import (
+from src.aggregation.emeters_5min import Emeters5MinAggregator
+from src.aggregation.emeters_5min_legacy import (
     aggregate_5min_window,
-    fetch_checkwatt_data,
-    fetch_shelly_em3_data,
 )
+from src.common.config import get_config
+from src.common.influx_client import InfluxClient
 
 
 @pytest.fixture
@@ -303,34 +304,6 @@ def test_timestamp_field():
 
     # Time difference should be 3 minutes = 180 seconds
     assert result["ts_diff"] == 180.0
-
-
-@patch("src.aggregation.emeters_5min.InfluxClient")
-def test_fetch_checkwatt_data_empty_result(mock_influx_client):
-    """Test fetching CheckWatt data when no data is available."""
-    mock_client = MagicMock()
-    mock_client.query_api.query.return_value = []
-
-    start_time = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
-    end_time = datetime.datetime(2026, 1, 8, 10, 5, 0, tzinfo=pytz.UTC)
-
-    result = fetch_checkwatt_data(mock_client, start_time, end_time)
-
-    assert result == {"checkwatt": []}
-
-
-@patch("src.aggregation.emeters_5min.InfluxClient")
-def test_fetch_shelly_em3_data_empty_result(mock_influx_client):
-    """Test fetching Shelly EM3 data when no data is available."""
-    mock_client = MagicMock()
-    mock_client.query_api.query.return_value = []
-
-    start_time = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
-    end_time = datetime.datetime(2026, 1, 8, 10, 5, 0, tzinfo=pytz.UTC)
-
-    result = fetch_shelly_em3_data(mock_client, start_time, end_time)
-
-    assert result == {"shelly": []}
 
 
 def test_counter_reset_detection():
@@ -674,3 +647,112 @@ def test_checkwatt_reasonable_solar_production():
     # Energy over 5 minutes (W * 5/60 hours = Wh)
     assert result["solar_yield_diff"] == pytest.approx(16.667, rel=0.01)  # 200 * 5/60
     assert result["battery_charge_diff"] == pytest.approx(4.167, rel=0.01)  # 50 * 5/60
+
+
+# =============================================================================
+# Tests for Emeters5MinAggregator (refactored class-based implementation)
+# =============================================================================
+
+
+@pytest.fixture
+def mock_influx_client():
+    """Create a mock InfluxDB client."""
+    client = MagicMock(spec=InfluxClient)
+    client.query_api = MagicMock()
+    client.write_api = MagicMock()
+    client.write_point = MagicMock(return_value=True)
+    return client
+
+
+@pytest.fixture
+def config():
+    """Get configuration."""
+    return get_config()
+
+
+@pytest.fixture
+def aggregator(mock_influx_client, config):
+    """Create an Emeters5MinAggregator instance."""
+    return Emeters5MinAggregator(mock_influx_client, config)
+
+
+@pytest.fixture
+def time_window():
+    """Create a test time window."""
+    tz = pytz.timezone("Europe/Helsinki")
+    window_start = tz.localize(datetime.datetime(2026, 1, 8, 10, 0, 0))
+    window_end = tz.localize(datetime.datetime(2026, 1, 8, 10, 5, 0))
+    return window_start, window_end
+
+
+class TestEmeters5MinAggregator:
+    """Test the refactored Emeters5MinAggregator class."""
+
+    def test_initialization(self, aggregator, mock_influx_client, config):
+        """Test that aggregator is initialized correctly."""
+        assert aggregator.influx == mock_influx_client
+        assert aggregator.config == config
+        assert aggregator.INTERVAL_SECONDS == 300
+        assert aggregator.MAX_REASONABLE_POWER == 25000.0
+
+    def test_validate_data_with_both_sources(
+        self, aggregator, sample_checkwatt_data, sample_shelly_data
+    ):
+        """Test validation with both CheckWatt and Shelly data."""
+        raw_data = {"checkwatt": sample_checkwatt_data, "shelly": sample_shelly_data}
+        assert aggregator.validate_data(raw_data) is True
+
+    def test_validate_data_checkwatt_only(self, aggregator, sample_checkwatt_data):
+        """Test validation with only CheckWatt data."""
+        raw_data = {"checkwatt": sample_checkwatt_data, "shelly": []}
+        assert aggregator.validate_data(raw_data) is True
+
+    def test_validate_data_no_data(self, aggregator):
+        """Test validation with no data."""
+        raw_data = {"checkwatt": [], "shelly": []}
+        assert aggregator.validate_data(raw_data) is False
+
+    def test_calculate_checkwatt_metrics(self, aggregator, sample_checkwatt_data):
+        """Test CheckWatt metrics calculation."""
+        metrics = aggregator._calculate_checkwatt_metrics(sample_checkwatt_data)
+
+        assert "solar_yield_avg" in metrics
+        assert "battery_discharge_avg" in metrics
+        assert "Battery_SoC" in metrics
+
+        # Check battery discharge: 1380 W average
+        assert metrics["battery_discharge_avg"] == pytest.approx(1380.0, rel=0.01)
+
+        # Check battery SoC is last value
+        assert metrics["Battery_SoC"] == 64.0
+
+    def test_calculate_shelly_metrics(self, aggregator, sample_shelly_data):
+        """Test Shelly EM3 metrics calculation."""
+        metrics = aggregator._calculate_shelly_metrics(sample_shelly_data)
+
+        assert metrics is not None
+        assert "emeter_avg" in metrics
+        assert "grid_voltage_avg" in metrics
+
+    def test_full_aggregation_pipeline(
+        self, aggregator, sample_checkwatt_data, sample_shelly_data, time_window, config
+    ):
+        """Test the full aggregation pipeline."""
+        window_start, window_end = time_window
+
+        # Mock the fetch methods to return our sample data
+        aggregator._fetch_checkwatt_data = MagicMock(return_value=sample_checkwatt_data)
+        aggregator._fetch_shelly_data = MagicMock(return_value=sample_shelly_data)
+
+        # Mock the write to avoid config errors
+        aggregator.write_results = MagicMock(return_value=True)
+
+        # Run aggregation
+        metrics = aggregator.aggregate_window(window_start, window_end, write_to_influx=True)
+
+        assert metrics is not None
+        assert "solar_yield_avg" in metrics
+        assert "consumption_avg" in metrics
+
+        # Verify write was called
+        aggregator.write_results.assert_called_once()
