@@ -10,7 +10,7 @@ from typing import Optional
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
-from src.control.pump_controller import MultiLoadController
+from src.control.multi_load_controller import MultiLoadController
 
 logger = setup_logger(__name__)
 

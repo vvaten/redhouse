@@ -297,5 +297,136 @@ class TestClockInjection(unittest.TestCase):
         assert cycle_needed is True
 
 
+class TestErrorHandling(unittest.TestCase):
+    """Test error handling and edge cases."""
+
+    def test_state_load_failure_is_handled_gracefully(self):
+        """Test that corrupted state file doesn't crash initialization."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = os.path.join(tmpdir, "corrupt_state.json")
+
+            # Create corrupted state file
+            with open(state_file, "w") as f:
+                f.write("{invalid json")
+
+            # Controller should still initialize with default state
+            mock_hw = MockHardwareInterface()
+            controller = PumpController(hardware=mock_hw, state_file=state_file)
+
+            # Should have default values
+            assert controller.on_time_accumulated == 0
+            assert controller.last_command is None
+
+    def test_state_save_failure_is_logged(self):
+        """Test that state save failures are logged but don't crash."""
+        mock_hw = MockHardwareInterface()
+        # Use invalid path that can't be created
+        if os.name == "nt":
+            invalid_path = "Z:\\nonexistent\\directory\\state.json"
+        else:
+            invalid_path = "/root/nonexistent/state.json"
+
+        controller = PumpController(hardware=mock_hw, state_file=invalid_path)
+
+        # Execute command (should try to save state)
+        result = controller.execute_command("ON", scheduled_time=1000, actual_time=1010)
+
+        # Should still succeed even if state save fails
+        assert result["success"] is True
+
+    def test_get_status_method(self):
+        """Test get_status method delegates to hardware."""
+        mock_hw = MockHardwareInterface()
+        controller = PumpController(hardware=mock_hw)
+
+        status = controller.get_status()
+
+        assert status is not None
+        assert status["mode"] == "MOCK"
+        assert status["status"] == "simulated"
+
+    def test_execute_command_with_exception_in_hardware(self):
+        """Test exception handling when hardware raises exception."""
+        mock_hw = MockHardwareInterface()
+
+        def failing_write(command):
+            raise RuntimeError("Hardware failure")
+
+        mock_hw.write_pump_command = failing_write
+        controller = PumpController(hardware=mock_hw)
+
+        # Set up state to avoid EVU cycle (no ALE->ON transition)
+        controller.last_command = "EVU"
+        controller.last_command_time = 1000
+
+        # Should catch exception and return error
+        result = controller.execute_command("ON", scheduled_time=2000, actual_time=2010)
+
+        assert result["success"] is False
+        assert "Hardware failure" in result["error"]
+
+    def test_evu_cycle_on_ale_to_on_transition(self):
+        """Test automatic EVU cycle when going from ALE to ON."""
+        mock_hw = MockHardwareInterface()
+        controller = PumpController(hardware=mock_hw)
+
+        # Set up state: pump was in ALE mode
+        controller.last_command = "ALE"
+        controller.last_command_time = 1000
+
+        # Execute ON command (ALE -> ON transition)
+        result = controller.execute_command("ON", scheduled_time=2000, actual_time=2010)
+
+        assert result["success"] is True
+        # Should have performed EVU cycle
+        assert "EVU" in mock_hw.commands_executed
+
+    def test_evu_cycle_on_on_to_ale_transition(self):
+        """Test automatic EVU cycle when going from ON to ALE."""
+        mock_hw = MockHardwareInterface()
+        controller = PumpController(hardware=mock_hw)
+
+        # Set up state: pump was ON
+        controller.last_command = "ON"
+        controller.last_command_time = 1000
+
+        # Execute ALE command (ON -> ALE transition)
+        result = controller.execute_command("ALE", scheduled_time=2000, actual_time=2010)
+
+        assert result["success"] is True
+        # Should have performed EVU cycle
+        assert "EVU" in mock_hw.commands_executed
+
+    def test_on_time_accumulation_sanity_check(self):
+        """Test that on_time accumulation has sanity check for large gaps."""
+        mock_hw = MockHardwareInterface()
+        controller = PumpController(hardware=mock_hw)
+
+        # Set up state: pump was ON
+        controller.last_command = "ON"
+        controller.last_command_time = 1000
+
+        # Try to update with time gap > 1 hour (3600 seconds)
+        controller._update_on_time(1000 + 7200)  # 2 hours later
+
+        # Should not accumulate due to sanity check
+        assert controller.on_time_accumulated == 0
+
+    def test_circulation_pump_on_when_transitioning_from_evu_to_ale(self):
+        """Test that circulation pump turns on when going from EVU to ALE."""
+        mock_hw = MockHardwareInterface()
+        controller = PumpController(hardware=mock_hw)
+
+        # Set up state: pump was in EVU mode
+        controller.last_command = "EVU"
+        controller.last_command_time = 1000
+
+        # Execute ALE command
+        controller.execute_command("ALE", scheduled_time=2000, actual_time=2010)
+
+        # Circulation pump should have been turned on
+        assert mock_hw.circulation_pump_on is True
+
+
 if __name__ == "__main__":
     unittest.main()

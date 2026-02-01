@@ -324,6 +324,81 @@ class PumpController:
 
         return result
 
+    def _should_perform_evu_cycle(self, command: str) -> bool:
+        """
+        Determine if EVU cycle is needed based on state transition.
+
+        EVU cycle is performed when transitioning:
+        - ALE/ON -> ON
+        - ON -> ALE
+
+        Args:
+            command: The command about to be executed
+
+        Returns:
+            True if EVU cycle should be performed
+        """
+        if command == "ON" and self.last_command in ("ALE", "ON"):
+            return True
+        if command == "ALE" and self.last_command == "ON":
+            return True
+        return False
+
+    def _create_result_dict(self, command: str, scheduled_time: int, actual_time: int) -> dict:
+        """
+        Create result dictionary for command execution.
+
+        Args:
+            command: Command being executed
+            scheduled_time: When command was scheduled
+            actual_time: When command is being executed
+
+        Returns:
+            Result dictionary with execution metadata
+        """
+        delay = actual_time - scheduled_time
+
+        if delay > self.MAX_EXECUTION_DELAY:
+            logger.warning(
+                f"Command '{command}' delayed by {delay}s (max: {self.MAX_EXECUTION_DELAY}s)"
+            )
+
+        return {
+            "success": False,
+            "command": command,
+            "scheduled_time": scheduled_time,
+            "actual_time": actual_time,
+            "delay_seconds": delay,
+            "output": "",
+            "error": None,
+        }
+
+    def _handle_circulation_pump_on_transition(self, command: str):
+        """
+        Handle AC circulation pump control before command execution.
+
+        Turns pump ON when transitioning from EVU to ON/ALE.
+
+        Args:
+            command: The command about to be executed
+        """
+        if command in ("ON", "ALE") and self.last_command == "EVU":
+            logger.info(f"Transitioning from EVU to {command}: turning on AC pump")
+            self.hardware.control_circulation_pump(turn_on=True)
+
+    def _handle_circulation_pump_off_transition(self, command: str):
+        """
+        Handle AC circulation pump control after command execution.
+
+        Turns pump OFF when transitioning to EVU from ON/ALE.
+
+        Args:
+            command: The command that was executed
+        """
+        if command == "EVU" and self.last_command in ("ON", "ALE"):
+            logger.info("Transitioning to EVU: turning off AC pump")
+            self.hardware.control_circulation_pump(turn_on=False)
+
     def execute_command(self, command: str, scheduled_time: int, actual_time: int) -> dict:
         """
         Execute a pump control command.
@@ -354,52 +429,24 @@ class PumpController:
                 f"Invalid command '{command}'. Must be one of: {', '.join(self.VALID_COMMANDS)}"
             )
 
-        delay = actual_time - scheduled_time
+        # Create result dictionary
+        result = self._create_result_dict(command, scheduled_time, actual_time)
 
-        # Check if delay is too large
-        if delay > self.MAX_EXECUTION_DELAY:
-            logger.warning(
-                f"Command '{command}' delayed by {delay}s (max: {self.MAX_EXECUTION_DELAY}s)"
-            )
-
-        result = {
-            "success": False,
-            "command": command,
-            "scheduled_time": scheduled_time,
-            "actual_time": actual_time,
-            "delay_seconds": delay,
-            "output": "",
-            "error": None,
-        }
-
-        # Update accumulated ON time before executing new command
+        # Update accumulated ON time
         self._update_on_time(actual_time)
 
-        # Smart EVU cycling based on state transitions (matching mlp_control.sh logic)
-        # Cycle EVU when: ALE/ON -> ON, or ON -> ALE
-        needs_evu_cycle = False
-        if command == "ON" and self.last_command in ("ALE", "ON"):
-            needs_evu_cycle = True
-        elif command == "ALE" and self.last_command == "ON":
-            needs_evu_cycle = True
-
-        if needs_evu_cycle:
+        # Perform EVU cycle if needed based on state transition
+        if self._should_perform_evu_cycle(command):
             logger.info(f"State transition {self.last_command} -> {command}: performing EVU cycle")
             cycle_result = self._perform_evu_cycle_internal(actual_time)
             if not cycle_result["success"]:
                 logger.warning(f"EVU cycle before {command} failed: {cycle_result.get('error')}")
 
-        # Handle AC pump control based on state transitions
-        if command in ("ON", "ALE") and self.last_command == "EVU":
-            # Going from EVU to ON/ALE: turn on AC pump
-            logger.info(f"Transitioning from EVU to {command}: turning on AC pump")
-            self.hardware.control_circulation_pump(turn_on=True)
-        elif command == "EVU" and self.last_command in ("ON", "ALE"):
-            # Going from ON/ALE to EVU: turn off AC pump (after executing EVU command)
-            pass  # Will turn off after hardware write
+        # Handle AC pump before command execution
+        self._handle_circulation_pump_on_transition(command)
 
         try:
-            logger.info(f"Executing pump command: {command} (delay: {delay}s)")
+            logger.info(f"Executing pump command: {command} (delay: {result['delay_seconds']}s)")
 
             # Execute via hardware interface
             success = self.hardware.write_pump_command(command)
@@ -413,10 +460,8 @@ class PumpController:
             result["output"] = f"Pump command {command} executed via hardware interface"
             logger.info(f"Pump command '{command}' executed successfully")
 
-            # Handle AC pump for EVU transition (turn off after successful write)
-            if command == "EVU" and self.last_command in ("ON", "ALE"):
-                logger.info("Transitioning to EVU: turning off AC pump")
-                self.hardware.control_circulation_pump(turn_on=False)
+            # Handle AC pump after command execution
+            self._handle_circulation_pump_off_transition(command)
 
             # Update state tracking on success
             self.last_command = command
@@ -449,76 +494,3 @@ class PumpController:
             True if command is valid
         """
         return command in self.VALID_COMMANDS
-
-
-class MultiLoadController:
-    """
-    Controller for multiple heating loads with different control methods.
-
-    Manages:
-    - Geothermal pump (via PumpController)
-    - Garage heater (via Shelly relay - TODO)
-    - EV charger (via OCPP - TODO)
-    """
-
-    def __init__(self, dry_run: bool = False):
-        """
-        Initialize multi-load controller.
-
-        Args:
-            dry_run: If True, log commands but don't execute
-        """
-        self.dry_run = dry_run
-        self.pump_controller = PumpController(dry_run=dry_run)
-
-        logger.info(f"MultiLoadController initialized (dry_run={dry_run})")
-
-    def execute_load_command(
-        self, load_id: str, command: str, scheduled_time: int, actual_time: int
-    ) -> dict:
-        """
-        Execute a command for a specific load.
-
-        Args:
-            load_id: Load identifier (geothermal_pump, garage_heater, ev_charger)
-            command: Command to execute
-            scheduled_time: When command was scheduled (epoch)
-            actual_time: When command is being executed (epoch)
-
-        Returns:
-            Dict with execution results
-
-        Raises:
-            ValueError: If load_id is unknown
-        """
-        logger.info(f"Executing command for {load_id}: {command}")
-
-        if load_id == "geothermal_pump":
-            return self.pump_controller.execute_command(command, scheduled_time, actual_time)
-
-        elif load_id == "garage_heater":
-            # TODO: Implement Shelly relay control
-            logger.warning("Garage heater control not yet implemented")
-            return {
-                "success": False,
-                "command": command,
-                "scheduled_time": scheduled_time,
-                "actual_time": actual_time,
-                "delay_seconds": actual_time - scheduled_time,
-                "error": "Garage heater control not implemented",
-            }
-
-        elif load_id == "ev_charger":
-            # TODO: Implement OCPP control
-            logger.warning("EV charger control not yet implemented")
-            return {
-                "success": False,
-                "command": command,
-                "scheduled_time": scheduled_time,
-                "actual_time": actual_time,
-                "delay_seconds": actual_time - scheduled_time,
-                "error": "EV charger control not implemented",
-            }
-
-        else:
-            raise ValueError(f"Unknown load_id: {load_id}")

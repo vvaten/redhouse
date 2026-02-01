@@ -5,7 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from src.control.hardware_implementations import MockHardwareInterface
-from src.control.pump_controller import MultiLoadController, PumpController
+from src.control.multi_load_controller import MultiLoadController
+from src.control.pump_controller import PumpController
 
 
 class TestPumpController(unittest.TestCase):
