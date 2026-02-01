@@ -1,5 +1,5 @@
 - Never add all files to git. Always only add modified and added files one by one.
-- Do not ever use unicode characters.
+- IMPORTANT: Do not ever use unicode characters.
 - ALWAYS activate the virtual environment before running any Python commands:
   - On Windows (Git Bash): source venv/Scripts/activate
   - On Linux/Raspberry Pi: source venv/bin/activate
