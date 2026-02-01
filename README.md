@@ -35,17 +35,18 @@ NAS (Docker)
 
 ```
 redhouse/
+├── .env                    # Environment variables (not in git, copy from .env.example)
 ├── src/
 │   ├── data_collection/    # Sensor readers, API clients
 │   ├── control/            # Heating optimizer, pump controller
 │   ├── common/             # Shared utilities (config, logging, influx)
+│   ├── aggregation/        # Data aggregation pipelines
 │   └── simulation/         # Backtesting tools
 ├── config/
-│   ├── config.yaml         # System configuration
-│   └── .env                # Secrets (not in git)
+│   └── config.yaml         # System configuration (copy from config.yaml.example)
 ├── tests/                  # Unit and integration tests
 ├── deployment/             # Systemd services, deployment scripts
-└── grafana/                # Dashboard exports
+└── docs/                   # Documentation
 ```
 
 ## Installation
