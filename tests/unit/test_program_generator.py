@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
+from src.control.evu_optimizer import EvuOptimizer
 from src.control.program_generator import HeatingProgramGenerator
+from src.control.schedule_builder import ScheduleBuilder
 
 
 class TestHeatingProgramGenerator(unittest.TestCase):
@@ -29,24 +31,24 @@ class TestHeatingProgramGenerator(unittest.TestCase):
         """Test generator initialization."""
         self.assertIsNotNone(self.generator)
         self.assertEqual(self.generator.VERSION, "2.0.0")
-        self.assertEqual(self.generator.EVU_OFF_THRESHOLD_PRICE, 15.0)
-        self.assertEqual(self.generator.EVU_OFF_MAX_CONTINUOUS_HOURS, 4)
+        self.assertEqual(self.generator.evu_optimizer.EVU_OFF_THRESHOLD_PRICE, 15.0)
+        self.assertEqual(self.generator.evu_optimizer.EVU_OFF_MAX_CONTINUOUS_HOURS, 4)
 
     def test_loads_configuration(self):
         """Test load definitions are correct."""
-        self.assertIn("geothermal_pump", self.generator.LOADS)
-        self.assertIn("garage_heater", self.generator.LOADS)
-        self.assertIn("ev_charger", self.generator.LOADS)
+        self.assertIn("geothermal_pump", self.generator.schedule_builder.LOADS)
+        self.assertIn("garage_heater", self.generator.schedule_builder.LOADS)
+        self.assertIn("ev_charger", self.generator.schedule_builder.LOADS)
 
         # Check geothermal pump config
-        pump = self.generator.LOADS["geothermal_pump"]
+        pump = self.generator.schedule_builder.LOADS["geothermal_pump"]
         self.assertEqual(pump["priority"], 1)
         self.assertEqual(pump["power_kw"], 3.0)
         self.assertEqual(pump["control_type"], "mlp_i2c")
         self.assertTrue(pump["enabled"])
 
         # Check garage heater config
-        garage = self.generator.LOADS["garage_heater"]
+        garage = self.generator.schedule_builder.LOADS["garage_heater"]
         self.assertEqual(garage["priority"], 2)
         self.assertEqual(garage["power_kw"], 2.0)
         self.assertFalse(garage["enabled"])
@@ -57,14 +59,9 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        with (
-            patch("src.control.program_generator.get_config"),
-            patch("src.control.program_generator.InfluxClient"),
-            patch("src.control.program_generator.HeatingDataFetcher"),
-            patch("src.control.program_generator.HeatingCurve"),
-            patch("src.control.program_generator.HeatingOptimizer"),
-        ):
-            self.generator = HeatingProgramGenerator()
+        with patch("src.control.heating_optimizer.HeatingOptimizer"):
+            mock_optimizer = MagicMock()
+            self.evu_optimizer = EvuOptimizer(mock_optimizer)
 
     def test_optimize_evu_off_groups_single_hour(self):
         """Test EVU-OFF grouping with single hour."""
@@ -75,7 +72,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
         df = pd.DataFrame({"heating_prio": [20.0]}, index=timestamps)
 
-        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+        groups = self.evu_optimizer._optimize_evu_off_groups(df, max_continuous_hours=4)
 
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0]["first"], timestamps[0])
@@ -90,7 +87,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
         df = pd.DataFrame({"heating_prio": [20.0, 21.0, 22.0]}, index=timestamps)
 
-        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+        groups = self.evu_optimizer._optimize_evu_off_groups(df, max_continuous_hours=4)
 
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0]["first"], timestamps[0])
@@ -106,7 +103,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
         df = pd.DataFrame({"heating_prio": [20.0] * 5}, index=timestamps)
 
-        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+        groups = self.evu_optimizer._optimize_evu_off_groups(df, max_continuous_hours=4)
 
         # With max=4, 5 consecutive hours should fit in one group
         # (10, 11, 12, 13 = 3 hour duration < 4 max, then 14 gets rejected)
@@ -130,7 +127,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
         df = pd.DataFrame({"heating_prio": [20.0, 21.0, 22.0, 23.0]}, index=selected_timestamps)
 
-        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+        groups = self.evu_optimizer._optimize_evu_off_groups(df, max_continuous_hours=4)
 
         # Should create 2 groups due to gap
         self.assertEqual(len(groups), 2)
@@ -144,7 +141,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
         df = pd.DataFrame({"heating_prio": [20.0] * 4}, index=timestamps)
 
-        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+        groups = self.evu_optimizer._optimize_evu_off_groups(df, max_continuous_hours=4)
 
         # Should merge into 1 group of 4 hours
         self.assertEqual(len(groups), 1)
@@ -163,7 +160,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
         df = pd.DataFrame({"heating_prio": [20.0, 21.0, 22.0]}, index=selected_timestamps)
 
-        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+        groups = self.evu_optimizer._optimize_evu_off_groups(df, max_continuous_hours=4)
 
         # Should create one group extending backward
         self.assertEqual(len(groups), 1)
@@ -180,7 +177,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
         # Add them in order to fill up a group, then try to extend past max
         df = pd.DataFrame({"heating_prio": [20.0] * 5}, index=timestamps)
 
-        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+        groups = self.evu_optimizer._optimize_evu_off_groups(df, max_continuous_hours=4)
 
         # Should have limited duration
         for group in groups:
@@ -207,7 +204,7 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
 
         df = pd.DataFrame({"heating_prio": [20.0] * 5}, index=selected_timestamps)
 
-        groups = self.generator._optimize_evu_off_groups(df, max_continuous_hours=4)
+        groups = self.evu_optimizer._optimize_evu_off_groups(df, max_continuous_hours=4)
 
         # Should have 2 groups due to gap
         self.assertEqual(len(groups), 2)
@@ -218,14 +215,7 @@ class TestScheduleGeneration(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        with (
-            patch("src.control.program_generator.get_config"),
-            patch("src.control.program_generator.InfluxClient"),
-            patch("src.control.program_generator.HeatingDataFetcher"),
-            patch("src.control.program_generator.HeatingCurve"),
-            patch("src.control.program_generator.HeatingOptimizer"),
-        ):
-            self.generator = HeatingProgramGenerator()
+        self.schedule_builder = ScheduleBuilder()
 
     def test_generate_geothermal_pump_schedule_basic(self):
         """Test basic geothermal pump schedule generation."""
@@ -250,7 +240,7 @@ class TestScheduleGeneration(unittest.TestCase):
         evu_off_periods = []
         program_date = datetime.datetime(2025, 1, 15)
 
-        result = self.generator._generate_geothermal_pump_schedule(
+        result = self.schedule_builder._generate_geothermal_pump_schedule(
             selected_hours, evu_off_periods, day_priorities, program_date
         )
 
@@ -293,7 +283,7 @@ class TestScheduleGeneration(unittest.TestCase):
 
         program_date = datetime.datetime(2025, 1, 15)
 
-        result = self.generator._generate_geothermal_pump_schedule(
+        result = self.schedule_builder._generate_geothermal_pump_schedule(
             selected_hours, evu_off_periods, day_priorities, program_date
         )
 
@@ -320,7 +310,7 @@ class TestScheduleGeneration(unittest.TestCase):
             index=timestamps,
         )
 
-        result = self.generator._generate_geothermal_pump_schedule(
+        result = self.schedule_builder._generate_geothermal_pump_schedule(
             selected_hours, [], day_priorities, datetime.datetime(2025, 1, 15)
         )
 
@@ -824,21 +814,12 @@ class TestGenerateDailyProgram(unittest.TestCase):
 
 
 class TestGenerateEvuOffPeriods(unittest.TestCase):
-    """Test _generate_evu_off_periods method."""
+    """Test generate_evu_off_periods method."""
 
     def setUp(self):
         """Set up test fixtures."""
-        with (
-            patch("src.control.program_generator.get_config"),
-            patch("src.control.program_generator.InfluxClient"),
-            patch("src.control.program_generator.HeatingDataFetcher"),
-            patch("src.control.program_generator.HeatingCurve"),
-            patch("src.control.program_generator.HeatingOptimizer") as mock_optimizer_class,
-        ):
-            self.mock_optimizer = MagicMock()
-            mock_optimizer_class.return_value = self.mock_optimizer
-            self.generator = HeatingProgramGenerator()
-            self.generator.optimizer = self.mock_optimizer
+        self.mock_optimizer = MagicMock()
+        self.evu_optimizer = EvuOptimizer(self.mock_optimizer)
 
     def test_generate_evu_off_periods_no_room(self):
         """Test when heating all day, no EVU-OFF periods."""
@@ -851,7 +832,7 @@ class TestGenerateEvuOffPeriods(unittest.TestCase):
 
         self.mock_optimizer.filter_day_priorities.return_value = priorities_df
 
-        result = self.generator._generate_evu_off_periods(df, priorities_df, 22.0, 0)
+        result = self.evu_optimizer.generate_evu_off_periods(df, priorities_df, 22.0, 0)
 
         self.assertEqual(result, [])
 
@@ -865,7 +846,7 @@ class TestGenerateEvuOffPeriods(unittest.TestCase):
 
         self.mock_optimizer.filter_day_priorities.return_value = priorities_df
 
-        result = self.generator._generate_evu_off_periods(df, priorities_df, 8.0, 0)
+        result = self.evu_optimizer.generate_evu_off_periods(df, priorities_df, 8.0, 0)
 
         self.assertEqual(result, [])
 
@@ -883,8 +864,8 @@ class TestGenerateEvuOffPeriods(unittest.TestCase):
 
         # Mock _optimize_evu_off_groups to return a simple group
         groups = [{"first": timestamps[12], "last": timestamps[15]}]
-        with patch.object(self.generator, "_optimize_evu_off_groups", return_value=groups):
-            result = self.generator._generate_evu_off_periods(
+        with patch.object(self.evu_optimizer, "_optimize_evu_off_groups", return_value=groups):
+            result = self.evu_optimizer.generate_evu_off_periods(
                 pd.DataFrame(index=timestamps), priorities_df, 8.0, 0
             )
 
@@ -896,18 +877,11 @@ class TestGenerateEvuOffPeriods(unittest.TestCase):
 
 
 class TestGenerateLoadSchedules(unittest.TestCase):
-    """Test _generate_load_schedules method."""
+    """Test generate_load_schedules method."""
 
     def setUp(self):
         """Set up test fixtures."""
-        with (
-            patch("src.control.program_generator.get_config"),
-            patch("src.control.program_generator.InfluxClient"),
-            patch("src.control.program_generator.HeatingDataFetcher"),
-            patch("src.control.program_generator.HeatingCurve"),
-            patch("src.control.program_generator.HeatingOptimizer"),
-        ):
-            self.generator = HeatingProgramGenerator()
+        self.schedule_builder = ScheduleBuilder()
 
     def test_generate_load_schedules_includes_disabled_loads(self):
         """Test that disabled loads are included with empty schedules."""
@@ -929,7 +903,7 @@ class TestGenerateLoadSchedules(unittest.TestCase):
         evu_off_periods = []
         program_date = datetime.datetime(2025, 1, 15)
 
-        result = self.generator._generate_load_schedules(
+        result = self.schedule_builder.generate_load_schedules(
             selected_hours, evu_off_periods, day_priorities, program_date
         )
 
@@ -950,14 +924,7 @@ class TestALETransitionLogic(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        with (
-            patch("src.control.program_generator.get_config"),
-            patch("src.control.program_generator.InfluxClient"),
-            patch("src.control.program_generator.HeatingDataFetcher"),
-            patch("src.control.program_generator.HeatingCurve"),
-            patch("src.control.program_generator.HeatingOptimizer"),
-        ):
-            self.generator = HeatingProgramGenerator()
+        self.schedule_builder = ScheduleBuilder()
 
     def test_ale_added_after_on_period(self):
         """Test that ALE is added after ON period."""
@@ -979,7 +946,7 @@ class TestALETransitionLogic(unittest.TestCase):
         evu_off_periods = []
         program_date = datetime.datetime(2025, 1, 15)
 
-        result = self.generator._generate_geothermal_pump_schedule(
+        result = self.schedule_builder._generate_geothermal_pump_schedule(
             selected_hours, evu_off_periods, day_priorities, program_date
         )
 
@@ -1016,7 +983,7 @@ class TestALETransitionLogic(unittest.TestCase):
         evu_start = int(timestamps[1].timestamp())
         evu_off_periods = [{"group_id": 1, "start": evu_start, "stop": evu_start + 3600}]
 
-        result = self.generator._generate_geothermal_pump_schedule(
+        result = self.schedule_builder._generate_geothermal_pump_schedule(
             selected_hours, evu_off_periods, day_priorities, datetime.datetime(2025, 1, 15)
         )
 

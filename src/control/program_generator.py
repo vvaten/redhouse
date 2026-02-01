@@ -3,16 +3,17 @@
 
 import datetime
 import json
-import math
 import os
-from typing import Any, Optional
+from typing import Optional
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
+from src.control.evu_optimizer import EvuOptimizer
 from src.control.heating_curve import HeatingCurve
 from src.control.heating_data_fetcher import HeatingDataFetcher
 from src.control.heating_optimizer import HeatingOptimizer
+from src.control.schedule_builder import ScheduleBuilder
 
 logger = setup_logger(__name__)
 
@@ -36,32 +37,6 @@ class HeatingProgramGenerator:
 
     VERSION = "2.0.0"
 
-    # Load definitions
-    LOADS = {
-        "geothermal_pump": {
-            "priority": 1,
-            "power_kw": 3.0,
-            "control_type": "mlp_i2c",
-            "enabled": True,
-        },
-        "garage_heater": {
-            "priority": 2,
-            "power_kw": 2.0,
-            "control_type": "shelly_relay",
-            "enabled": False,
-        },
-        "ev_charger": {
-            "priority": 3,
-            "power_kw": 11.0,
-            "control_type": "ocpp",
-            "enabled": False,
-        },
-    }
-
-    # EVU-OFF configuration
-    EVU_OFF_THRESHOLD_PRICE = 15.0  # c/kWh
-    EVU_OFF_MAX_CONTINUOUS_HOURS = 4
-
     def __init__(self, config: Optional[dict] = None):
         """
         Initialize heating program generator.
@@ -78,6 +53,8 @@ class HeatingProgramGenerator:
             heating_load_kw=3.0,
             resolution_minutes=60,
         )
+        self.evu_optimizer = EvuOptimizer(self.optimizer)
+        self.schedule_builder = ScheduleBuilder()
 
         logger.info(f"Initialized HeatingProgramGenerator v{self.VERSION}")
 
@@ -138,12 +115,12 @@ class HeatingProgramGenerator:
         selected_hours = self.optimizer.select_cheapest_hours(day_priorities, hours_to_heat)
 
         # Calculate EVU-OFF periods
-        evu_off_periods = self._generate_evu_off_periods(
+        evu_off_periods = self.evu_optimizer.generate_evu_off_periods(
             df, priorities_df, hours_to_heat, date_offset
         )
 
         # Generate schedules for each load
-        loads_schedules = self._generate_load_schedules(
+        loads_schedules = self.schedule_builder.generate_load_schedules(
             selected_hours, evu_off_periods, day_priorities, program_date
         )
 
@@ -164,8 +141,8 @@ class HeatingProgramGenerator:
                 "heating_curve": self.heating_curve.get_curve_points(),
                 "base_load_kw": self.optimizer.base_load_kw,
                 "heating_load_kw": self.optimizer.heating_load_kw,
-                "evu_off_threshold_price": self.EVU_OFF_THRESHOLD_PRICE,
-                "evu_off_max_continuous_hours": self.EVU_OFF_MAX_CONTINUOUS_HOURS,
+                "evu_off_threshold_price": self.evu_optimizer.EVU_OFF_THRESHOLD_PRICE,
+                "evu_off_max_continuous_hours": self.evu_optimizer.EVU_OFF_MAX_CONTINUOUS_HOURS,
             },
             "planning_results": planning_results,
             "loads": loads_schedules,
@@ -193,317 +170,6 @@ class HeatingProgramGenerator:
         logger.info(f"Generated program with {len(loads_schedules)} loads")
 
         return program
-
-    def _generate_evu_off_periods(
-        self, df, priorities_df, hours_to_heat: float, date_offset: int
-    ) -> list[dict]:
-        """
-        Generate EVU-OFF periods to block expensive direct heating.
-
-        EVU-OFF is used to prevent the heat pump from using expensive
-        direct heating during high electricity price periods.
-
-        Args:
-            df: Raw data DataFrame
-            priorities_df: Heating priorities DataFrame
-            hours_to_heat: Total heating hours needed
-            date_offset: Day offset
-
-        Returns:
-            List of EVU-OFF period dicts with start/stop timestamps
-        """
-        # Calculate maximum hours we can block
-        evu_off_max_hours = 24 - math.ceil(hours_to_heat) - 2
-
-        if evu_off_max_hours <= 0:
-            logger.info("No room for EVU-OFF periods (heating all day)")
-            return []
-
-        # Filter to target day
-        day_priorities = self.optimizer.filter_day_priorities(priorities_df, date_offset)
-
-        # Find expensive hours above threshold
-        expensive_hours = day_priorities[
-            day_priorities["heating_prio"] > self.EVU_OFF_THRESHOLD_PRICE
-        ].sort_values(
-            by="heating_prio", ascending=False
-        )  # type: ignore[call-overload]
-
-        expensive_hours = expensive_hours.head(evu_off_max_hours)
-
-        if expensive_hours.empty:
-            logger.info("No hours expensive enough for EVU-OFF")
-            return []
-
-        logger.info(f"Found {len(expensive_hours)} expensive hours for EVU-OFF consideration")
-
-        # Group consecutive hours (max 4 hours continuous)
-        evu_off_groups = self._optimize_evu_off_groups(
-            expensive_hours, self.EVU_OFF_MAX_CONTINUOUS_HOURS
-        )
-
-        # Convert to timestamp format
-        evu_off_periods = []
-        for group_id, group in enumerate(evu_off_groups, start=1):
-            start_ts = int(group["first"].timestamp())
-            stop_ts = int(group["last"].timestamp()) + 3600
-
-            evu_off_periods.append({"group_id": group_id, "start": start_ts, "stop": stop_ts})
-
-            logger.info(
-                f"EVU-OFF group {group_id}: {group['first']} to {group['last']} "
-                f"({(stop_ts - start_ts) / 3600:.0f} hours)"
-            )
-
-        return evu_off_periods
-
-    def _optimize_evu_off_groups(self, expensive_hours_df, max_continuous_hours: int) -> list[dict]:
-        """
-        Optimize EVU-OFF hours into groups with maximum continuous length.
-
-        Args:
-            expensive_hours_df: DataFrame of expensive hours
-            max_continuous_hours: Maximum hours in a continuous block
-
-        Returns:
-            List of groups with 'first' and 'last' timestamps
-        """
-        groups: list[dict[str, Any]] = []
-
-        for hour in expensive_hours_df.index:
-            if not groups:
-                groups.append({"first": hour, "last": hour})
-                continue
-
-            extended = False
-            rejected = False
-
-            for group in groups:
-                # Check if hour extends group from beginning
-                if hour.timestamp() == group["first"].timestamp() - 3600:
-                    duration_hours = (group["last"].timestamp() - group["first"].timestamp()) / 3600
-                    if duration_hours < max_continuous_hours - 1:
-                        group["first"] = hour
-                        extended = True
-                        break
-                    else:
-                        rejected = True
-                        break
-
-                # Check if hour extends group from end
-                elif hour.timestamp() == group["last"].timestamp() + 3600:
-                    duration_hours = (group["last"].timestamp() - group["first"].timestamp()) / 3600
-                    if duration_hours < max_continuous_hours - 1:
-                        group["last"] = hour
-                        extended = True
-                        break
-                    else:
-                        rejected = True
-                        break
-
-            # Add as new group if not extended or rejected
-            if not extended and not rejected:
-                groups.append({"first": hour, "last": hour})
-
-        # Merge adjacent groups if they fit within max length
-        sorted_groups = sorted(groups, key=lambda x: x["first"])
-        merged_groups = []
-
-        for i, group in enumerate(sorted_groups):
-            if i == 0:
-                merged_groups.append(group)
-                continue
-
-            prev_group = merged_groups[-1]
-
-            # Check if groups are adjacent
-            if group["first"].timestamp() == prev_group["last"].timestamp() + 3600:
-                # Check if merged duration would be acceptable
-                merged_duration = (
-                    group["last"].timestamp() - prev_group["first"].timestamp()
-                ) / 3600
-                if merged_duration <= max_continuous_hours - 1:
-                    prev_group["last"] = group["last"]
-                    continue
-
-            merged_groups.append(group)
-
-        logger.info(
-            f"Optimized {len(expensive_hours_df)} hours into {len(merged_groups)} EVU-OFF groups"
-        )
-
-        return merged_groups
-
-    def _generate_load_schedules(
-        self, selected_hours, evu_off_periods, day_priorities, program_date
-    ) -> dict:
-        """
-        Generate schedules for all loads.
-
-        Args:
-            selected_hours: Selected heating hours DataFrame
-            evu_off_periods: EVU-OFF period dicts
-            day_priorities: Full day priorities DataFrame
-            program_date: Date of the program
-
-        Returns:
-            Dict of load schedules keyed by load_id
-        """
-        loads_schedules = {}
-
-        # Generate geothermal pump schedule
-        pump_schedule = self._generate_geothermal_pump_schedule(
-            selected_hours, evu_off_periods, day_priorities, program_date
-        )
-        loads_schedules["geothermal_pump"] = pump_schedule
-
-        # Placeholder for future loads
-        for load_id, load_config in self.LOADS.items():
-            if load_id == "geothermal_pump":
-                continue
-
-            if not load_config["enabled"]:
-                loads_schedules[load_id] = {
-                    "load_id": load_id,
-                    "priority": load_config["priority"],
-                    "power_kw": load_config["power_kw"],
-                    "control_type": load_config["control_type"],
-                    "total_intervals_on": 0,
-                    "total_hours_on": 0.0,
-                    "estimated_cost_eur": 0.0,
-                    "schedule": [],
-                }
-
-        return loads_schedules
-
-    def _generate_geothermal_pump_schedule(
-        self, selected_hours, evu_off_periods, day_priorities, program_date
-    ) -> dict:
-        """
-        Generate schedule for geothermal heat pump.
-
-        Args:
-            selected_hours: Selected heating hours DataFrame
-            evu_off_periods: EVU-OFF period dicts
-            day_priorities: Full day priorities DataFrame
-            program_date: Date of the program
-
-        Returns:
-            Load schedule dict
-        """
-        load_config = self.LOADS["geothermal_pump"]
-        schedule_entries = []
-
-        # Sort heating hours by time
-        heating_hours = sorted(selected_hours.index)
-
-        # Add heating ON commands
-        for hour in heating_hours:
-            timestamp = int(hour.timestamp())
-            priority_score = selected_hours.loc[hour, "heating_prio"]
-
-            entry = {
-                "timestamp": timestamp,
-                "utc_time": hour.tz_convert("UTC").isoformat(),
-                "local_time": hour.isoformat(),
-                "command": "ON",
-                "duration_minutes": 60,
-                "reason": "cheap_electricity",
-                "spot_price_total_c_kwh": round(
-                    (
-                        day_priorities.loc[hour, "price_total"] * 100
-                        if hour in day_priorities.index
-                        else 0.0
-                    ),
-                    2,
-                ),
-                "solar_prediction_kwh": round(
-                    (
-                        day_priorities.loc[hour, "solar_yield_avg_prediction"]
-                        if hour in day_priorities.index
-                        else 0.0
-                    ),
-                    2,
-                ),
-                "priority_score": round(priority_score / load_config["power_kw"] * 100, 2),
-                "estimated_cost_eur": round(priority_score, 3),
-            }
-
-            schedule_entries.append(entry)
-
-        # Add EVU-OFF periods
-        for period in evu_off_periods:
-            start_dt = datetime.datetime.fromtimestamp(period["start"]).astimezone()
-            duration_minutes = int((period["stop"] - period["start"]) / 60)
-
-            entry = {
-                "timestamp": period["start"],
-                "utc_time": start_dt.astimezone(datetime.timezone.utc).isoformat(),
-                "local_time": start_dt.isoformat(),
-                "command": "EVU",
-                "duration_minutes": duration_minutes,
-                "reason": "expensive_direct_heating_blocked",
-                "spot_price_total_c_kwh": None,
-                "solar_prediction_kwh": None,
-                "priority_score": None,
-                "evu_off_group_id": period["group_id"],
-            }
-
-            schedule_entries.append(entry)
-
-        # Sort by timestamp
-        schedule_entries.sort(key=lambda x: x["timestamp"])
-
-        # Add ALE (auto mode) transitions
-        final_schedule = []
-        for i, entry in enumerate(schedule_entries):
-            final_schedule.append(entry)
-
-            # Add ALE after ON or EVU periods
-            if entry["command"] in ["ON", "EVU"]:
-                # Calculate end time
-                end_timestamp = entry["timestamp"] + (entry["duration_minutes"] * 60)
-                end_dt = datetime.datetime.fromtimestamp(end_timestamp).astimezone()
-
-                # Don't add ALE if next command is immediate
-                next_starts_immediately = False
-                if i + 1 < len(schedule_entries):
-                    next_timestamp = schedule_entries[i + 1]["timestamp"]
-                    if next_timestamp == end_timestamp:
-                        next_starts_immediately = True
-
-                if not next_starts_immediately:
-                    ale_entry = {
-                        "timestamp": end_timestamp,
-                        "utc_time": end_dt.astimezone(datetime.timezone.utc).isoformat(),
-                        "local_time": end_dt.isoformat(),
-                        "command": "ALE",
-                        "duration_minutes": None,
-                        "reason": (
-                            "heating_complete" if entry["command"] == "ON" else "evu_off_complete"
-                        ),
-                    }
-                    final_schedule.append(ale_entry)
-
-        # Sort again after adding ALE entries
-        final_schedule.sort(key=lambda x: x["timestamp"])
-
-        # Calculate totals
-        total_hours_on = len(heating_hours)
-        total_cost = sum(
-            e.get("estimated_cost_eur", 0.0) for e in final_schedule if e.get("estimated_cost_eur")
-        )
-
-        return {
-            "load_id": "geothermal_pump",
-            "priority": load_config["priority"],
-            "power_kw": load_config["power_kw"],
-            "control_type": load_config["control_type"],
-            "total_intervals_on": len(heating_hours),
-            "total_hours_on": float(total_hours_on),
-            "estimated_cost_eur": round(total_cost, 2),
-            "schedule": final_schedule,
-        }
 
     def _calculate_planning_results(self, loads_schedules, hours_to_heat, selected_hours) -> dict:
         """
