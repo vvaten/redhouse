@@ -12,8 +12,8 @@ Tests the complete flow:
 
 import datetime
 
-from src.aggregation.analytics_1hour import run_aggregation as run_1hour_aggregation
-from src.aggregation.analytics_15min import run_aggregation as run_15min_aggregation
+from src.aggregation.run_analytics_1hour import run_aggregation as run_1hour_aggregation
+from src.aggregation.run_analytics_15min import run_aggregation as run_15min_aggregation
 from src.aggregation.run_emeters_5min import aggregate_5min
 
 from .conftest import write_checkwatt_data, write_shelly_data

@@ -3,100 +3,95 @@
 
 Aggregates data from multiple sources:
 - emeters_5min: Energy data (12x 5-min windows)
-- spotprice: Electricity prices (hourly)
-- weather: Weather forecast (hourly)
-- temperatures: Indoor/outdoor temperatures (averaged over 1 hour)
+- spotprice: Electricity prices
+- weather: Weather forecast
+- temperatures: Indoor/outdoor temperatures
 
-Creates analytics_1hour bucket with joined data for long-term trends and reports.
+Creates analytics_1hour bucket with joined data for dashboards and analysis.
+Uses the AggregationPipeline base class for structured data processing.
 """
 
 import datetime
-import logging
 from typing import Optional
 
-import pytz
+from src.aggregation.aggregation_base import AggregationPipeline
+from src.common.logger import setup_logger
 
-from src.common.config import get_config
-from src.common.influx_client import InfluxClient
-
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__, "analytics_1hour.log")
 
 
-def fetch_emeters_5min_data(
-    client: InfluxClient, start_time: datetime.datetime, end_time: datetime.datetime
-) -> list:
-    """
-    Fetch 5-minute energy meter data for aggregation.
+class Analytics1HourAggregator(AggregationPipeline):
+    """1-hour analytics aggregation pipeline."""
 
-    Args:
-        client: InfluxDB client
-        start_time: Start of time range
-        end_time: End of time range
+    INTERVAL_SECONDS = 3600  # 1 hour
 
-    Returns:
-        List of data points with energy fields
-    """
-    config = get_config()
-    bucket = config.influxdb_bucket_emeters_5min
+    def fetch_data(self, window_start: datetime.datetime, window_end: datetime.datetime) -> dict:
+        """Fetch data from all sources: emeters, spotprice, weather, temperatures."""
+        emeters_data = self._fetch_emeters_5min_data(window_start, window_end)
+        spotprice = self._fetch_spotprice_data(window_end)
+        weather = self._fetch_weather_data(window_start, window_end)
+        temperatures = self._fetch_temperatures_data(window_start, window_end)
 
-    query = f"""
+        return {
+            "emeters": emeters_data,
+            "spotprice": spotprice,
+            "weather": weather,
+            "temperatures": temperatures,
+        }
+
+    def _fetch_emeters_5min_data(
+        self, start_time: datetime.datetime, end_time: datetime.datetime
+    ) -> list:
+        """Fetch 5-minute energy meter data for aggregation."""
+        bucket = self.config.influxdb_bucket_emeters_5min
+
+        query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
   |> filter(fn: (r) => r._measurement == "energy")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 """
 
-    logger.debug(f"Fetching emeters_5min data from {start_time} to {end_time}")
+        logger.debug(f"Fetching emeters_5min data from {start_time} to {end_time}")
 
-    try:
-        tables = client.query_api.query(query, org=config.influxdb_org)
-        data = []
-        for table in tables:
-            for record in table.records:
-                data.append(
-                    {
-                        "time": record.get_time(),
-                        "solar_yield_avg": record.values.get("solar_yield_avg"),
-                        "solar_yield_diff": record.values.get("solar_yield_diff"),
-                        "consumption_avg": record.values.get("consumption_avg"),
-                        "consumption_diff": record.values.get("consumption_diff"),
-                        "emeter_avg": record.values.get("emeter_avg"),
-                        "emeter_diff": record.values.get("emeter_diff"),
-                        "battery_charge_avg": record.values.get("battery_charge_avg"),
-                        "battery_charge_diff": record.values.get("battery_charge_diff"),
-                        "battery_discharge_avg": record.values.get("battery_discharge_avg"),
-                        "battery_discharge_diff": record.values.get("battery_discharge_diff"),
-                        "Battery_SoC": record.values.get("Battery_SoC"),
-                        "energy_import_avg": record.values.get("energy_import_avg"),
-                        "energy_export_avg": record.values.get("energy_export_avg"),
-                    }
-                )
-        logger.info(f"Fetched {len(data)} data points from {bucket}")
-        return data
-    except Exception as e:
-        logger.error(f"Error fetching data from {bucket}: {e}")
-        return []
+        try:
+            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            data = []
+            for table in tables:
+                for record in table.records:
+                    data.append(
+                        {
+                            "time": record.get_time(),
+                            "solar_yield_avg": record.values.get("solar_yield_avg"),
+                            "solar_yield_diff": record.values.get("solar_yield_diff"),
+                            "consumption_avg": record.values.get("consumption_avg"),
+                            "consumption_diff": record.values.get("consumption_diff"),
+                            "emeter_avg": record.values.get("emeter_avg"),
+                            "emeter_diff": record.values.get("emeter_diff"),
+                            "battery_charge_avg": record.values.get("battery_charge_avg"),
+                            "battery_charge_diff": record.values.get("battery_charge_diff"),
+                            "battery_discharge_avg": record.values.get("battery_discharge_avg"),
+                            "battery_discharge_diff": record.values.get("battery_discharge_diff"),
+                            "Battery_SoC": record.values.get("Battery_SoC"),
+                            "energy_import_avg": record.values.get("energy_import_avg"),
+                            "energy_export_avg": record.values.get("energy_export_avg"),
+                        }
+                    )
+            logger.info(f"Fetched {len(data)} data points from {bucket}")
+            return data
+        except Exception as e:
+            logger.error(f"Error fetching data from {bucket}: {e}")
+            return []
 
+    def _fetch_spotprice_data(self, window_time: datetime.datetime) -> Optional[dict]:
+        """Fetch spot price for the given time (hourly prices)."""
+        bucket = self.config.influxdb_bucket_spotprice
 
-def fetch_spotprice_data(client: InfluxClient, window_time: datetime.datetime) -> Optional[dict]:
-    """
-    Fetch spot price for the given hour.
+        # Spot prices are hourly, so get the hour containing this window
+        hour_start = window_time.replace(minute=0, second=0, microsecond=0)
+        hour_end = hour_start + datetime.timedelta(hours=1)
 
-    Args:
-        client: InfluxDB client
-        window_time: Time of the 1-hour window
-
-    Returns:
-        Dictionary with price data or None
-    """
-    config = get_config()
-    bucket = config.influxdb_bucket_spotprice
-
-    # Spot prices are hourly
-    hour_start = window_time.replace(minute=0, second=0, microsecond=0)
-    hour_end = hour_start + datetime.timedelta(hours=1)
-
-    query = f"""
+        query = f"""
 from(bucket: "{bucket}")
   |> range(start: {hour_start.isoformat()}, stop: {hour_end.isoformat()})
   |> filter(fn: (r) => r._measurement == "spot")
@@ -104,41 +99,29 @@ from(bucket: "{bucket}")
   |> limit(n: 1)
 """
 
-    logger.debug(f"Fetching spotprice data for hour {hour_start}")
+        logger.debug(f"Fetching spotprice data for hour {hour_start}")
 
-    try:
-        tables = client.query_api.query(query, org=config.influxdb_org)
-        for table in tables:
-            for record in table.records:
-                return {
-                    "price_total": record.values.get("price_total"),
-                    "price_sell": record.values.get("price_sell"),
-                }
-        logger.debug("No spotprice data found")
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching spotprice data: {e}")
-        return None
+        try:
+            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            for table in tables:
+                for record in table.records:
+                    return {
+                        "price_total": record.values.get("price_total"),
+                        "price_sell": record.values.get("price_sell"),
+                    }
+            logger.debug("No spotprice data found")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching spotprice data: {e}")
+            return None
 
+    def _fetch_weather_data(
+        self, start_time: datetime.datetime, end_time: datetime.datetime
+    ) -> Optional[dict]:
+        """Fetch weather data for the given time range."""
+        bucket = self.config.influxdb_bucket_weather
 
-def fetch_weather_data(
-    client: InfluxClient, start_time: datetime.datetime, end_time: datetime.datetime
-) -> Optional[dict]:
-    """
-    Fetch weather data for the given time range.
-
-    Args:
-        client: InfluxDB client
-        start_time: Start of time range
-        end_time: End of time range
-
-    Returns:
-        Dictionary with averaged weather data or None
-    """
-    config = get_config()
-    bucket = config.influxdb_bucket_weather
-
-    query = f"""
+        query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
   |> filter(fn: (r) => r._measurement == "weather")
@@ -146,353 +129,310 @@ from(bucket: "{bucket}")
   |> mean()
 """
 
-    logger.debug(f"Fetching weather data from {start_time} to {end_time}")
+        logger.debug(f"Fetching weather data from {start_time} to {end_time}")
 
-    try:
-        tables = client.query_api.query(query, org=config.influxdb_org)
-        weather_data = {}
-        for table in tables:
-            for record in table.records:
-                field_name = record.get_field()
-                weather_data[field_name] = record.get_value()
+        try:
+            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            weather_data = {}
+            for table in tables:
+                for record in table.records:
+                    field_name = record.get_field()
+                    weather_data[field_name] = record.get_value()
 
-        if weather_data:
-            logger.debug(f"Fetched weather data: {list(weather_data.keys())}")
-            return weather_data
+            if weather_data:
+                logger.debug(f"Fetched weather data: {list(weather_data.keys())}")
+                return weather_data
 
-        logger.debug("No weather data found")
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching weather data: {e}")
-        return None
+            logger.debug("No weather data found")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching weather data: {e}")
+            return None
 
+    def _fetch_temperatures_data(
+        self, start_time: datetime.datetime, end_time: datetime.datetime
+    ) -> Optional[dict]:
+        """Fetch temperature data for the given time range."""
+        bucket = self.config.influxdb_bucket_temperatures
 
-def fetch_temperatures_data(
-    client: InfluxClient, start_time: datetime.datetime, end_time: datetime.datetime
-) -> Optional[dict]:
-    """
-    Fetch temperature data for the given time range.
-
-    Args:
-        client: InfluxDB client
-        start_time: Start of time range
-        end_time: End of time range
-
-    Returns:
-        Dictionary with averaged temperature data or None
-    """
-    config = get_config()
-    bucket = config.influxdb_bucket_temperatures
-
-    query = f"""
+        query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
   |> filter(fn: (r) => r._measurement == "temperatures")
   |> mean()
 """
 
-    logger.debug(f"Fetching temperatures data from {start_time} to {end_time}")
+        logger.debug(f"Fetching temperatures data from {start_time} to {end_time}")
 
-    try:
-        tables = client.query_api.query(query, org=config.influxdb_org)
-        temp_data = {}
-        for table in tables:
-            for record in table.records:
-                field_name = record.get_field()
-                temp_data[field_name] = record.get_value()
+        try:
+            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            temp_data = {}
+            for table in tables:
+                for record in table.records:
+                    field_name = record.get_field()
+                    temp_data[field_name] = record.get_value()
 
-        if temp_data:
-            logger.debug(f"Fetched temperature data: {list(temp_data.keys())}")
-            return temp_data
+            if temp_data:
+                logger.debug(f"Fetched temperature data: {list(temp_data.keys())}")
+                return temp_data
 
-        logger.debug("No temperature data found")
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching temperature data: {e}")
-        return None
+            logger.debug("No temperature data found")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching temperature data: {e}")
+            return None
 
+    def validate_data(self, raw_data: dict) -> bool:
+        """Validate that we have sufficient data for aggregation."""
+        emeters_data = raw_data.get("emeters", [])
 
-def aggregate_1hour_window(
-    emeters_data: list,
-    spotprice: Optional[dict],
-    weather: Optional[dict],
-    temperatures: Optional[dict],
-    window_end: datetime.datetime,
-) -> Optional[dict]:
-    """
-    Aggregate 1-hour window data into analytics summary.
+        if not emeters_data:
+            logger.warning("No emeters_5min data for 1-hour window")
+            return False
 
-    Args:
-        emeters_data: List of emeters_5min data points (should be 12 points)
-        spotprice: Spot price data
-        weather: Weather data
-        temperatures: Temperature data
-        window_end: End timestamp of the 1-hour window
+        return True
 
-    Returns:
-        Dictionary with aggregated fields, or None if no data
-    """
-    if not emeters_data:
-        logger.warning("No emeters_5min data for 1-hour window")
-        return None
+    def calculate_metrics(
+        self,
+        raw_data: dict,
+        window_start: datetime.datetime,
+        window_end: datetime.datetime,
+    ) -> Optional[dict]:
+        """Calculate 1-hour aggregated analytics metrics."""
+        emeters_data = raw_data.get("emeters", [])
+        spotprice = raw_data.get("spotprice")
+        weather = raw_data.get("weather")
+        temperatures = raw_data.get("temperatures")
 
-    fields = {}
+        metrics = {}
 
-    # Aggregate energy data from 12x 5-min windows
-    num_points = len(emeters_data)
+        # Calculate energy metrics
+        energy_metrics = self._calculate_energy_metrics(emeters_data)
+        metrics.update(energy_metrics)
 
-    # Average power values (W)
-    fields["solar_yield_avg"] = sum(p["solar_yield_avg"] or 0.0 for p in emeters_data) / num_points
-    fields["consumption_avg"] = sum(p["consumption_avg"] or 0.0 for p in emeters_data) / num_points
-    fields["emeter_avg"] = sum(p["emeter_avg"] or 0.0 for p in emeters_data) / num_points
-    fields["battery_charge_avg"] = (
-        sum(p["battery_charge_avg"] or 0.0 for p in emeters_data) / num_points
-    )
-    fields["battery_discharge_avg"] = (
-        sum(p["battery_discharge_avg"] or 0.0 for p in emeters_data) / num_points
-    )
+        # Calculate cost allocation if we have spot price data
+        if spotprice:
+            metrics["price_total"] = spotprice.get("price_total")
+            metrics["price_sell"] = spotprice.get("price_sell")
 
-    # Sum energy deltas (Wh) for 1-hour totals
-    fields["solar_yield_sum"] = sum(p["solar_yield_diff"] or 0.0 for p in emeters_data)
-    fields["consumption_sum"] = sum(p["consumption_diff"] or 0.0 for p in emeters_data)
-    fields["emeter_sum"] = sum(p["emeter_diff"] or 0.0 for p in emeters_data)
-    fields["battery_charge_sum"] = sum(p["battery_charge_diff"] or 0.0 for p in emeters_data)
-    fields["battery_discharge_sum"] = sum(p["battery_discharge_diff"] or 0.0 for p in emeters_data)
+            cost_metrics = self._calculate_cost_allocation(metrics, spotprice)
+            metrics.update(cost_metrics)
 
-    # Export is calculated from CheckWatt data
-    export_sum = 0.0
-    if emeters_data:
-        # Sum energy export from CheckWatt
+        # Calculate peak power (1-hour specific)
+        peak_metrics = self._calculate_peak_power(emeters_data)
+        metrics.update(peak_metrics)
+
+        # Calculate self-consumption ratio
+        self_consumption_metrics = self._calculate_self_consumption(metrics)
+        metrics.update(self_consumption_metrics)
+
+        # Add weather and temperature fields
+        self._add_weather_and_temperature_fields(metrics, weather, temperatures)
+
+        logger.info(
+            f"Aggregated 1-hour window: {len(emeters_data)} emeters_5min points, "
+            f"{len(metrics)} total fields"
+        )
+
+        return metrics
+
+    def _calculate_energy_metrics(self, emeters_data: list) -> dict:
+        """Aggregate energy data from 12x 5-min windows."""
+        from src.aggregation.metric_calculators import safe_last, safe_mean, safe_sum
+
+        metrics = {}
+
+        # Average power values (W) using safe_mean helper
+        metrics["solar_yield_avg"] = safe_mean([p.get("solar_yield_avg") for p in emeters_data])
+        metrics["consumption_avg"] = safe_mean([p.get("consumption_avg") for p in emeters_data])
+        metrics["emeter_avg"] = safe_mean([p.get("emeter_avg") for p in emeters_data])
+        metrics["battery_charge_avg"] = safe_mean(
+            [p.get("battery_charge_avg") for p in emeters_data]
+        )
+        metrics["battery_discharge_avg"] = safe_mean(
+            [p.get("battery_discharge_avg") for p in emeters_data]
+        )
+
+        # Sum energy deltas (Wh) for 1-hour totals using safe_sum helper
+        metrics["solar_yield_sum"] = safe_sum([p.get("solar_yield_diff") for p in emeters_data])
+        metrics["consumption_sum"] = safe_sum([p.get("consumption_diff") for p in emeters_data])
+        metrics["emeter_sum"] = safe_sum([p.get("emeter_diff") for p in emeters_data])
+        metrics["battery_charge_sum"] = safe_sum(
+            [p.get("battery_charge_diff") for p in emeters_data]
+        )
+        metrics["battery_discharge_sum"] = safe_sum(
+            [p.get("battery_discharge_diff") for p in emeters_data]
+        )
+
+        # Export is calculated from CheckWatt data
+        export_values = []
         for p in emeters_data:
             if p.get("energy_export_avg") is not None:
                 # energy_export_avg is in W, convert to Wh for 5 minutes
-                export_sum += p["energy_export_avg"] * (5.0 / 60.0)
+                export_values.append(p["energy_export_avg"] * (5.0 / 60.0))
 
-    fields["export_sum"] = export_sum
+        metrics["export_sum"] = safe_sum(export_values)
 
-    # Peak values (max power in 1 hour)
-    fields["consumption_max"] = max(p["consumption_avg"] or 0.0 for p in emeters_data)
-    fields["solar_yield_max"] = max(p["solar_yield_avg"] or 0.0 for p in emeters_data)
-    fields["grid_power_max"] = max(p["emeter_avg"] or 0.0 for p in emeters_data)
+        # Battery SoC: use last value
+        metrics["Battery_SoC"] = safe_last([p.get("Battery_SoC") for p in emeters_data])
 
-    # Battery SoC: use last value
-    fields["Battery_SoC"] = emeters_data[-1].get("Battery_SoC")
+        return metrics
 
-    # Add spot price data
-    if spotprice:
-        fields["price_total"] = spotprice.get("price_total")
-        fields["price_sell"] = spotprice.get("price_sell")
+    def _calculate_cost_allocation(self, metrics: dict, spotprice: dict) -> dict:
+        """Calculate costs using priority-based energy flow allocation."""
+        cost_metrics: dict = {}
+        price_total = spotprice.get("price_total")
+        price_sell = spotprice.get("price_sell")
 
-        # Calculate costs (EUR) using priority-based allocation
-        price_total = fields.get("price_total")
-        price_sell = fields.get("price_sell")
+        if price_total is None or price_sell is None:
+            return cost_metrics
 
-        if price_total is not None and price_sell is not None:
-            # Step 1: Solar to consumption (highest priority)
-            solar_to_consumption = min(fields["solar_yield_sum"], fields["consumption_sum"])
-            fields["solar_to_consumption"] = solar_to_consumption
-            fields["solar_direct_value"] = (solar_to_consumption / 1000.0) * (price_total / 100.0)
+        # Step 1: Solar to consumption (highest priority)
+        solar_to_consumption = min(metrics["solar_yield_sum"], metrics["consumption_sum"])
+        cost_metrics["solar_to_consumption"] = solar_to_consumption
+        cost_metrics["solar_direct_value"] = (solar_to_consumption / 1000.0) * (price_total / 100.0)
 
-            # Step 2: Remaining solar to battery charging
-            solar_remaining = fields["solar_yield_sum"] - solar_to_consumption
-            solar_to_battery = min(solar_remaining, fields["battery_charge_sum"])
-            fields["solar_to_battery"] = solar_to_battery
+        # Step 2: Remaining solar to battery charging
+        solar_remaining = metrics["solar_yield_sum"] - solar_to_consumption
+        solar_to_battery = min(solar_remaining, metrics["battery_charge_sum"])
+        cost_metrics["solar_to_battery"] = solar_to_battery
 
-            # Step 3: Remaining solar to export
-            solar_to_export = fields["solar_yield_sum"] - solar_to_consumption - solar_to_battery
-            fields["solar_to_export"] = solar_to_export
-            fields["solar_export_revenue"] = (solar_to_export / 1000.0) * (price_sell / 100.0)
+        # Step 3: Remaining solar to export
+        solar_to_export = metrics["solar_yield_sum"] - solar_to_consumption - solar_to_battery
+        cost_metrics["solar_to_export"] = solar_to_export
+        cost_metrics["solar_export_revenue"] = (solar_to_export / 1000.0) * (price_sell / 100.0)
 
-            # Step 4: Battery charging costs
-            # Solar to battery: opportunity cost (could have exported)
-            fields["battery_charge_from_solar_cost"] = (solar_to_battery / 1000.0) * (
-                price_sell / 100.0
-            )
-
-            # Grid to battery: actual import cost
-            grid_to_battery = fields["battery_charge_sum"] - solar_to_battery
-            fields["grid_to_battery"] = grid_to_battery
-            fields["battery_charge_from_grid_cost"] = (grid_to_battery / 1000.0) * (
-                price_total / 100.0
-            )
-
-            fields["battery_charge_total_cost"] = (
-                fields["battery_charge_from_solar_cost"] + fields["battery_charge_from_grid_cost"]
-            )
-
-            # Step 5: Remaining consumption (after solar direct)
-            remaining_consumption = fields["consumption_sum"] - solar_to_consumption
-
-            # Battery discharge to consumption
-            battery_to_consumption = min(fields["battery_discharge_sum"], remaining_consumption)
-            fields["battery_to_consumption"] = battery_to_consumption
-            fields["battery_discharge_value"] = (battery_to_consumption / 1000.0) * (
-                price_total / 100.0
-            )
-
-            # Battery discharge to export
-            battery_to_export = fields["battery_discharge_sum"] - battery_to_consumption
-            fields["battery_to_export"] = battery_to_export
-            fields["battery_export_revenue"] = (battery_to_export / 1000.0) * (price_sell / 100.0)
-
-            # Step 6: Grid import for remaining consumption
-            remaining_consumption_after_battery = remaining_consumption - battery_to_consumption
-            fields["grid_import_cost"] = (remaining_consumption_after_battery / 1000.0) * (
-                price_total / 100.0
-            )
-
-            # Step 7: Battery arbitrage (net benefit/cost)
-            fields["battery_arbitrage"] = (
-                fields["battery_discharge_value"] + fields["battery_export_revenue"]
-            ) - fields["battery_charge_total_cost"]
-
-            # Step 8: Total costs
-            fields["total_electricity_cost"] = fields["grid_import_cost"]
-            fields["total_solar_savings"] = (
-                fields["solar_direct_value"] + fields["solar_export_revenue"]
-            )
-            fields["net_cost"] = (
-                fields["total_electricity_cost"]
-                - fields["total_solar_savings"]
-                - fields["battery_arbitrage"]
-            )
-
-            # Keep old electricity_cost for backwards compatibility
-            fields["electricity_cost"] = fields["grid_import_cost"]
-
-    # Calculate self-consumption (solar used directly by loads)
-    # This is same as solar_to_consumption calculated above
-    if fields["solar_yield_sum"] > 0:
-        # Use the priority-based calculation if available
-        if "solar_to_consumption" in fields:
-            fields["solar_direct_sum"] = fields["solar_to_consumption"]
-        else:
-            # Fallback: simple calculation
-            solar_direct = fields["solar_yield_sum"] - fields["battery_charge_sum"] - export_sum
-            fields["solar_direct_sum"] = max(0.0, solar_direct)
-
-        # Self-consumption ratio = solar used directly / total solar * 100
-        fields["self_consumption_ratio"] = (
-            fields["solar_direct_sum"] / fields["solar_yield_sum"] * 100.0
+        # Step 4: Battery charging costs
+        # Solar to battery: opportunity cost (could have exported)
+        cost_metrics["battery_charge_from_solar_cost"] = (solar_to_battery / 1000.0) * (
+            price_sell / 100.0
         )
-    else:
-        fields["solar_direct_sum"] = 0.0
-        fields["self_consumption_ratio"] = 0.0
 
-    # Add weather data
-    if weather:
-        fields["air_temperature"] = weather.get("air_temperature")
-        fields["cloud_cover"] = weather.get("cloud_cover")
-        fields["solar_radiation"] = weather.get("solar_radiation")
-        fields["wind_speed"] = weather.get("wind_speed")
+        # Grid to battery: actual import cost
+        grid_to_battery = metrics["battery_charge_sum"] - solar_to_battery
+        cost_metrics["grid_to_battery"] = grid_to_battery
+        cost_metrics["battery_charge_from_grid_cost"] = (grid_to_battery / 1000.0) * (
+            price_total / 100.0
+        )
 
-    # Add all temperature data
-    if temperatures:
-        for field_name, value in temperatures.items():
-            fields[field_name] = value
+        cost_metrics["battery_charge_total_cost"] = (
+            cost_metrics["battery_charge_from_solar_cost"]
+            + cost_metrics["battery_charge_from_grid_cost"]
+        )
 
-    # Add timestamp
-    fields["time"] = window_end
+        # Step 5: Remaining consumption (after solar direct)
+        remaining_consumption = metrics["consumption_sum"] - solar_to_consumption
 
-    logger.info(
-        f"Aggregated 1-hour window: {num_points} emeters_5min points, "
-        f"{len(fields)} total fields"
-    )
-    logger.debug(f"Fields: {fields}")
+        # Battery discharge to consumption
+        battery_to_consumption = min(metrics["battery_discharge_sum"], remaining_consumption)
+        cost_metrics["battery_to_consumption"] = battery_to_consumption
+        cost_metrics["battery_discharge_value"] = (battery_to_consumption / 1000.0) * (
+            price_total / 100.0
+        )
 
-    return fields
+        # Battery discharge to export
+        battery_to_export = metrics["battery_discharge_sum"] - battery_to_consumption
+        cost_metrics["battery_to_export"] = battery_to_export
+        cost_metrics["battery_export_revenue"] = (battery_to_export / 1000.0) * (price_sell / 100.0)
 
+        # Step 6: Grid import for remaining consumption
+        remaining_consumption_after_battery = remaining_consumption - battery_to_consumption
+        cost_metrics["grid_import_cost"] = (remaining_consumption_after_battery / 1000.0) * (
+            price_total / 100.0
+        )
 
-def run_aggregation(window_end: datetime.datetime, dry_run: bool = False) -> bool:
-    """
-    Run 1-hour aggregation for a specific window.
+        # Step 7: Battery arbitrage (net benefit/cost)
+        cost_metrics["battery_arbitrage"] = (
+            cost_metrics["battery_discharge_value"] + cost_metrics["battery_export_revenue"]
+        ) - cost_metrics["battery_charge_total_cost"]
 
-    Args:
-        window_end: End timestamp of the 1-hour window to aggregate
-        dry_run: If True, don't write to InfluxDB
+        # Step 8: Total costs
+        cost_metrics["total_electricity_cost"] = cost_metrics["grid_import_cost"]
+        cost_metrics["total_solar_savings"] = (
+            cost_metrics["solar_direct_value"] + cost_metrics["solar_export_revenue"]
+        )
+        cost_metrics["net_cost"] = (
+            cost_metrics["total_electricity_cost"]
+            - cost_metrics["total_solar_savings"]
+            - cost_metrics["battery_arbitrage"]
+        )
 
-    Returns:
-        True if successful, False otherwise
-    """
-    logger.info("Starting 1-hour analytics aggregation")
-    logger.info(f"Aggregating window: {window_end - datetime.timedelta(hours=1)} to {window_end}")
+        # Keep old electricity_cost for backwards compatibility
+        cost_metrics["electricity_cost"] = cost_metrics["grid_import_cost"]
 
-    config = get_config()
-    client = InfluxClient(config)
+        return cost_metrics
 
-    # Fetch data from all sources
-    start_time = window_end - datetime.timedelta(hours=1)
+    def _calculate_peak_power(self, emeters_data: list) -> dict:
+        """Calculate peak power values (max power in 1 hour)."""
+        peak_metrics = {}
+        peak_metrics["consumption_max"] = max(p["consumption_avg"] or 0.0 for p in emeters_data)
+        peak_metrics["solar_yield_max"] = max(p["solar_yield_avg"] or 0.0 for p in emeters_data)
+        peak_metrics["grid_power_max"] = max(p["emeter_avg"] or 0.0 for p in emeters_data)
+        return peak_metrics
 
-    emeters_data = fetch_emeters_5min_data(client, start_time, window_end)
-    spotprice = fetch_spotprice_data(client, window_end)
-    weather = fetch_weather_data(client, start_time, window_end)
-    temperatures = fetch_temperatures_data(client, start_time, window_end)
+    def _calculate_self_consumption(self, metrics: dict) -> dict:
+        """Calculate self-consumption ratio (solar used directly by loads)."""
+        self_consumption_metrics = {}
 
-    # Aggregate
-    result = aggregate_1hour_window(emeters_data, spotprice, weather, temperatures, window_end)
+        if metrics["solar_yield_sum"] > 0:
+            # Use the priority-based calculation if available
+            if "solar_to_consumption" in metrics:
+                self_consumption_metrics["solar_direct_sum"] = metrics["solar_to_consumption"]
+            else:
+                # Fallback: simple calculation
+                solar_direct = (
+                    metrics["solar_yield_sum"]
+                    - metrics["battery_charge_sum"]
+                    - metrics["export_sum"]
+                )
+                self_consumption_metrics["solar_direct_sum"] = max(0.0, solar_direct)
 
-    if result is None:
-        logger.warning("No data available for 1-hour window - skipping")
-        return True
+            # Self-consumption ratio = solar used directly / total solar * 100
+            self_consumption_metrics["self_consumption_ratio"] = (
+                self_consumption_metrics["solar_direct_sum"] / metrics["solar_yield_sum"] * 100.0
+            )
+        else:
+            self_consumption_metrics["solar_direct_sum"] = 0.0
+            self_consumption_metrics["self_consumption_ratio"] = 0.0
 
-    # Write to InfluxDB
-    if dry_run:
-        logger.info(f"DRY RUN: Would write {len(result)} fields to analytics_1hour at {window_end}")
-        logger.debug(f"Fields: {result}")
-    else:
+        return self_consumption_metrics
+
+    def _add_weather_and_temperature_fields(
+        self, metrics: dict, weather: Optional[dict], temperatures: Optional[dict]
+    ) -> None:
+        """Add weather and temperature data to metrics."""
+        # Add weather data
+        if weather:
+            metrics["air_temperature"] = weather.get("air_temperature")
+            metrics["cloud_cover"] = weather.get("cloud_cover")
+            metrics["solar_radiation"] = weather.get("solar_radiation")
+            metrics["wind_speed"] = weather.get("wind_speed")
+
+        # Add all temperature data
+        if temperatures:
+            for field_name, value in temperatures.items():
+                metrics[field_name] = value
+
+    def write_results(self, metrics: dict, timestamp: datetime.datetime) -> bool:
+        """Write aggregated analytics to InfluxDB."""
+        bucket = self.config.influxdb_bucket_analytics_1hour
+
         try:
             from influxdb_client import Point
 
             point = Point("analytics")
-            for field_name, value in result.items():
+            for field_name, value in metrics.items():
                 if field_name != "time" and value is not None:
                     point.field(field_name, value)
-            point.time(window_end)
+            point.time(timestamp)
 
-            client.write_api.write(
-                bucket=config.influxdb_bucket_analytics_1hour,
-                org=config.influxdb_org,
+            self.influx.write_api.write(
+                bucket=bucket,
+                org=self.config.influxdb_org,
                 record=point,
             )
-            logger.info(f"Wrote analytics to analytics_1hour at {window_end}")
+            logger.info(f"Wrote {len(metrics)} fields to {bucket} at {timestamp}")
+            return True
         except Exception as e:
-            logger.error(f"Error writing to InfluxDB: {e}")
+            logger.error(f"Error writing to {bucket}: {e}")
             return False
-
-    logger.info("1-hour analytics aggregation completed successfully")
-    return True
-
-
-def main():
-    """Main entry point for 1-hour analytics aggregation."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="1-hour analytics aggregator")
-    parser.add_argument(
-        "--window-end",
-        type=str,
-        help="End timestamp of window (ISO format with timezone, e.g. 2026-01-08T10:00:00+00:00)",
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Don't write to InfluxDB")
-    args = parser.parse_args()
-
-    # Setup logging
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-
-    # Determine window end time
-    if args.window_end:
-        window_end = datetime.datetime.fromisoformat(args.window_end)
-    else:
-        # Default: process the previous completed hour
-        now = datetime.datetime.now(pytz.UTC)
-        # Round down to previous hour
-        window_end = now.replace(minute=0, second=0, microsecond=0)
-
-    success = run_aggregation(window_end, dry_run=args.dry_run)
-    return 0 if success else 1
-
-
-if __name__ == "__main__":
-    exit(main())
