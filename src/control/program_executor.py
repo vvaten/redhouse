@@ -136,20 +136,7 @@ class HeatingProgramExecutor:
 
         logger.info(f"Executing program at {datetime.datetime.fromtimestamp(current_time)}")
 
-        # Collect all commands from all loads
-        all_commands = []
-        for load_id, load_data in program["loads"].items():
-            for entry in load_data["schedule"]:
-                all_commands.append(
-                    {
-                        "load_id": load_id,
-                        "entry": entry,
-                        "timestamp": entry["timestamp"],
-                    }
-                )
-
-        # Sort by timestamp
-        all_commands.sort(key=lambda x: x["timestamp"])
+        all_commands = self._collect_and_sort_commands(program)
 
         executed_count = 0
         skipped_count = 0
@@ -167,47 +154,124 @@ class HeatingProgramExecutor:
 
             # Check if time to execute
             if current_time >= scheduled_time:
-                # Check delay
-                delay = current_time - scheduled_time
-                if delay > self.MAX_EXECUTION_DELAY:
-                    logger.warning(
-                        f"Skipping command '{entry['command']}' at {entry['local_time']}: "
-                        f"delay too large ({delay}s > {self.MAX_EXECUTION_DELAY}s)"
-                    )
-                    skipped_count += 1
-                    continue
-
-                # Execute command
-                result = self._execute_command(
-                    cmd_info["load_id"], entry, scheduled_time, current_time
+                exec_result = self._process_and_execute_command(
+                    program, cmd_info, current_time, base_dir
                 )
-
-                if result["success"]:
+                if exec_result == "executed":
                     executed_count += 1
-                    entry["executed_at"] = current_time
-                    entry["execution_result"] = result
-
-                    # Save program after each execution
-                    self.save_program(program, base_dir)
-
-                    # Write to InfluxDB
-                    self._write_execution_to_influx(
-                        program["program_date"], cmd_info["load_id"], entry, result
-                    )
-                else:
+                elif exec_result == "skipped":
+                    skipped_count += 1
+                elif exec_result == "failed":
                     failed_count += 1
-                    logger.error(
-                        f"Failed to execute command '{entry['command']}' "
-                        f"for {cmd_info['load_id']}: {result.get('error')}"
-                    )
-
             else:
                 # This is a future command
                 if next_execution_time is None:
                     next_execution_time = scheduled_time
                 break
 
-        # Check if periodic EVU cycle is needed (for geothermal pump)
+        evu_cycle_performed = self._check_and_perform_evu_cycle(current_time)
+
+        summary = self._update_program_summary(
+            program,
+            all_commands,
+            executed_count,
+            skipped_count,
+            failed_count,
+            next_execution_time,
+            evu_cycle_performed,
+            current_time,
+        )
+
+        logger.info(
+            f"Execution complete: {executed_count} executed, {skipped_count} skipped, "
+            f"{failed_count} failed, EVU cycle: {evu_cycle_performed}"
+        )
+
+        return summary
+
+    def _process_and_execute_command(
+        self, program: dict, cmd_info: dict, current_time: int, base_dir: str
+    ) -> str:
+        """
+        Process and execute a single command with validation.
+
+        Args:
+            program: Program dict
+            cmd_info: Command info dict with load_id, entry, timestamp
+            current_time: Current time (epoch)
+            base_dir: Base directory for saving updated program
+
+        Returns:
+            Result status: "executed", "skipped", or "failed"
+        """
+        entry = cmd_info["entry"]
+        scheduled_time = entry["timestamp"]
+
+        # Check delay
+        delay = current_time - scheduled_time
+        if delay > self.MAX_EXECUTION_DELAY:
+            logger.warning(
+                f"Skipping command '{entry['command']}' at {entry['local_time']}: "
+                f"delay too large ({delay}s > {self.MAX_EXECUTION_DELAY}s)"
+            )
+            return "skipped"
+
+        # Execute command
+        result = self._execute_command(cmd_info["load_id"], entry, scheduled_time, current_time)
+
+        if result["success"]:
+            entry["executed_at"] = current_time
+            entry["execution_result"] = result
+
+            # Save program after each execution
+            self.save_program(program, base_dir)
+
+            # Write to InfluxDB
+            self._write_execution_to_influx(
+                program["program_date"], cmd_info["load_id"], entry, result
+            )
+            return "executed"
+        else:
+            logger.error(
+                f"Failed to execute command '{entry['command']}' "
+                f"for {cmd_info['load_id']}: {result.get('error')}"
+            )
+            return "failed"
+
+    def _collect_and_sort_commands(self, program: dict) -> list:
+        """
+        Collect all commands from all loads and sort by timestamp.
+
+        Args:
+            program: Program dict with loads and schedules
+
+        Returns:
+            List of command info dicts sorted by timestamp
+        """
+        all_commands = []
+        for load_id, load_data in program["loads"].items():
+            for entry in load_data["schedule"]:
+                all_commands.append(
+                    {
+                        "load_id": load_id,
+                        "entry": entry,
+                        "timestamp": entry["timestamp"],
+                    }
+                )
+
+        all_commands.sort(key=lambda x: x["timestamp"])
+        return all_commands
+
+    def _check_and_perform_evu_cycle(self, current_time: int) -> bool:
+        """
+        Check if EVU cycle needed and perform it.
+
+        Args:
+            current_time: Current time (epoch)
+
+        Returns:
+            True if EVU cycle was performed successfully
+        """
         evu_cycle_performed = False
         if hasattr(self.load_controller, "pump_controller"):
             pump_ctrl = self.load_controller.pump_controller
@@ -219,8 +283,35 @@ class HeatingProgramExecutor:
                     evu_cycle_performed = True
                 else:
                     logger.error(f"Periodic EVU cycle failed: {cycle_result.get('error')}")
+        return evu_cycle_performed
 
-        # Update execution status in program
+    def _update_program_summary(
+        self,
+        program: dict,
+        all_commands: list,
+        executed_count: int,
+        skipped_count: int,
+        failed_count: int,
+        next_execution_time: Optional[int],
+        evu_cycle_performed: bool,
+        current_time: int,
+    ) -> dict:
+        """
+        Update program state and generate execution summary.
+
+        Args:
+            program: Program dict to update
+            all_commands: All commands list
+            executed_count: Number of executed commands
+            skipped_count: Number of skipped commands
+            failed_count: Number of failed commands
+            next_execution_time: Next scheduled command time
+            evu_cycle_performed: Whether EVU cycle was performed
+            current_time: Current time (epoch)
+
+        Returns:
+            Execution summary dict
+        """
         total_commands = len([c for c in all_commands if not c["entry"].get("executed_at")])
         program["execution_status"] = {
             "executed_intervals": executed_count,
@@ -230,20 +321,13 @@ class HeatingProgramExecutor:
             "evu_cycle_performed": evu_cycle_performed,
         }
 
-        summary = {
+        return {
             "executed_count": executed_count,
             "skipped_count": skipped_count,
             "failed_count": failed_count,
             "next_execution_time": next_execution_time,
             "evu_cycle_performed": evu_cycle_performed,
         }
-
-        logger.info(
-            f"Execution complete: {executed_count} executed, {skipped_count} skipped, "
-            f"{failed_count} failed, EVU cycle: {evu_cycle_performed}"
-        )
-
-        return summary
 
     def _execute_command(
         self, load_id: str, entry: dict, scheduled_time: int, actual_time: int

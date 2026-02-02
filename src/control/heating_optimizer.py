@@ -77,31 +77,88 @@ class HeatingOptimizer:
             logger.warning("Empty DataFrame provided to calculate_heating_priorities")
             return pd.DataFrame()
 
-        # Create time floor column based on resolution
+        df = self._validate_and_prepare_input(df)
+        df = self._setup_time_resolution(df)
+        grouped = self._prepare_grouped_data(df)
+
+        # Calculate base load cost
+        grouped = self._calculate_base_load_cost(grouped)
+
+        # Calculate heating load cost
+        grouped = self._calculate_heating_load_cost(grouped)
+
+        # The heating priority is simply the cost of running heating that interval
+        col = f"{self.heating_load_kw}kWload"
+        grouped["heating_prio"] = grouped[f"price_for_{col}"]
+
+        resolution_label = "hours" if self.resolution_minutes == 60 else "intervals"
+        logger.info(
+            f"Calculated priorities for {len(grouped)} {resolution_label} "
+            f"({self.resolution_minutes} minute resolution)"
+        )
+
+        return grouped  # type: ignore[return-value]
+
+    def _validate_and_prepare_input(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validate input DataFrame and prepare it for processing.
+
+        Args:
+            df: Input DataFrame
+
+        Returns:
+            Prepared DataFrame copy
+
+        Raises:
+            ValueError: If DataFrame doesn't have required time column
+        """
         df = df.copy()
 
         # Check if time_floor_local is in index or columns
+        if "time_floor_local" not in df.columns and not (
+            df.index.name == "time_floor_local" or isinstance(df.index, pd.DatetimeIndex)
+        ):
+            raise ValueError("DataFrame must have 'time_floor_local' column or DatetimeIndex")
+
+        return df
+
+    def _setup_time_resolution(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Floor time column to specified resolution.
+
+        Args:
+            df: DataFrame with time column
+
+        Returns:
+            DataFrame with time_resolution column added
+        """
         time_col: Union[pd.Series, pd.DatetimeIndex]
         if "time_floor_local" in df.columns:
             time_col = df["time_floor_local"]
-        elif df.index.name == "time_floor_local" or isinstance(df.index, pd.DatetimeIndex):
-            time_col = df.index  # type: ignore[assignment]
         else:
-            raise ValueError("DataFrame must have 'time_floor_local' column or DatetimeIndex")
+            time_col = df.index  # type: ignore[assignment]
 
         if self.resolution_minutes == 15:
-            # Round to 15-minute intervals
             df["time_resolution"] = (
                 time_col.dt.floor("15T") if hasattr(time_col, "dt") else time_col.floor("15T")  # type: ignore[arg-type]
             )
         else:
-            # Use hourly resolution
             df["time_resolution"] = (
                 time_col.dt.floor("H") if hasattr(time_col, "dt") else time_col.floor("H")  # type: ignore[arg-type]
             )
 
-        # Group by time resolution and average the values
-        # Make solar predictions optional - use 0 if not available
+        return df
+
+    def _prepare_grouped_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Group by time resolution and aggregate columns.
+
+        Args:
+            df: DataFrame with time_resolution column
+
+        Returns:
+            Grouped DataFrame with averaged values
+        """
         required_cols = ["price_sell", "price_total", "Air temperature"]
         optional_cols = []
 
@@ -114,11 +171,21 @@ class HeatingOptimizer:
 
         grouped = df.groupby("time_resolution")[required_cols + optional_cols].mean()
 
-        # Convert solar prediction from W to kWh (multiply by hours = 1)
-        # Original code multiplies by 3.6, assuming 5-min intervals * 12 = 1 hour
+        # Convert solar prediction from W to kWh
         grouped["solar_yield_avg_prediction"] = grouped["solar_yield_avg_prediction"] * 3.6
 
-        # Calculate base load solar usage and cost
+        return grouped  # type: ignore[return-value]
+
+    def _calculate_base_load_cost(self, grouped: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate solar usage and cost for base load.
+
+        Args:
+            grouped: Grouped DataFrame with solar and price data
+
+        Returns:
+            DataFrame with base load cost columns added
+        """
         grouped["base_load"] = self.base_load_kw
         grouped["solar_yield_for_base"] = grouped[["solar_yield_avg_prediction", "base_load"]].min(
             axis=1
@@ -131,11 +198,20 @@ class HeatingOptimizer:
             grouped["price_total"] * grouped["bought_electr_for_base"]
             + grouped["solar_yield_for_base"] * grouped["price_sell"]
         )
+        return grouped
 
-        # Calculate heating load solar usage and cost
-        grouped[f"{self.heating_load_kw}kWload"] = self.heating_load_kw
+    def _calculate_heating_load_cost(self, grouped: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate solar usage and cost for heating load.
 
+        Args:
+            grouped: Grouped DataFrame with base load calculations
+
+        Returns:
+            DataFrame with heating load cost columns added
+        """
         col = f"{self.heating_load_kw}kWload"
+        grouped[col] = self.heating_load_kw
         grouped[f"solar_yield_for_{col}"] = grouped[["solar_yield_left_after_base", col]].min(
             axis=1
         )
@@ -144,17 +220,7 @@ class HeatingOptimizer:
             grouped["price_total"] * grouped[f"bought_electr_for_{col}"]
             + grouped[f"solar_yield_for_{col}"] * grouped["price_sell"]
         )
-
-        # The heating priority is simply the cost of running heating that interval
-        grouped["heating_prio"] = grouped[f"price_for_{col}"]
-
-        resolution_label = "hours" if self.resolution_minutes == 60 else "intervals"
-        logger.info(
-            f"Calculated priorities for {len(grouped)} {resolution_label} "
-            f"({self.resolution_minutes} minute resolution)"
-        )
-
-        return grouped  # type: ignore[return-value]
+        return grouped
 
     def filter_day_priorities(self, df: pd.DataFrame, date_offset: int = 1) -> pd.DataFrame:
         """
