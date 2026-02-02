@@ -180,14 +180,14 @@ def check_code_quality(root_dir: Path) -> bool:
     if passed:
         print(f"{OK} Code quality metrics within limits")
     else:
-        print("[WARN] Code quality violations found (not blocking)")
+        print(f"{FAIL} Hard limit violations found (blocking)")
 
     # Always show the summary
     lines = output.strip().split("\n")
     for line in lines:
         print(f"  {line}")
 
-    return True  # Don't fail on code quality, just warn
+    return passed
 
 
 def check_coverage(root_dir: Path) -> bool:
