@@ -198,80 +198,146 @@ from(bucket: "{bucket}")
         if price_total is None or price_sell is None:
             return cost_metrics
 
-        # Step 1: Solar to consumption (highest priority)
-        solar_to_consumption = min(metrics["solar_yield_sum"], metrics["consumption_sum"])
-        cost_metrics["solar_to_consumption"] = solar_to_consumption
-        cost_metrics["solar_direct_value"] = (solar_to_consumption / 1000.0) * (price_total / 100.0)
-
-        # Step 2: Remaining solar to battery charging
-        solar_remaining = metrics["solar_yield_sum"] - solar_to_consumption
-        solar_to_battery = min(solar_remaining, metrics["battery_charge_sum"])
-        cost_metrics["solar_to_battery"] = solar_to_battery
-
-        # Step 3: Remaining solar to export
-        solar_to_export = metrics["solar_yield_sum"] - solar_to_consumption - solar_to_battery
-        cost_metrics["solar_to_export"] = solar_to_export
-        cost_metrics["solar_export_revenue"] = (solar_to_export / 1000.0) * (price_sell / 100.0)
-
-        # Step 4: Battery charging costs
-        # Solar to battery: opportunity cost (could have exported)
-        cost_metrics["battery_charge_from_solar_cost"] = (solar_to_battery / 1000.0) * (
+        # Steps 1-3: Allocate solar energy
+        solar_allocation = self._allocate_solar_energy(
+            metrics["solar_yield_sum"], metrics["consumption_sum"], metrics["battery_charge_sum"]
+        )
+        cost_metrics.update(solar_allocation)
+        cost_metrics["solar_direct_value"] = (solar_allocation["solar_to_consumption"] / 1000.0) * (
+            price_total / 100.0
+        )
+        cost_metrics["solar_export_revenue"] = (solar_allocation["solar_to_export"] / 1000.0) * (
             price_sell / 100.0
         )
 
-        # Grid to battery: actual import cost
-        grid_to_battery = metrics["battery_charge_sum"] - solar_to_battery
-        cost_metrics["grid_to_battery"] = grid_to_battery
-        cost_metrics["battery_charge_from_grid_cost"] = (grid_to_battery / 1000.0) * (
-            price_total / 100.0
+        # Step 4: Battery charging costs
+        battery_charge_costs = self._calculate_battery_charging_costs(
+            solar_allocation["solar_to_battery"],
+            metrics["battery_charge_sum"],
+            price_sell,
+            price_total,
         )
+        cost_metrics.update(battery_charge_costs)
 
-        cost_metrics["battery_charge_total_cost"] = (
-            cost_metrics["battery_charge_from_solar_cost"]
-            + cost_metrics["battery_charge_from_grid_cost"]
+        # Step 5: Battery discharge
+        remaining_consumption = (
+            metrics["consumption_sum"] - solar_allocation["solar_to_consumption"]
         )
-
-        # Step 5: Remaining consumption (after solar direct)
-        remaining_consumption = metrics["consumption_sum"] - solar_to_consumption
-
-        # Battery discharge to consumption
-        battery_to_consumption = min(metrics["battery_discharge_sum"], remaining_consumption)
-        cost_metrics["battery_to_consumption"] = battery_to_consumption
-        cost_metrics["battery_discharge_value"] = (battery_to_consumption / 1000.0) * (
-            price_total / 100.0
+        battery_discharge = self._calculate_battery_discharge(
+            metrics["battery_discharge_sum"], remaining_consumption, price_total, price_sell
         )
+        cost_metrics.update(battery_discharge)
 
-        # Battery discharge to export
-        battery_to_export = metrics["battery_discharge_sum"] - battery_to_consumption
-        cost_metrics["battery_to_export"] = battery_to_export
-        cost_metrics["battery_export_revenue"] = (battery_to_export / 1000.0) * (price_sell / 100.0)
-
-        # Step 6: Grid import for remaining consumption
-        remaining_consumption_after_battery = remaining_consumption - battery_to_consumption
-        cost_metrics["grid_import_cost"] = (remaining_consumption_after_battery / 1000.0) * (
-            price_total / 100.0
+        # Step 6: Grid import cost
+        remaining_consumption_after_battery = (
+            remaining_consumption - battery_discharge["battery_to_consumption"]
+        )
+        cost_metrics["grid_import_cost"] = self._calculate_grid_import_cost(
+            remaining_consumption_after_battery, price_total
         )
 
         # Step 7: Battery arbitrage (net benefit/cost)
         cost_metrics["battery_arbitrage"] = (
-            cost_metrics["battery_discharge_value"] + cost_metrics["battery_export_revenue"]
-        ) - cost_metrics["battery_charge_total_cost"]
+            battery_discharge["battery_discharge_value"]
+            + battery_discharge["battery_export_revenue"]
+        ) - battery_charge_costs["battery_charge_total_cost"]
 
-        # Step 8: Total costs
-        cost_metrics["total_electricity_cost"] = cost_metrics["grid_import_cost"]
-        cost_metrics["total_solar_savings"] = (
-            cost_metrics["solar_direct_value"] + cost_metrics["solar_export_revenue"]
+        # Step 8: Total costs and summary
+        cost_summary = self._calculate_cost_summary(
+            cost_metrics["solar_direct_value"],
+            cost_metrics["solar_export_revenue"],
+            cost_metrics["battery_arbitrage"],
+            cost_metrics["grid_import_cost"],
         )
-        cost_metrics["net_cost"] = (
-            cost_metrics["total_electricity_cost"]
-            - cost_metrics["total_solar_savings"]
-            - cost_metrics["battery_arbitrage"]
-        )
-
-        # Keep old electricity_cost for backwards compatibility
-        cost_metrics["electricity_cost"] = cost_metrics["grid_import_cost"]
+        cost_metrics.update(cost_summary)
 
         return cost_metrics
+
+    def _allocate_solar_energy(
+        self, solar_yield: float, consumption: float, battery_charge: float
+    ) -> dict:
+        """Steps 1-3: Allocate solar to consumption, battery, and export."""
+        # Step 1: Solar to consumption (highest priority)
+        solar_to_consumption = min(solar_yield, consumption)
+
+        # Step 2: Remaining solar to battery charging
+        solar_remaining = solar_yield - solar_to_consumption
+        solar_to_battery = min(solar_remaining, battery_charge)
+
+        # Step 3: Remaining solar to export
+        solar_to_export = solar_yield - solar_to_consumption - solar_to_battery
+
+        return {
+            "solar_to_consumption": solar_to_consumption,
+            "solar_to_battery": solar_to_battery,
+            "solar_to_export": solar_to_export,
+        }
+
+    def _calculate_battery_charging_costs(
+        self, solar_to_battery: float, battery_charge: float, sell_price: float, buy_price: float
+    ) -> dict:
+        """Step 4: Calculate costs for solar and grid battery charging."""
+        # Solar to battery: opportunity cost (could have exported)
+        battery_charge_from_solar_cost = (solar_to_battery / 1000.0) * (sell_price / 100.0)
+
+        # Grid to battery: actual import cost
+        grid_to_battery = battery_charge - solar_to_battery
+        battery_charge_from_grid_cost = (grid_to_battery / 1000.0) * (buy_price / 100.0)
+
+        battery_charge_total_cost = battery_charge_from_solar_cost + battery_charge_from_grid_cost
+
+        return {
+            "battery_charge_from_solar_cost": battery_charge_from_solar_cost,
+            "grid_to_battery": grid_to_battery,
+            "battery_charge_from_grid_cost": battery_charge_from_grid_cost,
+            "battery_charge_total_cost": battery_charge_total_cost,
+        }
+
+    def _calculate_battery_discharge(
+        self,
+        battery_discharge: float,
+        remaining_consumption: float,
+        buy_price: float,
+        sell_price: float,
+    ) -> dict:
+        """Step 5: Calculate discharge to consumption and export."""
+        # Battery discharge to consumption
+        battery_to_consumption = min(battery_discharge, remaining_consumption)
+        battery_discharge_value = (battery_to_consumption / 1000.0) * (buy_price / 100.0)
+
+        # Battery discharge to export
+        battery_to_export = battery_discharge - battery_to_consumption
+        battery_export_revenue = (battery_to_export / 1000.0) * (sell_price / 100.0)
+
+        return {
+            "battery_to_consumption": battery_to_consumption,
+            "battery_discharge_value": battery_discharge_value,
+            "battery_to_export": battery_to_export,
+            "battery_export_revenue": battery_export_revenue,
+        }
+
+    def _calculate_grid_import_cost(self, remaining_consumption: float, buy_price: float) -> float:
+        """Step 6: Calculate cost of remaining consumption from grid."""
+        return (remaining_consumption / 1000.0) * (buy_price / 100.0)
+
+    def _calculate_cost_summary(
+        self,
+        solar_direct_value: float,
+        solar_export_revenue: float,
+        battery_arbitrage: float,
+        grid_import_cost: float,
+    ) -> dict:
+        """Step 8: Calculate total costs and net cost."""
+        total_electricity_cost = grid_import_cost
+        total_solar_savings = solar_direct_value + solar_export_revenue
+        net_cost = total_electricity_cost - total_solar_savings - battery_arbitrage
+
+        return {
+            "total_electricity_cost": total_electricity_cost,
+            "total_solar_savings": total_solar_savings,
+            "net_cost": net_cost,
+            "electricity_cost": grid_import_cost,  # Backwards compatibility
+        }
 
     def _calculate_self_consumption(self, metrics: dict) -> dict:
         """Calculate self-consumption ratio (solar used directly by loads)."""
