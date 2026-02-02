@@ -521,24 +521,22 @@ class TestMain:
     def test_main_replay_success(self):
         """Test main replay mode with success."""
         with patch("sys.argv", ["replay_json_logs.py", "--source", "test_source"]):
-            with patch("src.tools.replay_json_logs.replay_logs"):
-                with patch("asyncio.run") as mock_asyncio_run:
-                    mock_asyncio_run.return_value = (5, 0)
+            with patch("src.tools.replay_json_logs.replay_logs") as mock_replay:
+                mock_replay.return_value = (5, 0)
 
-                    result = main()
+                result = main()
 
-                    assert result == 0
+                assert result == 0
 
     def test_main_replay_with_failures(self):
         """Test main replay mode with some failures."""
         with patch("sys.argv", ["replay_json_logs.py", "--source", "test_source"]):
-            with patch("src.tools.replay_json_logs.replay_logs"):
-                with patch("asyncio.run") as mock_asyncio_run:
-                    mock_asyncio_run.return_value = (3, 2)
+            with patch("src.tools.replay_json_logs.replay_logs") as mock_replay:
+                mock_replay.return_value = (3, 2)
 
-                    result = main()
+                result = main()
 
-                    assert result == 1
+                assert result == 1
 
     def test_main_replay_with_options(self):
         """Test main with all options."""
@@ -556,13 +554,12 @@ class TestMain:
                 "--verbose",
             ],
         ):
-            with patch("src.tools.replay_json_logs.replay_logs"):
-                with patch("asyncio.run") as mock_asyncio_run:
-                    mock_asyncio_run.return_value = (5, 0)
+            with patch("src.tools.replay_json_logs.replay_logs") as mock_replay:
+                mock_replay.return_value = (5, 0)
 
-                    result = main()
+                result = main()
 
-                    assert result == 0
+                assert result == 0
 
     def test_main_exception(self):
         """Test main when exception occurs."""

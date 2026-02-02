@@ -89,11 +89,70 @@ def parse_args():
     return parser.parse_args()
 
 
+def _log_program_generation_info(program: dict, args):
+    """Log information about the generated program."""
+    logger.info(f"Generated program for {program['program_date']}")
+    logger.info(f"Average temperature: {program['input_parameters']['avg_temperature_c']:.1f}C")
+    logger.info(
+        f"Required heating hours: {program['planning_results']['total_heating_hours_needed']:.2f}h"
+    )
+    logger.info(f"Estimated cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR")
+
+
+def _save_program_files(generator, program: dict, output_dir: str, dry_run: bool):
+    """Save program to JSON and optionally to InfluxDB."""
+    json_path = generator.save_program_json(program, output_dir=output_dir)
+    logger.info(f"Saved program to: {json_path}")
+
+    if not dry_run:
+        generator.save_program_influxdb(program, data_type="plan")
+        logger.info("Saved program to InfluxDB")
+    else:
+        logger.info("Dry-run: Skipped InfluxDB save")
+
+    return json_path
+
+
+def _print_program_summary(program: dict, json_path: str):
+    """Print comprehensive program summary."""
+    print("\n" + "=" * 60)
+    print(f"Heating Program for {program['program_date']}")
+    print("=" * 60)
+    print(f"Average Temperature: {program['input_parameters']['avg_temperature_c']:.1f}C")
+    print(
+        f"Heating Hours Needed: {program['planning_results']['total_heating_hours_needed']:.2f}h"
+    )
+    print(f"EVU-OFF Intervals: {program['planning_results']['total_evu_off_intervals']}")
+    print(f"Estimated Cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR")
+    print(
+        f"Price Range: {program['planning_results']['cheapest_interval_price']:.2f} - "
+        f"{program['planning_results']['most_expensive_interval_price']:.2f} c/kWh"
+    )
+    print(f"\nJSON File: {json_path}")
+    print("=" * 60)
+
+
+def _print_load_schedules(program: dict):
+    """Print detailed schedule for each active load."""
+    for load_id, load_data in program["loads"].items():
+        if load_data["total_intervals_on"] > 0:
+            print(f"\n{load_id.upper()}:")
+            print(f"  Intervals ON: {load_data['total_intervals_on']}")
+            print(f"  Total Hours: {load_data['total_hours_on']:.2f}h")
+            print(f"  Estimated Cost: {load_data['estimated_cost_eur']:.2f} EUR")
+            print(f"  Power: {load_data['power_kw']:.1f} kW")
+            print(f"\n  Schedule ({len(load_data['schedule'])} entries):")
+            for entry in load_data["schedule"]:
+                print(
+                    f"    {entry['local_time'][:19]} -> {entry['command']} "
+                    f"({entry['reason']})"
+                )
+
+
 def main():
     """Main entry point."""
     args = parse_args()
 
-    # Set log level
     if args.verbose:
         logger.setLevel("DEBUG")
 
@@ -102,7 +161,6 @@ def main():
     logger.info("=" * 60)
 
     try:
-        # Initialize generator
         generator = HeatingProgramGenerator()
 
         # Generate program
@@ -116,57 +174,14 @@ def main():
             base_date=args.base_date,
         )
 
-        logger.info(f"Generated program for {program['program_date']}")
-        logger.info(f"Average temperature: {program['input_parameters']['avg_temperature_c']:.1f}C")
-        logger.info(
-            f"Required heating hours: {program['planning_results']['total_heating_hours_needed']:.2f}h"
-        )
-        logger.info(
-            f"Estimated cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR"
-        )
+        _log_program_generation_info(program, args)
 
-        # Save to JSON
-        json_path = generator.save_program_json(program, output_dir=args.output_dir)
-        logger.info(f"Saved program to: {json_path}")
-
-        # Save to InfluxDB (unless dry-run)
-        if not args.dry_run:
-            generator.save_program_influxdb(program, data_type="plan")
-            logger.info("Saved program to InfluxDB")
-        else:
-            logger.info("Dry-run: Skipped InfluxDB save")
+        # Save program
+        json_path = _save_program_files(generator, program, args.output_dir, args.dry_run)
 
         # Print summary
-        print("\n" + "=" * 60)
-        print(f"Heating Program for {program['program_date']}")
-        print("=" * 60)
-        print(f"Average Temperature: {program['input_parameters']['avg_temperature_c']:.1f}C")
-        print(
-            f"Heating Hours Needed: {program['planning_results']['total_heating_hours_needed']:.2f}h"
-        )
-        print(f"EVU-OFF Intervals: {program['planning_results']['total_evu_off_intervals']}")
-        print(f"Estimated Cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR")
-        print(
-            f"Price Range: {program['planning_results']['cheapest_interval_price']:.2f} - "
-            f"{program['planning_results']['most_expensive_interval_price']:.2f} c/kWh"
-        )
-        print(f"\nJSON File: {json_path}")
-        print("=" * 60)
-
-        # Print load schedules
-        for load_id, load_data in program["loads"].items():
-            if load_data["total_intervals_on"] > 0:
-                print(f"\n{load_id.upper()}:")
-                print(f"  Intervals ON: {load_data['total_intervals_on']}")
-                print(f"  Total Hours: {load_data['total_hours_on']:.2f}h")
-                print(f"  Estimated Cost: {load_data['estimated_cost_eur']:.2f} EUR")
-                print(f"  Power: {load_data['power_kw']:.1f} kW")
-                print(f"\n  Schedule ({len(load_data['schedule'])} entries):")
-                for entry in load_data["schedule"]:
-                    print(
-                        f"    {entry['local_time'][:19]} -> {entry['command']} "
-                        f"({entry['reason']})"
-                    )
+        _print_program_summary(program, json_path)
+        _print_load_schedules(program)
 
         logger.info("Heating program generation completed successfully")
         return 0

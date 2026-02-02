@@ -84,11 +84,62 @@ def parse_args():
     return parser.parse_args()
 
 
+def _load_program_with_error_handling(executor, program_date: str, base_dir: str):
+    """Load program and provide helpful error messages on failure."""
+    try:
+        return executor.load_program(program_date=program_date, base_dir=base_dir)
+    except FileNotFoundError as e:
+        logger.error(f"Program file not found: {e}")
+        print(f"\nERROR: Program file not found for {program_date}", file=sys.stderr)
+        print(f"Expected location: {base_dir}/{program_date[:7]}/", file=sys.stderr)
+        print("\nHave you generated the program? Run:", file=sys.stderr)
+        print("  python generate_heating_program_v2.py", file=sys.stderr)
+        return None
+
+
+def _handle_day_transition_if_needed(executor, program, base_dir: str):
+    """Handle day transition if in the first 15 minutes of the day."""
+    now = datetime.datetime.now()
+    if now.hour == 0 and now.minute < 15:
+        yesterday_date = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        try:
+            yesterday_program = executor.load_program(
+                program_date=yesterday_date, base_dir=base_dir
+            )
+            program = executor.handle_day_transition(program, yesterday_program)
+            logger.info("Day transition handled")
+        except FileNotFoundError:
+            logger.warning(f"Yesterday's program not found: {yesterday_date}")
+    return program
+
+
+def _print_execution_summary(summary: dict, program_date: str, dry_run: bool):
+    """Print execution summary with statistics and next execution time."""
+    print("\n" + "=" * 60)
+    print(f"Execution Summary for {program_date}")
+    print("=" * 60)
+    print(f"Executed: {summary['executed_count']} commands")
+    print(f"Skipped:  {summary['skipped_count']} commands (delay too large)")
+    print(f"Failed:   {summary['failed_count']} commands")
+
+    if summary["next_execution_time"]:
+        next_time = datetime.datetime.fromtimestamp(summary["next_execution_time"])
+        time_until = summary["next_execution_time"] - int(datetime.datetime.now().timestamp())
+        print(f"\nNext execution: {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Time until next: {time_until // 60} minutes")
+    else:
+        print("\nNo more commands scheduled for today")
+
+    print("=" * 60)
+
+    if dry_run:
+        print("\nDRY-RUN MODE: No commands were actually executed")
+
+
 def main():
     """Main entry point."""
     args = parse_args()
 
-    # Set log level
     if args.verbose:
         logger.setLevel("DEBUG")
 
@@ -97,71 +148,30 @@ def main():
     logger.info("=" * 60)
 
     try:
-        # Initialize executor
         executor = HeatingProgramExecutor(dry_run=args.dry_run)
 
         # Determine date
-        if args.date:
-            program_date = args.date
-            logger.info(f"Executing program for specified date: {program_date}")
-        else:
-            program_date = datetime.date.today().strftime("%Y-%m-%d")
-            logger.info(f"Executing program for today: {program_date}")
+        program_date = args.date if args.date else datetime.date.today().strftime("%Y-%m-%d")
+        logger.info(f"Executing program for {'specified date' if args.date else 'today'}: {program_date}")
 
         # Load program
-        try:
-            program = executor.load_program(program_date=program_date, base_dir=args.base_dir)
-        except FileNotFoundError as e:
-            logger.error(f"Program file not found: {e}")
-            print(f"\nERROR: Program file not found for {program_date}", file=sys.stderr)
-            print(f"Expected location: {args.base_dir}/{program_date[:7]}/", file=sys.stderr)
-            print("\nHave you generated the program? Run:", file=sys.stderr)
-            print("  python generate_heating_program_v2.py", file=sys.stderr)
+        program = _load_program_with_error_handling(executor, program_date, args.base_dir)
+        if program is None:
             return 1
 
-        # Handle day transition (check for yesterday's unexecuted commands)
-        now = datetime.datetime.now()
-        if now.hour == 0 and now.minute < 15:  # First 15 minutes of the day
-            yesterday_date = (datetime.date.today() - datetime.timedelta(days=1)).strftime(
-                "%Y-%m-%d"
-            )
-            try:
-                yesterday_program = executor.load_program(
-                    program_date=yesterday_date, base_dir=args.base_dir
-                )
-                program = executor.handle_day_transition(program, yesterday_program)
-                logger.info("Day transition handled")
-            except FileNotFoundError:
-                logger.warning(f"Yesterday's program not found: {yesterday_date}")
+        # Handle day transition
+        program = _handle_day_transition_if_needed(executor, program, args.base_dir)
 
         # Apply force flag
         if args.force:
-            executor.MAX_EXECUTION_DELAY = 86400 * 7  # Allow 1 week old commands
+            executor.MAX_EXECUTION_DELAY = 86400 * 7
             logger.warning("Force mode: Ignoring max execution delay")
 
         # Execute program
         summary = executor.execute_program(program, base_dir=args.base_dir)
 
         # Print summary
-        print("\n" + "=" * 60)
-        print(f"Execution Summary for {program_date}")
-        print("=" * 60)
-        print(f"Executed: {summary['executed_count']} commands")
-        print(f"Skipped:  {summary['skipped_count']} commands (delay too large)")
-        print(f"Failed:   {summary['failed_count']} commands")
-
-        if summary["next_execution_time"]:
-            next_time = datetime.datetime.fromtimestamp(summary["next_execution_time"])
-            time_until = summary["next_execution_time"] - int(datetime.datetime.now().timestamp())
-            print(f"\nNext execution: {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"Time until next: {time_until // 60} minutes")
-        else:
-            print("\nNo more commands scheduled for today")
-
-        print("=" * 60)
-
-        if args.dry_run:
-            print("\nDRY-RUN MODE: No commands were actually executed")
+        _print_execution_summary(summary, program_date, args.dry_run)
 
         # Check for failures
         if summary["failed_count"] > 0:

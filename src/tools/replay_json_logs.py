@@ -51,6 +51,93 @@ def list_available_logs(data_source: Optional[str] = None, days: int = 30) -> di
     return available_logs
 
 
+def _load_and_validate_log(log_file: Path, data_source: str):
+    """Load log file and validate contents."""
+    json_logger = JSONDataLogger(data_source)
+    log_entry = json_logger.load_log(log_file)
+
+    if not log_entry:
+        logger.error(f"Failed to load log file: {log_file}")
+        return None
+
+    data = log_entry.get("data")
+    metadata = log_entry.get("metadata", {})
+    timestamp = log_entry.get("timestamp")
+
+    logger.info(f"Log timestamp: {timestamp}")
+    logger.info(f"Metadata: {metadata}")
+
+    return data
+
+
+async def _replay_spot_prices(data):
+    """Replay spot prices data to InfluxDB."""
+    from src.common.config import get_config
+    from src.data_collection.spot_prices import process_spot_prices, write_spot_prices_to_influx
+
+    config = get_config()
+    processed = process_spot_prices(data, config)
+    latest_timestamp = await write_spot_prices_to_influx(processed)
+    return latest_timestamp is not None
+
+
+async def _replay_checkwatt(data):
+    """Replay checkwatt data to InfluxDB."""
+    from src.data_collection.checkwatt import process_checkwatt_data, write_checkwatt_to_influx
+
+    processed = process_checkwatt_data(data)
+    return await write_checkwatt_to_influx(processed)
+
+
+def _replay_weather(data):
+    """Replay weather data to InfluxDB."""
+    import datetime
+
+    from src.data_collection.weather import write_weather_to_influx
+
+    weather_data = {datetime.datetime.fromisoformat(ts): fields for ts, fields in data.items()}
+    return write_weather_to_influx(weather_data)
+
+
+async def _replay_windpower(data):
+    """Replay windpower data to InfluxDB."""
+    from src.data_collection.windpower import process_windpower_data, write_windpower_to_influx
+
+    processed = process_windpower_data(data)
+    latest_timestamp = await write_windpower_to_influx(processed)
+    return latest_timestamp is not None
+
+
+def _replay_temperature(data):
+    """Replay temperature data to InfluxDB."""
+    from src.data_collection.temperature import write_temperatures_to_influx
+
+    return write_temperatures_to_influx(data)
+
+
+async def _replay_shelly_em3(data):
+    """Replay Shelly EM3 data to InfluxDB."""
+    from src.data_collection.shelly_em3 import process_shelly_em3_data, write_shelly_em3_to_influx
+
+    if not data:
+        logger.error("No data to replay")
+        return False
+
+    processed = process_shelly_em3_data(data)
+    return await write_shelly_em3_to_influx(processed)
+
+
+# Handler registry mapping data sources to replay functions
+REPLAY_HANDLERS = {
+    "spot_prices": _replay_spot_prices,
+    "checkwatt": _replay_checkwatt,
+    "weather": _replay_weather,
+    "windpower": _replay_windpower,
+    "temperature": _replay_temperature,
+    "shelly_em3": _replay_shelly_em3,
+}
+
+
 async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = False) -> bool:
     """
     Replay a single JSON log file to InfluxDB.
@@ -63,94 +150,31 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
     Returns:
         True if successful
     """
+    import inspect
+
     logger.info(f"Processing log file: {log_file}")
 
-    # Load log file
-    json_logger = JSONDataLogger(data_source)
-    log_entry = json_logger.load_log(log_file)
-
-    if not log_entry:
-        logger.error(f"Failed to load log file: {log_file}")
+    data = _load_and_validate_log(log_file, data_source)
+    if data is None:
         return False
-
-    # Extract data and metadata
-    data = log_entry.get("data")
-    metadata = log_entry.get("metadata", {})
-    timestamp = log_entry.get("timestamp")
-
-    logger.info(f"Log timestamp: {timestamp}")
-    logger.info(f"Metadata: {metadata}")
 
     if dry_run:
         logger.info(f"[DRY-RUN] Would replay data from {log_file}")
         logger.info(f"[DRY-RUN] Data source: {data_source}")
         return True
 
-    # Import and call appropriate collector function
+    # Dispatch to appropriate handler
     try:
-        if data_source == "spot_prices":
-            from src.common.config import get_config
-            from src.data_collection.spot_prices import (
-                process_spot_prices,
-                write_spot_prices_to_influx,
-            )
-
-            config = get_config()
-            processed = process_spot_prices(data, config)
-            latest_timestamp = await write_spot_prices_to_influx(processed)
-            success = latest_timestamp is not None
-
-        elif data_source == "checkwatt":
-            from src.data_collection.checkwatt import (
-                process_checkwatt_data,
-                write_checkwatt_to_influx,
-            )
-
-            processed = process_checkwatt_data(data)
-            success = await write_checkwatt_to_influx(processed)
-
-        elif data_source == "weather":
-            import datetime
-
-            from src.data_collection.weather import write_weather_to_influx
-
-            # Convert ISO string keys back to datetime
-            weather_data = {
-                datetime.datetime.fromisoformat(ts): fields for ts, fields in data.items()
-            }
-            success = write_weather_to_influx(weather_data)
-
-        elif data_source == "windpower":
-            from src.data_collection.windpower import (
-                process_windpower_data,
-                write_windpower_to_influx,
-            )
-
-            processed = process_windpower_data(data)
-            latest_timestamp = await write_windpower_to_influx(processed)
-            success = latest_timestamp is not None
-
-        elif data_source == "temperature":
-            from src.data_collection.temperature import write_temperatures_to_influx
-
-            success = write_temperatures_to_influx(data)
-
-        elif data_source == "shelly_em3":
-            from src.data_collection.shelly_em3 import (
-                process_shelly_em3_data,
-                write_shelly_em3_to_influx,
-            )
-
-            if not data:
-                logger.error("No data to replay")
-                return False
-
-            processed = process_shelly_em3_data(data)
-            success = await write_shelly_em3_to_influx(processed)
-
-        else:
+        handler = REPLAY_HANDLERS.get(data_source)
+        if not handler:
             logger.error(f"Unknown data source: {data_source}")
             return False
+
+        # Call handler (async or sync)
+        if inspect.iscoroutinefunction(handler):
+            success = await handler(data)
+        else:
+            success = handler(data)
 
         if success:
             logger.info(f"Successfully replayed data from {log_file}")
@@ -215,8 +239,8 @@ async def replay_logs(
     return success_count, failure_count
 
 
-def main():
-    """Main entry point for JSON log replay utility."""
+def _parse_arguments():
+    """Parse and return command line arguments."""
     parser = argparse.ArgumentParser(
         description="Replay JSON log files to InfluxDB for data recovery",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -249,7 +273,47 @@ Examples:
     parser.add_argument("--limit", type=int, help="Limit number of files to replay")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def _handle_list_mode(data_source: Optional[str], days: int) -> int:
+    """Handle list mode: display available log files."""
+    available_logs = list_available_logs(data_source=data_source, days=days)
+
+    if not available_logs:
+        print("No log files found")
+        return 0
+
+    for source_name, log_files in available_logs.items():
+        print(f"\n{source_name}: {len(log_files)} log files")
+        for log_file in log_files[:10]:
+            mtime = log_file.stat().st_mtime
+            import datetime
+
+            mtime_str = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+            print(f"  {log_file.name} ({mtime_str})")
+        if len(log_files) > 10:
+            print(f"  ... and {len(log_files) - 10} more")
+
+    return 0
+
+
+async def _handle_replay_mode(
+    data_source: str, days: int, dry_run: bool, limit: Optional[int]
+) -> int:
+    """Handle replay mode: replay logs to InfluxDB."""
+    success_count, failure_count = await replay_logs(
+        data_source=data_source,
+        days=days,
+        dry_run=dry_run,
+        limit=limit,
+    )
+    return 1 if failure_count > 0 else 0
+
+
+def main():
+    """Main entry point for JSON log replay utility."""
+    args = _parse_arguments()
 
     if args.verbose:
         import logging
@@ -257,47 +321,15 @@ Examples:
         logger.setLevel(logging.DEBUG)
 
     if args.list:
-        # List available logs
-        available_logs = list_available_logs(data_source=args.source, days=args.days)
-
-        if not available_logs:
-            print("No log files found")
-            return 0
-
-        for source_name, log_files in available_logs.items():
-            print(f"\n{source_name}: {len(log_files)} log files")
-            for log_file in log_files[:10]:  # Show first 10
-                mtime = log_file.stat().st_mtime
-                import datetime
-
-                mtime_str = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-                print(f"  {log_file.name} ({mtime_str})")
-            if len(log_files) > 10:
-                print(f"  ... and {len(log_files) - 10} more")
-
-        return 0
+        return _handle_list_mode(args.source, args.days)
 
     if not args.source:
         print("Error: --source is required (unless using --list)")
-        parser.print_help()
         return 1
 
     # Replay logs
     try:
-        success_count, failure_count = asyncio.run(
-            replay_logs(
-                data_source=args.source,
-                days=args.days,
-                dry_run=args.dry_run,
-                limit=args.limit,
-            )
-        )
-
-        if failure_count > 0:
-            return 1
-        else:
-            return 0
-
+        return asyncio.run(_handle_replay_mode(args.source, args.days, args.dry_run, args.limit))
     except Exception as e:
         logger.error(f"Unhandled exception: {e}")
         import traceback

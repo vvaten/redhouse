@@ -44,6 +44,8 @@ def test_timestamp():
 @pytest.fixture
 def cleanup_test_data(influx_client, config):
     """Cleanup test data before and after each test."""
+    import time
+
     # Cleanup BEFORE test to ensure clean state
     buckets_to_clean = [
         config.influxdb_bucket_checkwatt,
@@ -63,12 +65,16 @@ def cleanup_test_data(influx_client, config):
             delete_api.delete(
                 start=start,
                 stop=stop,
-                predicate='_measurement="checkwatt_v2" OR _measurement="shelly_em3" OR _measurement="energy" OR _measurement="analytics" OR _measurement="spot" OR _measurement="temperatures"',
+                predicate="",  # Delete everything, not just specific measurements
                 bucket=bucket,
                 org=config.influxdb_org,
             )
         except Exception:
             pass  # Bucket might not exist or have no data
+
+    # Flush write buffer and wait for deletes to complete
+    influx_client.write_api.flush()
+    time.sleep(1.0)  # Increased wait time for InfluxDB to process deletes
 
     yield
 
@@ -78,12 +84,15 @@ def cleanup_test_data(influx_client, config):
             delete_api.delete(
                 start=start,
                 stop=stop,
-                predicate='_measurement="checkwatt_v2" OR _measurement="shelly_em3" OR _measurement="energy" OR _measurement="analytics" OR _measurement="spot" OR _measurement="temperatures"',
+                predicate="",  # Delete everything
                 bucket=bucket,
                 org=config.influxdb_org,
             )
         except Exception:
             pass  # Bucket might not exist or have no data
+
+    # Flush after cleanup too
+    influx_client.write_api.flush()
 
 
 def write_checkwatt_data(

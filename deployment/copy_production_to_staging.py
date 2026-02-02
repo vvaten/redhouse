@@ -86,6 +86,51 @@ def format_timestamp(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _build_range_query(source_bucket, start_time, end_time):
+    """Build InfluxDB range query for data extraction."""
+    return f"""
+    from(bucket: "{source_bucket}")
+      |> range(start: {format_timestamp(start_time)}, stop: {format_timestamp(end_time)})
+    """
+
+
+def _count_records_dry_run(query_api, query):
+    """Count records for dry-run mode."""
+    count_query = query + "|> count()"
+    result = query_api.query(count_query)
+    total_records = 0
+    for table in result:
+        for record in table.records:
+            total_records += record.get_value()
+    return total_records
+
+
+def _convert_record_to_point(record):
+    """Convert InfluxDB query record to point dict for writing."""
+    point_dict = {
+        "measurement": record.get_measurement(),
+        "tags": record.values.get("tags", {}),
+        "fields": {record.get_field(): record.get_value()},
+        "time": record.get_time(),
+    }
+
+    # Copy all tags
+    for key, value in record.values.items():
+        if key not in [
+            "_measurement",
+            "_field",
+            "_value",
+            "_time",
+            "_start",
+            "_stop",
+            "result",
+            "table",
+        ]:
+            point_dict["tags"][key] = value
+
+    return point_dict
+
+
 def copy_bucket_data(client, source_bucket, dest_bucket, start_time, end_time, dry_run=False):
     """
     Copy data from source bucket to destination bucket.
@@ -104,21 +149,11 @@ def copy_bucket_data(client, source_bucket, dest_bucket, start_time, end_time, d
     print(f"\nCopying: {source_bucket} -> {dest_bucket}")
     print(f"  Time range: {start_time} to {end_time}")
 
-    # Query data from source bucket
     query_api = client.query_api()
-    query = f"""
-    from(bucket: "{source_bucket}")
-      |> range(start: {format_timestamp(start_time)}, stop: {format_timestamp(end_time)})
-    """
+    query = _build_range_query(source_bucket, start_time, end_time)
 
     if dry_run:
-        # Just count records
-        count_query = query + "|> count()"
-        result = query_api.query(count_query)
-        total_records = 0
-        for table in result:
-            for record in table.records:
-                total_records += record.get_value()
+        total_records = _count_records_dry_run(query_api, query)
         print(f"  Would copy: {total_records} records (DRY-RUN)")
         return total_records
 
@@ -131,28 +166,7 @@ def copy_bucket_data(client, source_bucket, dest_bucket, start_time, end_time, d
 
     for table in result:
         for record in table.records:
-            # Convert back to line protocol format
-            point_dict = {
-                "measurement": record.get_measurement(),
-                "tags": record.values.get("tags", {}),
-                "fields": {record.get_field(): record.get_value()},
-                "time": record.get_time(),
-            }
-
-            # Copy all tags
-            for key, value in record.values.items():
-                if key not in [
-                    "_measurement",
-                    "_field",
-                    "_value",
-                    "_time",
-                    "_start",
-                    "_stop",
-                    "result",
-                    "table",
-                ]:
-                    point_dict["tags"][key] = value
-
+            point_dict = _convert_record_to_point(record)
             write_api.write(bucket=dest_bucket, record=point_dict)
             records_copied += 1
 

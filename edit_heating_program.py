@@ -121,6 +121,62 @@ def list_program(program: dict):
     print("=" * 70)
 
 
+def _parse_time_and_validate(program_date, start_time: str, end_time: str):
+    """Parse start/end times and validate duration."""
+    start_hour, start_min = map(int, start_time.split(":"))
+    end_hour, end_min = map(int, end_time.split(":"))
+
+    start_dt = program_date.replace(hour=start_hour, minute=start_min, second=0)
+    end_dt = program_date.replace(hour=end_hour, minute=end_min, second=0)
+
+    duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+
+    if duration_minutes <= 0:
+        raise ValueError("End time must be after start time")
+
+    return start_dt, end_dt, duration_minutes
+
+
+def _create_schedule_entry(start_dt, duration_minutes: int, mode: str):
+    """Create a new schedule entry with all required fields."""
+    return {
+        "timestamp": int(start_dt.timestamp()),
+        "utc_time": start_dt.astimezone(None).isoformat(),
+        "local_time": start_dt.isoformat(),
+        "command": mode,
+        "duration_minutes": duration_minutes,
+        "reason": "manual_edit",
+        "spot_price_total_c_kwh": None,
+        "solar_prediction_kwh": None,
+        "priority_score": None,
+    }
+
+
+def _remove_overlapping_entries(schedule: list, new_start: int, new_end: int):
+    """Remove entries that overlap with the new time range."""
+    filtered_schedule = []
+    removed_count = 0
+
+    for entry in schedule:
+        entry_start = entry["timestamp"]
+
+        if entry.get("duration_minutes"):
+            entry_end = entry_start + (entry["duration_minutes"] * 60)
+        else:
+            # ALE entries have no duration, treat as instant transition
+            entry_end = entry_start + 1
+
+        # Check if entry overlaps: entry_start < new_end AND entry_end > new_start
+        overlaps = entry_start < new_end and entry_end > new_start
+
+        if not overlaps:
+            filtered_schedule.append(entry)
+        else:
+            removed_count += 1
+
+    return filtered_schedule, removed_count
+
+
 def add_entry(program: dict, start_time: str, end_time: str, mode: str) -> dict:
     """
     Add a new entry to the heating program.
@@ -134,33 +190,12 @@ def add_entry(program: dict, start_time: str, end_time: str, mode: str) -> dict:
     Returns:
         Modified program dict
     """
-    # Parse times
     program_date = datetime.fromisoformat(program["program_date"])
-    start_hour, start_min = map(int, start_time.split(":"))
-    end_hour, end_min = map(int, end_time.split(":"))
+    start_dt, end_dt, duration_minutes = _parse_time_and_validate(
+        program_date, start_time, end_time
+    )
 
-    # Create datetime objects (assuming local timezone +02:00 for now)
-    start_dt = program_date.replace(hour=start_hour, minute=start_min, second=0)
-    end_dt = program_date.replace(hour=end_hour, minute=end_min, second=0)
-
-    # Calculate duration
-    duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
-
-    if duration_minutes <= 0:
-        raise ValueError("End time must be after start time")
-
-    # Create new entry
-    new_entry = {
-        "timestamp": int(start_dt.timestamp()),
-        "utc_time": start_dt.astimezone(None).isoformat(),  # Will use system timezone
-        "local_time": start_dt.isoformat(),
-        "command": mode,
-        "duration_minutes": duration_minutes,
-        "reason": "manual_edit",
-        "spot_price_total_c_kwh": None,
-        "solar_prediction_kwh": None,
-        "priority_score": None,
-    }
+    new_entry = _create_schedule_entry(start_dt, duration_minutes, mode)
 
     # Add to first load (geothermal_pump typically)
     load_id = list(program["loads"].keys())[0]
@@ -170,34 +205,9 @@ def add_entry(program: dict, start_time: str, end_time: str, mode: str) -> dict:
     new_start = int(start_dt.timestamp())
     new_end = int(end_dt.timestamp())
 
-    # Remove overlapping entries
-    filtered_schedule = []
-    removed_count = 0
-
-    for entry in schedule:
-        entry_start = entry["timestamp"]
-
-        # Calculate entry end time
-        if entry.get("duration_minutes"):
-            entry_end = entry_start + (entry["duration_minutes"] * 60)
-        else:
-            # ALE entries have no duration, treat as instant transition
-            # But they still occupy the timestamp, so check if timestamp falls within new range
-            entry_end = entry_start + 1  # Add 1 second to make overlap detection work
-
-        # Check if entry overlaps with new entry
-        # Overlap if: entry_start < new_end AND entry_end > new_start
-        overlaps = entry_start < new_end and entry_end > new_start
-
-        if not overlaps:
-            filtered_schedule.append(entry)
-        else:
-            removed_count += 1
-
-    # Add new entry
+    # Remove overlapping entries and add new entry
+    filtered_schedule, removed_count = _remove_overlapping_entries(schedule, new_start, new_end)
     filtered_schedule.append(new_entry)
-
-    # Sort by timestamp
     filtered_schedule.sort(key=lambda x: x["timestamp"])
 
     # Update schedule
