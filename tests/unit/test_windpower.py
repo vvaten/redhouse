@@ -396,10 +396,16 @@ class TestWriteWindpowerToInflux:
         """Test write in dry-run mode."""
         processed_data = {datetime.datetime(2024, 1, 15, 10, 0, 0): {"Production": 1500}}
 
-        result = await write_windpower_to_influx(processed_data, dry_run=True)
+        with patch("src.data_collection.windpower.get_config") as mock_config:
+            # Mock config for dry-run logging
+            mock_config_obj = Mock()
+            mock_config_obj.influxdb_bucket_windpower = "windpower_test"
+            mock_config.return_value = mock_config_obj
 
-        # Should return a timestamp but not actually write
-        assert result is not None
+            result = await write_windpower_to_influx(processed_data, dry_run=True)
+
+            # Should return a timestamp but not actually write
+            assert result is not None
 
     @pytest.mark.asyncio
     async def test_write_to_influx_exception(self):

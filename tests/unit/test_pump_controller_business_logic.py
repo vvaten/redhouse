@@ -324,7 +324,7 @@ class TestErrorHandling(unittest.TestCase):
         if os.name == "nt":
             invalid_path = "Z:\\nonexistent\\directory\\state.json"
         else:
-            invalid_path = "/root/nonexistent/state.json"
+            invalid_path = "/tmp/nonexistent/directory/state.json"
 
         controller = PumpController(hardware=mock_hw, state_file=invalid_path)
 

@@ -102,9 +102,15 @@ class TestWeatherCollection(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("weather_data", result)
 
+    @patch("src.data_collection.weather.get_config")
     @patch("src.data_collection.weather.InfluxClient")
-    def test_write_weather_to_influx_dry_run(self, mock_influx_class):
+    def test_write_weather_to_influx_dry_run(self, mock_influx_class, mock_config):
         """Test dry-run mode doesn't write to InfluxDB."""
+        # Mock config for dry-run logging
+        mock_config_obj = Mock()
+        mock_config_obj.influxdb_bucket_weather = "weather_test"
+        mock_config.return_value = mock_config_obj
+
         weather_data = {datetime.datetime(2025, 10, 18, 12, 0): {"Temperature": 15.5}}
 
         result = write_weather_to_influx(weather_data, dry_run=True)
