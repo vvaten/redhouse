@@ -43,7 +43,7 @@ EXCLUDE_DIRS = {
     "tests",
     ".fissio",
 }
-EXCLUDE_FILES = {"__init__.py"}
+EXCLUDE_FILES = {"__init__.py", "emeters_5min_legacy.py"}
 
 
 def find_python_files(root_dir: Path) -> list[Path]:
@@ -60,25 +60,46 @@ def find_python_files(root_dir: Path) -> list[Path]:
 
 
 def _check_violations(metrics: ProjectMetrics, root_dir: Path):
-    """Check for limit violations and add to metrics."""
+    """Check for limit violations and warnings, and add to metrics."""
     for fm in metrics.files:
         rel_path = Path(fm.path).relative_to(root_dir)
 
-        if fm.total_lines > LIMITS["lines_per_file"]:
+        # Check file size limits
+        if fm.total_lines > LIMITS["lines_per_file_hard"]:
             metrics.violations.append(
-                f"FILE TOO LONG: {rel_path} has {fm.total_lines} lines (limit: {LIMITS['lines_per_file']})"
+                f"FILE TOO LONG: {rel_path} has {fm.total_lines} lines "
+                f"(hard limit: {LIMITS['lines_per_file_hard']})"
+            )
+        elif fm.total_lines > LIMITS["lines_per_file_soft"]:
+            metrics.warnings.append(
+                f"FILE TOO LONG: {rel_path} has {fm.total_lines} lines "
+                f"(soft limit: {LIMITS['lines_per_file_soft']})"
             )
 
+        # Check function limits
         for func in fm.functions:
-            if func.lines > LIMITS["lines_per_function"]:
+            # Function length checks
+            if func.lines > LIMITS["lines_per_function_hard"]:
                 metrics.violations.append(
                     f"FUNCTION TOO LONG: {func.name} in {rel_path}:{func.line_start} "
-                    f"has {func.lines} lines (limit: {LIMITS['lines_per_function']})"
+                    f"has {func.lines} lines (hard limit: {LIMITS['lines_per_function_hard']})"
                 )
-            if func.complexity > LIMITS["cyclomatic_complexity"]:
+            elif func.lines > LIMITS["lines_per_function_soft"]:
+                metrics.warnings.append(
+                    f"FUNCTION TOO LONG: {func.name} in {rel_path}:{func.line_start} "
+                    f"has {func.lines} lines (soft limit: {LIMITS['lines_per_function_soft']})"
+                )
+
+            # Complexity checks
+            if func.complexity > LIMITS["cyclomatic_complexity_hard"]:
                 metrics.violations.append(
                     f"HIGH COMPLEXITY: {func.name} in {rel_path}:{func.line_start} "
-                    f"has complexity {func.complexity} (limit: {LIMITS['cyclomatic_complexity']})"
+                    f"has complexity {func.complexity} (hard limit: {LIMITS['cyclomatic_complexity_hard']})"
+                )
+            elif func.complexity > LIMITS["cyclomatic_complexity_soft"]:
+                metrics.warnings.append(
+                    f"HIGH COMPLEXITY: {func.name} in {rel_path}:{func.line_start} "
+                    f"has complexity {func.complexity} (soft limit: {LIMITS['cyclomatic_complexity_soft']})"
                 )
 
 

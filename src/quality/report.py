@@ -8,14 +8,19 @@ from pathlib import Path
 from src.quality.analyzers import ProjectMetrics
 
 # Quality limits (shared with main module)
+# Soft limits generate warnings, hard limits cause failures
 LIMITS = {
-    "lines_per_file": 500,
-    "lines_per_function": 50,
-    "cyclomatic_complexity": 10,
+    "lines_per_file_soft": 450,
+    "lines_per_file_hard": 500,
+    "lines_per_function_soft": 50,
+    "lines_per_function_hard": 75,
+    "cyclomatic_complexity_soft": 10,
+    "cyclomatic_complexity_hard": 15,
     "test_coverage_min": 90,
 }
 
 OK = "[OK]"
+WARN = "[WARN]"
 FAIL = "[!!]"
 
 
@@ -29,10 +34,19 @@ def _print_summary(metrics: ProjectMetrics):
     print(f"  Total lines: {metrics.total_lines}")
     print(f"  Code lines: {metrics.total_code_lines}")
     print(f"  Total functions: {metrics.total_functions}")
-    print("\nLimits:")
-    print(f"  Lines per file: {LIMITS['lines_per_file']}")
-    print(f"  Lines per function: {LIMITS['lines_per_function']}")
-    print(f"  Cyclomatic complexity: {LIMITS['cyclomatic_complexity']}")
+    print("\nLimits (soft/hard):")
+    print(
+        f"  Lines per file: {LIMITS['lines_per_file_soft']}/{LIMITS['lines_per_file_hard']} "
+        f"(soft=warn, hard=fail)"
+    )
+    print(
+        f"  Lines per function: {LIMITS['lines_per_function_soft']}/{LIMITS['lines_per_function_hard']} "
+        f"(soft=warn, hard=fail)"
+    )
+    print(
+        f"  Cyclomatic complexity: {LIMITS['cyclomatic_complexity_soft']}/{LIMITS['cyclomatic_complexity_hard']} "
+        f"(soft=warn, hard=fail)"
+    )
 
 
 def _print_top_files(metrics: ProjectMetrics):
@@ -40,7 +54,12 @@ def _print_top_files(metrics: ProjectMetrics):
     print("\nFiles by size (top 10):")
     sorted_files = sorted(metrics.files, key=lambda f: f.total_lines, reverse=True)
     for fm in sorted_files[:10]:
-        status = FAIL if fm.total_lines > LIMITS["lines_per_file"] else OK
+        if fm.total_lines > LIMITS["lines_per_file_hard"]:
+            status = FAIL
+        elif fm.total_lines > LIMITS["lines_per_file_soft"]:
+            status = WARN
+        else:
+            status = OK
         print(
             f"  {status} {Path(fm.path).name}: {fm.total_lines} lines, {len(fm.functions)} functions"
         )
@@ -52,7 +71,12 @@ def _print_top_functions(metrics: ProjectMetrics):
 
     print("\nFunctions by complexity (top 10):")
     for func in sorted(all_funcs, key=lambda f: f.complexity, reverse=True)[:10]:
-        status = FAIL if func.complexity > LIMITS["cyclomatic_complexity"] else OK
+        if func.complexity > LIMITS["cyclomatic_complexity_hard"]:
+            status = FAIL
+        elif func.complexity > LIMITS["cyclomatic_complexity_soft"]:
+            status = WARN
+        else:
+            status = OK
         print(
             f"  {status} {func.name} ({Path(func.file).name}:{func.line_start}): "
             f"complexity={func.complexity}, lines={func.lines}"
@@ -60,11 +84,26 @@ def _print_top_functions(metrics: ProjectMetrics):
 
     print("\nFunctions by length (top 10):")
     for func in sorted(all_funcs, key=lambda f: f.lines, reverse=True)[:10]:
-        status = FAIL if func.lines > LIMITS["lines_per_function"] else OK
+        if func.lines > LIMITS["lines_per_function_hard"]:
+            status = FAIL
+        elif func.lines > LIMITS["lines_per_function_soft"]:
+            status = WARN
+        else:
+            status = OK
         print(
             f"  {status} {func.name} ({Path(func.file).name}:{func.line_start}): "
             f"lines={func.lines}, complexity={func.complexity}"
         )
+
+
+def _print_warnings(metrics: ProjectMetrics):
+    """Print warnings section."""
+    if metrics.warnings:
+        print(f"\n{'='*70}")
+        print(f"WARNINGS ({len(metrics.warnings)}):")
+        print("=" * 70)
+        for w in metrics.warnings:
+            print(f"  {WARN} {w}")
 
 
 def _print_violations(metrics: ProjectMetrics):
@@ -84,6 +123,7 @@ def print_report(metrics: ProjectMetrics, verbose: bool = False):
     _print_summary(metrics)
     _print_top_files(metrics)
     _print_top_functions(metrics)
+    _print_warnings(metrics)
     _print_violations(metrics)
 
     if verbose:

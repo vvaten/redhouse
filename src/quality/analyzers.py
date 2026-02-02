@@ -43,6 +43,7 @@ class ProjectMetrics:
     total_code_lines: int = 0
     total_functions: int = 0
     violations: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 class CyclomaticComplexityVisitor(ast.NodeVisitor):
