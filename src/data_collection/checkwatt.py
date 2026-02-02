@@ -267,6 +267,110 @@ async def write_checkwatt_to_influx(data_points: list[dict], dry_run: bool = Fal
         return False
 
 
+def _load_and_validate_credentials(config: Any) -> tuple[str, str, list[str]]:
+    """
+    Load username, password, and meter IDs from config.
+
+    Args:
+        config: Configuration object
+
+    Returns:
+        Tuple of (username, password, meter_ids)
+
+    Raises:
+        ValueError: If required credentials are missing
+    """
+    username = config.get("checkwatt_username")
+    password = config.get("checkwatt_password")
+    meter_ids_str = config.get("checkwatt_meter_ids")
+
+    if not username or not password:
+        raise ValueError("CHECKWATT_USERNAME and CHECKWATT_PASSWORD must be configured!")
+
+    if not meter_ids_str:
+        raise ValueError("CHECKWATT_METER_IDS must be configured!")
+
+    meter_ids = [mid.strip() for mid in meter_ids_str.split(",")]
+    return username, password, meter_ids
+
+
+def _compute_date_range(
+    last_hour_only: bool, start_date: Optional[str], end_date: Optional[str]
+) -> tuple[str, str]:
+    """
+    Compute date range for data fetching.
+
+    Args:
+        last_hour_only: If True, compute range for last hour
+        start_date: Optional start date override
+        end_date: Optional end date override
+
+    Returns:
+        Tuple of (start_date, end_date) in ISO format
+    """
+    if last_hour_only:
+        now = datetime.datetime.now()
+        computed_start = (
+            (now - datetime.timedelta(hours=1)).replace(minute=0, second=0).isoformat()[:19]
+        )
+        computed_end = (now + datetime.timedelta(hours=1)).isoformat()[:19]
+        return computed_start, computed_end
+    else:
+        if start_date is None:
+            start_date = datetime.date.today().isoformat() + "T00:00:00"
+        if end_date is None:
+            end_date = (
+                datetime.date.today() + datetime.timedelta(days=1)
+            ).isoformat() + "T00:00:00"
+        return start_date, end_date
+
+
+def _backup_raw_data(json_data: dict, start_date: str, end_date: str) -> None:
+    """
+    Log raw JSON data and clean up old logs.
+
+    Args:
+        json_data: Raw JSON data from API
+        start_date: Start date string
+        end_date: End date string
+    """
+    json_logger = JSONDataLogger("checkwatt")
+    json_logger.log_data(
+        json_data,
+        metadata={
+            "start_date": start_date,
+            "end_date": end_date,
+            "meter_count": len(json_data.get("Meters", [])),
+        },
+    )
+    json_logger.cleanup_old_logs()
+
+
+def _validate_and_process_response(json_data: dict, min_data_points: int = 10) -> list[dict]:
+    """
+    Validate response structure and process data.
+
+    Args:
+        json_data: Raw JSON data from API
+        min_data_points: Minimum required data points
+
+    Returns:
+        Processed data points
+
+    Raises:
+        ValueError: If response format is invalid or insufficient data
+    """
+    if len(json_data) != 4:
+        raise ValueError(f"Unexpected response format (expected 4 fields, got {len(json_data)})")
+
+    data_points = process_checkwatt_data(json_data)
+
+    if len(data_points) < min_data_points:
+        raise ValueError(f"Too little data ({len(data_points)} points). Check input.")
+
+    return data_points
+
+
 async def collect_checkwatt_data(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -289,78 +393,40 @@ async def collect_checkwatt_data(
 
     config = get_config()
 
-    # Get credentials from config
-    username = config.get("checkwatt_username")
-    password = config.get("checkwatt_password")
-    meter_ids_str = config.get("checkwatt_meter_ids")
-
-    if not username or not password:
-        logger.error("CHECKWATT_USERNAME and CHECKWATT_PASSWORD must be configured!")
+    # Load and validate credentials
+    try:
+        username, password, meter_ids = _load_and_validate_credentials(config)
+    except ValueError as e:
+        logger.error(str(e))
         return 1
 
-    if not meter_ids_str:
-        logger.error("CHECKWATT_METER_IDS must be configured!")
-        return 1
-
-    meter_ids = [mid.strip() for mid in meter_ids_str.split(",")]
-
-    # Determine date range
-    if last_hour_only:
-        now = datetime.datetime.now()
-        start_date = (
-            (now - datetime.timedelta(hours=1)).replace(minute=0, second=0).isoformat()[:19]
-        )
-        end_date = (now + datetime.timedelta(hours=1)).isoformat()[:19]
-    else:
-        if start_date is None:
-            start_date = datetime.date.today().isoformat() + "T00:00:00"
-        if end_date is None:
-            end_date = (
-                datetime.date.today() + datetime.timedelta(days=1)
-            ).isoformat() + "T00:00:00"
-
+    # Compute date range
+    start_date, end_date = _compute_date_range(last_hour_only, start_date, end_date)
     logger.info(f"Date range: {start_date} to {end_date}")
 
     # Get auth token
     auth_token = await get_auth_token(username, password)
-
     if not auth_token:
         logger.error("Failed to get auth token")
         return 1
 
     # Fetch data
     json_data = await fetch_checkwatt_data(auth_token, meter_ids, start_date, end_date)
-
     if not json_data:
         logger.error("Failed to fetch CheckWatt data")
         return 1
 
-    # Log raw data to JSON for backup (with 1 week retention)
-    json_logger = JSONDataLogger("checkwatt")
-    json_logger.log_data(
-        json_data,
-        metadata={
-            "start_date": start_date,
-            "end_date": end_date,
-            "meter_count": len(json_data.get("Meters", [])),
-        },
-    )
-    json_logger.cleanup_old_logs()
+    # Backup raw data
+    _backup_raw_data(json_data, start_date, end_date)
 
-    # Validate response format
-    if len(json_data) != 4:
-        logger.error(f"Unexpected response format (expected 4 fields, got {len(json_data)})")
-        return 1
-
-    # Process data
+    # Validate and process response
     try:
-        data_points = process_checkwatt_data(json_data)
+        data_points = _validate_and_process_response(json_data)
+    except ValueError as e:
+        logger.error(str(e))
+        return 1
     except Exception as e:
         logger.error(f"Failed to process CheckWatt data: {e}")
-        return 1
-
-    if len(data_points) < 10:
-        logger.error(f"Too little data ({len(data_points)} points). Check input.")
         return 1
 
     # Write to InfluxDB

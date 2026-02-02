@@ -6,6 +6,11 @@ from unittest.mock import AsyncMock, patch
 
 from src.data_collection.checkwatt import (
     CHECKWATT_COLUMNS,
+    _backup_raw_data,
+    _compute_date_range,
+    _load_and_validate_credentials,
+    _validate_and_process_response,
+    collect_checkwatt_data,
     format_datetime,
     get_auth_token,
     process_checkwatt_data,
@@ -132,6 +137,229 @@ class TestCheckWattCollection(unittest.TestCase):
             process_checkwatt_data(json_data)
 
         self.assertIn("meters", str(ctx.exception).lower())
+
+    def test_load_and_validate_credentials_success(self):
+        """Test successful credential loading."""
+        mock_config = {
+            "checkwatt_username": "user@example.com",
+            "checkwatt_password": "password123",
+            "checkwatt_meter_ids": "meter1, meter2, meter3",
+        }
+
+        username, password, meter_ids = _load_and_validate_credentials(mock_config)
+
+        self.assertEqual(username, "user@example.com")
+        self.assertEqual(password, "password123")
+        self.assertEqual(meter_ids, ["meter1", "meter2", "meter3"])
+
+    def test_load_and_validate_credentials_missing_username(self):
+        """Test error when username is missing."""
+        mock_config = {"checkwatt_password": "password123", "checkwatt_meter_ids": "meter1"}
+
+        with self.assertRaises(ValueError) as ctx:
+            _load_and_validate_credentials(mock_config)
+
+        self.assertIn("USERNAME", str(ctx.exception))
+
+    def test_load_and_validate_credentials_missing_password(self):
+        """Test error when password is missing."""
+        mock_config = {"checkwatt_username": "user@example.com", "checkwatt_meter_ids": "meter1"}
+
+        with self.assertRaises(ValueError) as ctx:
+            _load_and_validate_credentials(mock_config)
+
+        self.assertIn("PASSWORD", str(ctx.exception))
+
+    def test_load_and_validate_credentials_missing_meter_ids(self):
+        """Test error when meter IDs are missing."""
+        mock_config = {
+            "checkwatt_username": "user@example.com",
+            "checkwatt_password": "password123",
+        }
+
+        with self.assertRaises(ValueError) as ctx:
+            _load_and_validate_credentials(mock_config)
+
+        self.assertIn("METER_IDS", str(ctx.exception))
+
+    def test_compute_date_range_last_hour_only(self):
+        """Test date range computation for last hour."""
+        start, end = _compute_date_range(last_hour_only=True, start_date=None, end_date=None)
+
+        # Should be ISO format strings
+        self.assertIsInstance(start, str)
+        self.assertIsInstance(end, str)
+        self.assertEqual(len(start), 19)
+        self.assertEqual(len(end), 19)
+
+    def test_compute_date_range_default(self):
+        """Test date range computation with defaults."""
+        start, end = _compute_date_range(last_hour_only=False, start_date=None, end_date=None)
+
+        # Should be today to tomorrow
+        self.assertIn("T00:00:00", start)
+        self.assertIn("T00:00:00", end)
+
+    def test_compute_date_range_custom(self):
+        """Test date range computation with custom dates."""
+        start, end = _compute_date_range(
+            last_hour_only=False,
+            start_date="2025-10-18T14:00:00",
+            end_date="2025-10-19T14:00:00",
+        )
+
+        self.assertEqual(start, "2025-10-18T14:00:00")
+        self.assertEqual(end, "2025-10-19T14:00:00")
+
+    @patch("src.data_collection.checkwatt.JSONDataLogger")
+    def test_backup_raw_data(self, mock_logger_class):
+        """Test raw data backup."""
+        mock_logger = mock_logger_class.return_value
+
+        json_data = {"Meters": [{"data": 1}, {"data": 2}]}
+        _backup_raw_data(json_data, "2025-10-18T14:00:00", "2025-10-19T14:00:00")
+
+        mock_logger_class.assert_called_once_with("checkwatt")
+        mock_logger.log_data.assert_called_once()
+        mock_logger.cleanup_old_logs.assert_called_once()
+
+    def test_validate_and_process_response_success(self):
+        """Test successful response validation and processing."""
+        json_data = {
+            "Grouping": "delta",
+            "DateFrom": "2025-10-18T14:00:00",
+            "DateTo": "2025-10-18T15:00:00",
+            "Meters": [
+                {"Measurements": [{"Value": 50.0}] * 15},
+                {"Measurements": [{"Value": 100.0}] * 15},
+                {"Measurements": [{"Value": 0.0}] * 15},
+                {"Measurements": [{"Value": 200.0}] * 15},
+                {"Measurements": [{"Value": 50.0}] * 15},
+                {"Measurements": [{"Value": 300.0}] * 15},
+            ],
+        }
+
+        result = _validate_and_process_response(json_data)
+
+        self.assertEqual(len(result), 15)
+        self.assertIn("Battery_SoC", result[0])
+
+    def test_validate_and_process_response_wrong_field_count(self):
+        """Test error on wrong number of fields."""
+        json_data = {"Field1": "value", "Field2": "value"}
+
+        with self.assertRaises(ValueError) as ctx:
+            _validate_and_process_response(json_data)
+
+        self.assertIn("4 fields", str(ctx.exception))
+
+    def test_validate_and_process_response_insufficient_data(self):
+        """Test error on insufficient data points."""
+        json_data = {
+            "Grouping": "delta",
+            "DateFrom": "2025-10-18T14:00:00",
+            "DateTo": "2025-10-18T15:00:00",
+            "Meters": [
+                {"Measurements": [{"Value": 50.0}] * 5},
+                {"Measurements": [{"Value": 100.0}] * 5},
+                {"Measurements": [{"Value": 0.0}] * 5},
+                {"Measurements": [{"Value": 200.0}] * 5},
+                {"Measurements": [{"Value": 50.0}] * 5},
+                {"Measurements": [{"Value": 300.0}] * 5},
+            ],
+        }
+
+        with self.assertRaises(ValueError) as ctx:
+            _validate_and_process_response(json_data)
+
+        self.assertIn("Too little data", str(ctx.exception))
+
+    @patch("src.data_collection.checkwatt.write_checkwatt_to_influx")
+    @patch("src.data_collection.checkwatt.fetch_checkwatt_data")
+    @patch("src.data_collection.checkwatt.get_auth_token")
+    @patch("src.data_collection.checkwatt._backup_raw_data")
+    @patch("src.data_collection.checkwatt.get_config")
+    async def test_collect_checkwatt_data_success(
+        self, mock_get_config, mock_backup, mock_get_auth, mock_fetch, mock_write
+    ):
+        """Test successful data collection."""
+        mock_config = {
+            "checkwatt_username": "user@example.com",
+            "checkwatt_password": "password123",
+            "checkwatt_meter_ids": "meter1,meter2,meter3",
+        }
+        mock_get_config.return_value = mock_config
+        mock_get_auth.return_value = "test_token"
+
+        json_data = {
+            "Grouping": "delta",
+            "DateFrom": "2025-10-18T14:00:00",
+            "DateTo": "2025-10-18T15:00:00",
+            "Meters": [
+                {"Measurements": [{"Value": 50.0}] * 15},
+                {"Measurements": [{"Value": 100.0}] * 15},
+                {"Measurements": [{"Value": 0.0}] * 15},
+                {"Measurements": [{"Value": 200.0}] * 15},
+                {"Measurements": [{"Value": 50.0}] * 15},
+                {"Measurements": [{"Value": 300.0}] * 15},
+            ],
+        }
+        mock_fetch.return_value = json_data
+        mock_write.return_value = True
+
+        result = await collect_checkwatt_data(dry_run=False)
+
+        self.assertEqual(result, 0)
+        mock_get_auth.assert_called_once()
+        mock_fetch.assert_called_once()
+        mock_backup.assert_called_once()
+        mock_write.assert_called_once()
+
+    @patch("src.data_collection.checkwatt.get_config")
+    async def test_collect_checkwatt_data_missing_credentials(self, mock_get_config):
+        """Test error when credentials are missing."""
+        mock_config = {}
+        mock_get_config.return_value = mock_config
+
+        result = await collect_checkwatt_data()
+
+        self.assertEqual(result, 1)
+
+    @patch("src.data_collection.checkwatt.get_auth_token")
+    @patch("src.data_collection.checkwatt.get_config")
+    async def test_collect_checkwatt_data_auth_failure(self, mock_get_config, mock_get_auth):
+        """Test error when authentication fails."""
+        mock_config = {
+            "checkwatt_username": "user@example.com",
+            "checkwatt_password": "password123",
+            "checkwatt_meter_ids": "meter1",
+        }
+        mock_get_config.return_value = mock_config
+        mock_get_auth.return_value = None
+
+        result = await collect_checkwatt_data()
+
+        self.assertEqual(result, 1)
+
+    @patch("src.data_collection.checkwatt.fetch_checkwatt_data")
+    @patch("src.data_collection.checkwatt.get_auth_token")
+    @patch("src.data_collection.checkwatt.get_config")
+    async def test_collect_checkwatt_data_fetch_failure(
+        self, mock_get_config, mock_get_auth, mock_fetch
+    ):
+        """Test error when data fetch fails."""
+        mock_config = {
+            "checkwatt_username": "user@example.com",
+            "checkwatt_password": "password123",
+            "checkwatt_meter_ids": "meter1",
+        }
+        mock_get_config.return_value = mock_config
+        mock_get_auth.return_value = "test_token"
+        mock_fetch.return_value = None
+
+        result = await collect_checkwatt_data()
+
+        self.assertEqual(result, 1)
 
 
 # Async test runner

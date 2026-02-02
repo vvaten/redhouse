@@ -53,7 +53,147 @@ async def fetch_spot_prices_from_api() -> Optional[list[dict]]:
         return None
 
 
-def process_spot_prices(spot_prices_raw: list[dict], config) -> list[dict]:
+def _validate_config_parameters(config: Any) -> dict:
+    """
+    Extract and validate all required price parameters from config.
+
+    Args:
+        config: Configuration object with price parameters
+
+    Returns:
+        Dictionary with all validated price parameters
+
+    Raises:
+        ValueError: If any required parameter is missing
+    """
+    required_params = [
+        "spot_value_added_tax",
+        "spot_sellers_margin",
+        "spot_production_buyback_margin",
+        "spot_transfer_day_price",
+        "spot_transfer_night_price",
+        "spot_transfer_tax_price",
+    ]
+
+    for param in required_params:
+        if not config.get(param):
+            raise ValueError(f"Missing required config: {param.upper()}")
+
+    return {
+        "value_added_tax": float(config.get("spot_value_added_tax")),
+        "sellers_margin": float(config.get("spot_sellers_margin")),
+        "production_buyback_margin": float(config.get("spot_production_buyback_margin")),
+        "transfer_day_price": float(config.get("spot_transfer_day_price")),
+        "transfer_night_price": float(config.get("spot_transfer_night_price")),
+        "transfer_tax_price": float(config.get("spot_transfer_tax_price")),
+    }
+
+
+def _parse_entry_datetime(entry: dict) -> tuple[datetime.datetime, int]:
+    """
+    Parse datetime from entry and handle DST edge cases.
+
+    Args:
+        entry: Entry dictionary with DateTime field
+
+    Returns:
+        Tuple of (datetime object, offset in seconds)
+    """
+    entry_datetime = datetime.datetime.fromisoformat(entry["DateTime"])
+
+    # Handle DST transition (2022-10-30 specific fix from original code)
+    if entry_datetime.isoformat() == "2022-10-30T03:00:00+02:00":
+        offset = 3600
+    else:
+        offset = 0
+
+    return entry_datetime, offset
+
+
+def _format_datetime_fields(dt: datetime.datetime, epoch_timestamp: int) -> dict:
+    """
+    Format datetime into multiple required formats.
+
+    Args:
+        dt: Datetime object
+        epoch_timestamp: Unix timestamp
+
+    Returns:
+        Dictionary with formatted datetime fields
+    """
+    return {
+        "epoch_timestamp": epoch_timestamp,
+        "datetime_utc": (
+            datetime.datetime.fromtimestamp(epoch_timestamp, tz=datetime.timezone.utc)
+            .replace(tzinfo=pytz.utc)
+            .isoformat()
+        ),
+        "datetime_local": dt.isoformat(),
+    }
+
+
+def _determine_transfer_price(hour: int, day_price: float, night_price: float) -> float:
+    """
+    Determine transfer price based on time of day.
+
+    Args:
+        hour: Hour of the day (0-23)
+        day_price: Day transfer price
+        night_price: Night transfer price (22:00-07:00)
+
+    Returns:
+        Transfer price for the given hour
+    """
+    if hour >= 22 or hour < 7:
+        return night_price
+    else:
+        return day_price
+
+
+def _calculate_price_fields(entry: dict, params: dict, hour: int) -> dict:
+    """
+    Calculate all price fields: base, sell, with_tax, total.
+
+    Args:
+        entry: Raw price entry with PriceNoTax
+        params: Dictionary with price parameters
+        hour: Hour of the day for transfer price calculation
+
+    Returns:
+        Dictionary with all calculated price fields
+    """
+    price_no_tax = entry["PriceNoTax"]
+
+    # Price without tax (c/kWh)
+    price = price_no_tax
+
+    # Selling price (production buyback)
+    price_sell = round(price_no_tax - 0.01 * params["production_buyback_margin"], 4)
+
+    # Price with VAT
+    price_with_tax = round(params["value_added_tax"] * price_no_tax, 4)
+
+    # Determine transfer price (night vs day rate)
+    transfer_price = _determine_transfer_price(
+        hour, params["transfer_day_price"], params["transfer_night_price"]
+    )
+
+    # Total price including all fees and taxes
+    price_total = round(
+        price_with_tax
+        + 0.01 * (params["sellers_margin"] + transfer_price + params["transfer_tax_price"]),
+        6,
+    )
+
+    return {
+        "price": price,
+        "price_sell": price_sell,
+        "price_withtax": price_with_tax,
+        "price_total": price_total,
+    }
+
+
+def process_spot_prices(spot_prices_raw: list[dict], config: Any) -> list[dict]:
     """
     Process raw spot price data and calculate final prices.
 
@@ -66,76 +206,27 @@ def process_spot_prices(spot_prices_raw: list[dict], config) -> list[dict]:
     """
     logger.info("Processing spot prices")
 
-    # Get pricing parameters from config (all required!)
-    required_params = [
-        "spot_value_added_tax",
-        "spot_sellers_margin",
-        "spot_production_buyback_margin",
-        "spot_transfer_day_price",
-        "spot_transfer_night_price",
-        "spot_transfer_tax_price",
-    ]
-
-    for param in required_params:
-        if not config.get(param):
-            logger.error(f"Required configuration parameter {param.upper()} not set!")
-            raise ValueError(f"Missing required config: {param.upper()}")
-
-    value_added_tax = float(config.get("spot_value_added_tax"))
-    sellers_margin = float(config.get("spot_sellers_margin"))
-    production_buyback_margin = float(config.get("spot_production_buyback_margin"))
-    transfer_day_price = float(config.get("spot_transfer_day_price"))
-    transfer_night_price = float(config.get("spot_transfer_night_price"))
-    transfer_tax_price = float(config.get("spot_transfer_tax_price"))
+    # Validate and extract price parameters
+    try:
+        params = _validate_config_parameters(config)
+    except ValueError as e:
+        logger.error(f"Required configuration parameter not set: {e}")
+        raise
 
     processed_spot_prices = []
 
     for hour_entry in spot_prices_raw:
         try:
-            data: dict[str, Any] = {}
+            # Parse datetime and handle DST edge cases
+            entry_datetime, offset = _parse_entry_datetime(hour_entry)
+            epoch_timestamp = int(entry_datetime.timestamp()) + offset
 
-            # Parse datetime
-            entry_datetime = datetime.datetime.fromisoformat(hour_entry["DateTime"])
+            # Build data entry with datetime fields
+            data = _format_datetime_fields(entry_datetime, epoch_timestamp)
 
-            # Handle DST transition (2022-10-30 specific fix from original code)
-            if entry_datetime.isoformat() == "2022-10-30T03:00:00+02:00":
-                offset = 3600
-            else:
-                offset = 0
-
-            # Calculate epoch timestamp
-            data["epoch_timestamp"] = int(entry_datetime.timestamp()) + offset
-
-            # Store datetime in various formats
-            data["datetime_utc"] = (
-                datetime.datetime.fromtimestamp(data["epoch_timestamp"], tz=datetime.timezone.utc)
-                .replace(tzinfo=pytz.utc)
-                .isoformat()
-            )
-            data["datetime_local"] = entry_datetime.isoformat()
-
-            # Price without tax (c/kWh)
-            data["price"] = hour_entry["PriceNoTax"]
-
-            # Selling price (production buyback)
-            data["price_sell"] = round(
-                hour_entry["PriceNoTax"] - 0.01 * production_buyback_margin, 4
-            )
-
-            # Price with VAT
-            price_with_tax = round(value_added_tax * hour_entry["PriceNoTax"], 4)
-            data["price_withtax"] = price_with_tax
-
-            # Determine transfer price (night vs day rate)
-            if entry_datetime.hour >= 22 or entry_datetime.hour < 7:
-                transfer_price = transfer_night_price
-            else:
-                transfer_price = transfer_day_price
-
-            # Total price including all fees and taxes
-            data["price_total"] = round(
-                price_with_tax + 0.01 * (sellers_margin + transfer_price + transfer_tax_price), 6
-            )
+            # Calculate all price fields
+            price_fields = _calculate_price_fields(hour_entry, params, entry_datetime.hour)
+            data.update(price_fields)
 
             processed_spot_prices.append(data)
 
