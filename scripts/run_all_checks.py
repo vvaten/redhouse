@@ -81,7 +81,6 @@ def check_linting(root_dir: Path, fix: bool = False) -> bool:
     cmd = [sys.executable, "-m", "ruff", "check"]
     if fix:
         cmd.append("--fix")
-    cmd.extend(["--exclude", ".fissio"])
     cmd.append(".")
 
     passed, output = run_command(cmd, root_dir)
