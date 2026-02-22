@@ -30,7 +30,7 @@ WRITE_BATCH_SIZE = 5000
 
 # Bucket mappings: production -> staging
 BUCKET_MAPPINGS = {
-    "temperatures": "temperatures_staging",
+    # "temperatures": "temperatures_staging",  # Temperatures are read from production bucket - read only
     "weather": "weather_staging",
     "spotprice": "spotprice_staging",
     "emeters": "emeters_staging",
