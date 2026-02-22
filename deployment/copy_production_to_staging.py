@@ -26,6 +26,8 @@ from influxdb_client import InfluxDBClient
 
 from src.common.config import get_config
 
+WRITE_BATCH_SIZE = 5000
+
 # Bucket mappings: production -> staging
 BUCKET_MAPPINGS = {
     "temperatures": "temperatures_staging",
@@ -160,18 +162,23 @@ def copy_bucket_data(client, source_bucket, dest_bucket, start_time, end_time, d
     # Get all data
     result = query_api.query(query)
 
-    # Write to destination bucket
+    # Write to destination bucket in batches
     write_api = client.write_api()
     records_copied = 0
+    batch = []
 
     for table in result:
         for record in table.records:
-            point_dict = _convert_record_to_point(record)
-            write_api.write(bucket=dest_bucket, record=point_dict)
-            records_copied += 1
-
-            if records_copied % 1000 == 0:
+            batch.append(_convert_record_to_point(record))
+            if len(batch) >= WRITE_BATCH_SIZE:
+                write_api.write(bucket=dest_bucket, record=batch)
+                records_copied += len(batch)
+                batch = []
                 print(f"  Copied: {records_copied} records...", end="\r")
+
+    if batch:
+        write_api.write(bucket=dest_bucket, record=batch)
+        records_copied += len(batch)
 
     write_api.close()
     print(f"  Copied: {records_copied} records (DONE)     ")
