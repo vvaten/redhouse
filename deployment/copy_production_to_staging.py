@@ -37,6 +37,7 @@ BUCKET_MAPPINGS = {
     "checkwatt_full_data": "checkwatt_staging",
     "shelly_em3_emeters_raw": "shelly_em3_emeters_raw_staging",
     "load_control": "load_control_staging",
+    "windpower": "windpower_staging",
 }
 
 
