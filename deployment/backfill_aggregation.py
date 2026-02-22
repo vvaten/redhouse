@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import datetime
+import logging
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -130,38 +131,55 @@ def run_tier(
             print(f"  SKIP {window_end.isoformat()}")
 
         done = succeeded + skipped
-        if done % 50 == 0:
-            print(f"  Progress: {done}/{len(windows)}...", end="\r")
+        print(
+            f"  [{done}/{len(windows)}] {window_start.strftime('%Y-%m-%d %H:%M')} - "
+            f"{window_end.strftime('%H:%M')}",
+            end="\r",
+        )
 
     print(f"  Done: {succeeded} written, {skipped} skipped/no-data     ")
     return succeeded, skipped
+
+
+def _resolve_time_range(
+    args: argparse.Namespace,
+) -> tuple:
+    """Parse args into (start_time, end_time) or return (None, None) on error."""
+    if args.start and not args.end:
+        print("ERROR: --start requires --end", file=sys.stderr)
+        return None, None
+    if args.end and not args.start:
+        print("ERROR: --end requires --start", file=sys.stderr)
+        return None, None
+
+    if args.days:
+        end_time = datetime.datetime.now(UTC)
+        start_time = end_time - datetime.timedelta(days=args.days)
+        print(f"Backfilling last {args.days} days")
+        return start_time, end_time
+
+    try:
+        start_time = UTC.localize(datetime.datetime.strptime(args.start, "%Y-%m-%d"))
+        end_time = UTC.localize(
+            datetime.datetime.strptime(args.end, "%Y-%m-%d")
+        ) + datetime.timedelta(days=1)
+        print(f"Backfilling {args.start} to {args.end}")
+        return start_time, end_time
+    except ValueError as e:
+        print(f"ERROR: Invalid date format: {e}", file=sys.stderr)
+        return None, None
 
 
 def main() -> int:
     """Main entry point."""
     args = parse_args()
 
-    if args.start and not args.end:
-        print("ERROR: --start requires --end", file=sys.stderr)
-        return 1
-    if args.end and not args.start:
-        print("ERROR: --end requires --start", file=sys.stderr)
+    start_time, end_time = _resolve_time_range(args)
+    if start_time is None:
         return 1
 
-    if args.days:
-        end_time = datetime.datetime.now(UTC)
-        start_time = end_time - datetime.timedelta(days=args.days)
-        print(f"Backfilling last {args.days} days")
-    else:
-        try:
-            start_time = UTC.localize(datetime.datetime.strptime(args.start, "%Y-%m-%d"))
-            end_time = UTC.localize(
-                datetime.datetime.strptime(args.end, "%Y-%m-%d")
-            ) + datetime.timedelta(days=1)
-            print(f"Backfilling {args.start} to {args.end}")
-        except ValueError as e:
-            print(f"ERROR: Invalid date format: {e}", file=sys.stderr)
-            return 1
+    # Suppress INFO noise from aggregator modules - progress is shown on stdout
+    logging.getLogger("src").setLevel(logging.WARNING)
 
     print(f"Range: {start_time.isoformat()} -> {end_time.isoformat()}")
     if args.dry_run:
