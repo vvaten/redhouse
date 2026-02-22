@@ -178,8 +178,15 @@ def main() -> int:
     if start_time is None:
         return 1
 
-    # Suppress INFO noise from aggregator modules - progress is shown on stdout
-    logging.getLogger("src").setLevel(logging.WARNING)
+    # Suppress INFO noise from aggregator modules - progress is shown on stdout.
+    # Aggregator modules call setup_logger() at import time, which sets INFO level
+    # directly on each child logger with its own handlers, so setting the parent
+    # "src" logger level has no effect. We must iterate all registered loggers.
+    for _name, _lgr in logging.Logger.manager.loggerDict.items():
+        if _name.startswith("src.") and isinstance(_lgr, logging.Logger):
+            _lgr.setLevel(logging.WARNING)
+            for _handler in _lgr.handlers:
+                _handler.setLevel(logging.WARNING)
 
     print(f"Range: {start_time.isoformat()} -> {end_time.isoformat()}")
     if args.dry_run:
