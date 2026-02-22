@@ -10,6 +10,8 @@ Intelligent home heating control system optimizing geothermal pump operation bas
   - FMI weather forecasts
   - Electricity spot prices
   - Solar/battery data from CheckWatt
+  - Shelly EM3 energy meter data
+  - Wind power production and forecasts (Fingrid + FMI)
 - **Hardware Control**:
   - Geothermal heat pump control via I2C
   - Shelly relay integration
@@ -38,12 +40,12 @@ redhouse/
 ├── .env                    # Environment variables (not in git, copy from .env.example)
 ├── src/
 │   ├── data_collection/    # Sensor readers, API clients
-│   ├── control/            # Heating optimizer, pump controller
+│   ├── control/            # Program generator, executor, pump controller
 │   ├── common/             # Shared utilities (config, logging, influx)
-│   ├── aggregation/        # Data aggregation pipelines
-│   └── simulation/         # Backtesting tools
+│   ├── aggregation/        # Data aggregation pipelines (5min, 15min, 1hour)
+│   └── simulation/         # Reserved for backtesting tools (not yet implemented)
 ├── config/
-│   └── config.yaml         # System configuration (copy from config.yaml.example)
+│   └── config.yaml.example # System configuration template (copy to config.yaml)
 ├── tests/                  # Unit and integration tests
 ├── deployment/             # Systemd services, deployment scripts
 └── docs/                   # Documentation
@@ -165,8 +167,13 @@ influx bucket create -n temperatures_test -o area51 -r 30d
 influx bucket create -n weather_test -o area51 -r 30d
 influx bucket create -n spotprice_test -o area51 -r 30d
 influx bucket create -n emeters_test -o area51 -r 30d
+influx bucket create -n emeters_5min_test -o area51 -r 30d
+influx bucket create -n analytics_15min_test -o area51 -r 30d
+influx bucket create -n analytics_1hour_test -o area51 -r 30d
 influx bucket create -n checkwatt_full_data_test -o area51 -r 30d
+influx bucket create -n shelly_em3_emeters_raw_test -o area51 -r 30d
 influx bucket create -n load_control_test -o area51 -r 30d
+influx bucket create -n windpower_test -o area51 -r 30d
 ```
 
 Configure your `.env` to use test buckets when developing.
@@ -175,13 +182,30 @@ Configure your `.env` to use test buckets when developing.
 
 ```bash
 # Temperature collection
-python -m src.data_collection.temperature
+python collect_temperatures.py
 
 # Weather data
-python -m src.data_collection.weather
+python collect_weather.py
 
-# Generate heating program
-python -m src.control.heating_optimizer
+# Spot prices
+python collect_spot_prices.py
+
+# Shelly EM3 energy meter
+python collect_shelly_em3.py
+
+# Wind power data
+python -m src.data_collection.windpower
+
+# Generate heating program (for tomorrow)
+python generate_heating_program_v2.py --date-offset 1
+
+# Execute heating program
+python execute_heating_program_v2.py
+
+# Aggregation pipelines
+python aggregate_emeters_5min.py
+python aggregate_analytics_15min.py
+python aggregate_analytics_1hour.py
 ```
 
 ## Deployment
@@ -202,7 +226,7 @@ Key environment variables:
 
 See [.env.example](.env.example) for complete list.
 
-### Configuration File (config.yaml)
+### Configuration File (config/config.yaml)
 
 Main configuration options:
 - **heating.curve**: Temperature-to-heating-hours mapping
@@ -217,11 +241,16 @@ See [config/config.yaml.example](config/config.yaml.example) for details.
 ### Logs
 
 ```bash
-# Application logs
-tail -f /var/log/redhouse/collector.log
+# Application logs (per-component)
+tail -f /var/log/redhouse/temperature.log
+tail -f /var/log/redhouse/weather.log
+tail -f /var/log/redhouse/spot_prices.log
 
-# Systemd logs
+# Systemd logs (all redhouse services)
 journalctl -u redhouse-* -f
+
+# Single service
+journalctl -u redhouse-generate-program -f
 ```
 
 ### Grafana Dashboards

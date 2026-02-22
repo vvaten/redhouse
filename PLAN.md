@@ -37,14 +37,15 @@ Modernizing a home automation system running on Raspberry Pi that controls a geo
 
 - [DONE] Version control with Git/GitHub
 - [DONE] Configuration management (no hardcoded credentials)
-- [TODO] Deployment automation
-- [TODO] Unit tests
+- [DONE] Deployment automation
+- [DONE] Unit tests
 - [TODO] Simulation capability (backtest against historical data)
-- [TODO] Automatic log rotation
+- [DONE] Automatic log rotation (journald for systemd services; RotatingFileHandler for /var/log/redhouse/)
 - [TODO] Monitoring and alerts
-- [TODO] Extensibility for garage heating and EV charging
+- [PARTIAL] Extensibility for garage heating and EV charging (multi-load architecture exists, no implementations yet)
 - [TODO] Grafana dashboard controls
-- [TODO] Automatic snow cover factor detection in predict_solar_yield.py (currently hardcoded to 0.0 in wibatemp/predict_solar_yield.py and 1.0 in predict_solar_yield.py)
+- [PARTIAL] Grafana staging dashboard (new_staging_dashboard.json created and being refined)
+- [TODO] Automatic snow cover factor detection in predict_solar_yield.py (currently hardcoded to 0.0)
 
 ---
 
