@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Snow cover factor (1.0 = no snow, 0.0 = full blockage)
 # TODO: Make this configurable or auto-detected
-SNOW_COVER_FACTOR = 1.0
+SNOW_COVER_FACTOR = 0.0
 
 # Model file path (relative to project root)
 SOLAR_MODEL_FILE = Path(__file__).parent / "models" / "solar_yield_model.json"

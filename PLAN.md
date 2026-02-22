@@ -44,6 +44,7 @@ Modernizing a home automation system running on Raspberry Pi that controls a geo
 - [TODO] Monitoring and alerts
 - [TODO] Extensibility for garage heating and EV charging
 - [TODO] Grafana dashboard controls
+- [TODO] Automatic snow cover factor detection in predict_solar_yield.py (currently hardcoded to 0.0 in wibatemp/predict_solar_yield.py and 1.0 in predict_solar_yield.py)
 
 ---
 
