@@ -1,0 +1,16 @@
+[Unit]
+Description=RedHouse Health Check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/run_health_check.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-health-check
+
+[Install]
+WantedBy=multi-user.target

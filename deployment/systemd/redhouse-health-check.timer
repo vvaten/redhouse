@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Health Check Timer
+Requires=redhouse-health-check.service
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*:00/15
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
