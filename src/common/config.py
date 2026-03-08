@@ -191,8 +191,11 @@ class Config:
     # Heating configuration
     @property
     def heating_curve(self) -> dict[int, float]:
-        curve = self.get("heating.curve", {-20: 12, 0: 8, 16: 4})
-        return {int(k): float(v) for k, v in curve.items()}
+        return {
+            -20: float(self.get("HEATING_CURVE_MINUS20", 10)),
+            0: float(self.get("HEATING_CURVE_0", 5)),
+            16: float(self.get("HEATING_CURVE_16", 2)),
+        }
 
     @property
     def evuoff_threshold_price(self) -> float:

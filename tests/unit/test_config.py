@@ -118,6 +118,22 @@ class TestConfig(unittest.TestCase):
             self.assertIsInstance(key, int)
             self.assertIsInstance(value, float)
 
+    def test_config_heating_curve_reads_env_keys(self):
+        """Test that heating curve reads individual HEATING_CURVE_* env vars."""
+        with patch.dict(
+            os.environ,
+            {
+                "HEATING_CURVE_MINUS20": "14",
+                "HEATING_CURVE_0": "7",
+                "HEATING_CURVE_16": "3",
+            },
+        ):
+            config = Config()
+            curve = config.heating_curve
+            self.assertEqual(curve[-20], 14.0)
+            self.assertEqual(curve[0], 7.0)
+            self.assertEqual(curve[16], 3.0)
+
     def test_config_logging_properties(self):
         """Test logging configuration properties."""
         with patch.dict(
@@ -139,10 +155,6 @@ class TestConfig(unittest.TestCase):
         """Test YAML configuration file loading."""
         yaml_content = """
 heating:
-  curve:
-    -20: 15
-    0: 10
-    16: 5
   evuoff_threshold_price: 0.30
   evuoff_max_continuous_hours: 3
 """
@@ -151,11 +163,19 @@ heating:
             yaml_path = f.name
 
         try:
-            config = Config(config_path=yaml_path)
-            curve = config.heating_curve
-            self.assertEqual(curve[-20], 15.0)
-            self.assertEqual(curve[0], 10.0)
-            self.assertEqual(curve[16], 5.0)
+            with patch.dict(
+                os.environ,
+                {
+                    "HEATING_CURVE_MINUS20": "15",
+                    "HEATING_CURVE_0": "10",
+                    "HEATING_CURVE_16": "5",
+                },
+            ):
+                config = Config(config_path=yaml_path)
+                curve = config.heating_curve
+                self.assertEqual(curve[-20], 15.0)
+                self.assertEqual(curve[0], 10.0)
+                self.assertEqual(curve[16], 5.0)
             self.assertEqual(config.evuoff_threshold_price, 0.30)
             self.assertEqual(config.evuoff_max_continuous_hours, 3)
         finally:

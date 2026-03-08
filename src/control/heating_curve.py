@@ -20,9 +20,9 @@ class HeatingCurve:
 
     # Default heating curve points (temperature: hours_per_day)
     DEFAULT_CURVE = {
-        -20: 12.0,  # Very cold: heat 12 hours/day
-        0: 8.0,  # Freezing: heat 8 hours/day
-        16: 4.0,  # Mild: heat 4 hours/day
+        -20: 10.0,  # Very cold: heat 10 hours/day
+        0: 5.0,  # Freezing: heat 5 hours/day
+        16: 2.0,  # Mild: heat 2 hours/day
     }
 
     # Minimum heating hours to bother with
@@ -37,15 +37,9 @@ class HeatingCurve:
                          If None, loads from config or uses DEFAULT_CURVE.
         """
         if curve_points is None:
-            # Try to load from config
             config = get_config()
-            curve_points = config.get("heating_curve")
-
-            if curve_points is None:
-                logger.info("No heating curve in config, using default")
-                curve_points = {float(k): v for k, v in self.DEFAULT_CURVE.items()}
-            else:
-                logger.info(f"Loaded heating curve from config with {len(curve_points)} points")
+            curve_points = {float(k): v for k, v in config.heating_curve.items()}
+            logger.info(f"Loaded heating curve from config with {len(curve_points)} points")
         else:
             logger.info("Using explicitly provided heating curve")
 
