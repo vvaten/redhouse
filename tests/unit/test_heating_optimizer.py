@@ -175,13 +175,20 @@ class TestHeatingOptimizer(unittest.TestCase):
         self.assertTrue(selected.empty)
 
     def test_select_cheapest_hours_fractional(self):
-        """Test selecting fractional hours."""
+        """Test selecting fractional hours rounds up and marks partial slot."""
         result = self.optimizer.calculate_heating_priorities(self.sample_df)
 
-        # Select 6.5 hours (should round down to 6)
+        # Select 6.5 hours: should select 7 slots, last one partial (30 min)
         selected = self.optimizer.select_cheapest_hours(result, num_hours=6.5)
 
-        self.assertEqual(len(selected), 6)
+        self.assertEqual(len(selected), 7)
+        self.assertIn("duration_minutes", selected.columns)
+        # Most expensive selected hour should be 30 minutes
+        most_expensive_idx = selected["heating_prio"].idxmax()
+        self.assertEqual(selected.loc[most_expensive_idx, "duration_minutes"], 30)
+        # All others should be 60 minutes
+        full_hours = selected.drop(most_expensive_idx)
+        self.assertTrue((full_hours["duration_minutes"] == 60).all())
 
     def test_get_priority_range(self):
         """Test getting priority range."""

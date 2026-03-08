@@ -193,7 +193,7 @@ class Config:
     def heating_curve(self) -> dict[int, float]:
         return {
             -20: float(self.get("HEATING_CURVE_MINUS20", 10)),
-            0: float(self.get("HEATING_CURVE_0", 5)),
+            0: float(self.get("HEATING_CURVE_0", 6)),
             16: float(self.get("HEATING_CURVE_16", 2)),
         }
 

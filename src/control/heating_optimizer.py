@@ -251,13 +251,19 @@ class HeatingOptimizer:
         """
         Select the cheapest hours to run heating.
 
+        Supports fractional hours: if num_hours=5.75, selects 6 hours but marks
+        the last (most expensive) selected hour as partial via 'duration_minutes'.
+
         Args:
             priorities_df: DataFrame with 'heating_prio' column
-            num_hours: Number of hours to heat (can be fractional, e.g., 6.5)
+            num_hours: Number of hours to heat (can be fractional, e.g., 5.75)
 
         Returns:
-            DataFrame with selected hours, sorted by priority (cheapest first)
+            DataFrame with selected hours, sorted by priority (cheapest first).
+            Each row has 'duration_minutes' column (60 for full, less for partial).
         """
+        import math
+
         if priorities_df.empty:
             logger.warning("Empty DataFrame provided to select_cheapest_hours")
             return pd.DataFrame()
@@ -265,9 +271,20 @@ class HeatingOptimizer:
         # Sort by priority (lowest = cheapest)
         sorted_df = priorities_df.sort_values("heating_prio")
 
-        # Select required number of hours
-        num_hours_int = int(num_hours)
+        # Select ceil(num_hours) slots; last one may be partial
+        num_hours_int = math.ceil(num_hours)
         selected = sorted_df.head(num_hours_int).copy()
+
+        # Set duration_minutes: all full hours except possibly the last
+        selected["duration_minutes"] = 60
+        fractional = num_hours - int(num_hours)
+        if fractional > 0 and len(selected) > 0:
+            # The most expensive selected hour (last by priority) gets partial duration
+            # Round to nearest 15 minutes
+            partial_minutes = round(fractional * 60 / 15) * 15
+            if partial_minutes > 0:
+                most_expensive_idx = selected["heating_prio"].idxmax()
+                selected.loc[most_expensive_idx, "duration_minutes"] = partial_minutes
 
         logger.info(
             f"Selected {len(selected)} cheapest hours out of {len(priorities_df)} "

@@ -145,7 +145,11 @@ class ScheduleBuilder:
                 "utc_time": hour.tz_convert("UTC").isoformat(),
                 "local_time": hour.isoformat(),
                 "command": "ON",
-                "duration_minutes": 60,
+                "duration_minutes": int(
+                    selected_hours.loc[hour, "duration_minutes"]
+                    if "duration_minutes" in selected_hours.columns
+                    else 60
+                ),
                 "reason": "cheap_electricity",
                 "spot_price_total_c_kwh": round(
                     (
@@ -250,7 +254,10 @@ class ScheduleBuilder:
         Returns:
             Tuple of (total_hours_on, total_cost)
         """
-        total_hours_on = len(heating_hours)
+        total_minutes_on = sum(
+            e.get("duration_minutes", 0) for e in final_schedule if e.get("command") == "ON"
+        )
+        total_hours_on = total_minutes_on / 60.0
         total_cost = sum(
             e.get("estimated_cost_eur", 0.0) for e in final_schedule if e.get("estimated_cost_eur")
         )

@@ -21,7 +21,7 @@ class HeatingCurve:
     # Default heating curve points (temperature: hours_per_day)
     DEFAULT_CURVE = {
         -20: 10.0,  # Very cold: heat 10 hours/day
-        0: 5.0,  # Freezing: heat 5 hours/day
+        0: 6.0,  # Freezing: heat 6 hours/day
         16: 2.0,  # Mild: heat 2 hours/day
     }
 
