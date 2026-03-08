@@ -52,8 +52,8 @@ def send_alert_email(
 
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            if resp.status == 200:
-                logger.info("Alert email sent: %s", subject)
+            if 200 <= resp.status < 300:
+                logger.info("Alert email sent (HTTP %d): %s", resp.status, subject)
                 return True
             logger.error("Resend API returned status %d", resp.status)
             return False

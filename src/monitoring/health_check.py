@@ -203,13 +203,15 @@ def run_health_check() -> int:
         subject = f"[RedHouse {severity}] {hostname}: health check alert"
         body = format_alert_body(hostname, all_failures, all_warnings)
 
-        send_alert_email(
+        email_sent = send_alert_email(
             api_key=resend_api_key,
             to_email=alert_email_to,
             subject=subject,
             body=body,
             from_email=alert_email_from,
         )
+        if not email_sent:
+            logger.error("Failed to send alert email to %s", alert_email_to)
     else:
         logger.info("All health checks passed")
 
