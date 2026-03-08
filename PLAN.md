@@ -46,6 +46,7 @@ Modernizing a home automation system running on Raspberry Pi that controls a geo
 - [TODO] Grafana dashboard controls
 - [PARTIAL] Grafana staging dashboard (new_staging_dashboard.json created and being refined)
 - [TODO] Automatic snow cover factor detection in predict_solar_yield.py (currently hardcoded to 0.0)
+- [TODO] Grafana dynamic bucket selection based on time range (use emeters for short ranges, emeters_5min/analytics_15min/analytics_1hour for longer ranges to avoid querying 1-5 min resolution over weeks)
 
 ---
 
