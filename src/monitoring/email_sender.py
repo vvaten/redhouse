@@ -1,12 +1,13 @@
 """Email alert sender using Resend API."""
 
 import json
-import logging
 import urllib.error
 import urllib.request
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from src.common.logger import setup_logger
+
+logger = setup_logger(__name__, "health_check.log")
 
 RESEND_API_URL = "https://api.resend.com/emails"
 
