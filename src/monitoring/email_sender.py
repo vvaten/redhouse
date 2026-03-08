@@ -45,6 +45,7 @@ def send_alert_email(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "RedHouse/1.0",
         },
         method="POST",
     )
