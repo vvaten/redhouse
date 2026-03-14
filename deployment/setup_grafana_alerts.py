@@ -299,8 +299,8 @@ def parse_args():
 
 def setup_environment_alerts(base_url, api_key, env_name, datasource_uid):
     """Create alert rules for a single environment."""
-    folder_title = f"RedHouse Alerts ({env_name.capitalize()})"
-    group_name = f"Data Freshness ({env_name.capitalize()})"
+    folder_title = f"RedHouse-Alerts-{env_name.capitalize()}"
+    group_name = f"Data-Freshness-{env_name.capitalize()}"
 
     folder_uid = find_or_create_folder(base_url, api_key, folder_title)
 
