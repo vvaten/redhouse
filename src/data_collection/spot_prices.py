@@ -160,25 +160,27 @@ def _calculate_price_fields(entry: dict, params: dict, hour: int) -> dict:
         hour: Hour of the day for transfer price calculation
 
     Returns:
-        Dictionary with all calculated price fields
+        Dictionary with all calculated price fields (all in EUR/kWh)
     """
+    # API returns PriceNoTax in EUR/kWh
     price_no_tax = entry["PriceNoTax"]
 
-    # Price without tax (c/kWh)
+    # Price without tax (EUR/kWh)
     price = price_no_tax
 
-    # Selling price (production buyback)
+    # Selling price (EUR/kWh); margin config is in c/kWh, * 0.01 converts to EUR/kWh
     price_sell = round(price_no_tax - 0.01 * params["production_buyback_margin"], 4)
 
-    # Price with VAT
+    # Price with VAT (EUR/kWh)
     price_with_tax = round(params["value_added_tax"] * price_no_tax, 4)
 
-    # Determine transfer price (night vs day rate)
+    # Determine transfer price (night vs day rate, config in c/kWh)
     transfer_price = _determine_transfer_price(
         hour, params["transfer_day_price"], params["transfer_night_price"]
     )
 
-    # Total price including all fees and taxes
+    # Total price including all fees and taxes (EUR/kWh)
+    # Config params (margin, transfer, tax) are in c/kWh, * 0.01 converts to EUR/kWh
     price_total = round(
         price_with_tax
         + 0.01 * (params["sellers_margin"] + transfer_price + params["transfer_tax_price"]),

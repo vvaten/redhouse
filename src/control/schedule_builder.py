@@ -153,7 +153,7 @@ class ScheduleBuilder:
                 "reason": "cheap_electricity",
                 "spot_price_total_c_kwh": round(
                     (
-                        day_priorities.loc[hour, "price_total"] * 100
+                        day_priorities.loc[hour, "price_total"] * 100  # EUR/kWh -> c/kWh
                         if hour in day_priorities.index
                         else 0.0
                     ),

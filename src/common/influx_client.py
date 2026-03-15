@@ -243,6 +243,7 @@ class InfluxClient:
                     entry["epoch_timestamp"], tz=datetime.timezone.utc
                 )
 
+                # All price fields are in EUR/kWh
                 point = (
                     influxdb_client.Point("spot")
                     .field("price", entry["price"])

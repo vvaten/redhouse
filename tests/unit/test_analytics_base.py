@@ -297,7 +297,7 @@ class TestAnalyticsAggregatorBase:
             "battery_discharge_sum": 0.0,
             "export_sum": 0.0,
         }
-        spotprice = {"price_total": 8.5, "price_sell": 4.0}
+        spotprice = {"price_total": 0.085, "price_sell": 0.04}
 
         cost_metrics = aggregator._calculate_cost_allocation(metrics, spotprice)
 

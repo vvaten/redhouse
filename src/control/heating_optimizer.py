@@ -67,8 +67,8 @@ class HeatingOptimizer:
             df: DataFrame from HeatingDataFetcher with columns:
                 - time_floor_local: timestamp
                 - solar_yield_avg_prediction: predicted solar (kWh)
-                - price_total: electricity buy price (c/kWh)
-                - price_sell: electricity sell price (c/kWh)
+                - price_total: electricity buy price (EUR/kWh)
+                - price_sell: electricity sell price (EUR/kWh)
 
         Returns:
             DataFrame grouped by resolution with 'heating_prio' column

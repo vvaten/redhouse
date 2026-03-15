@@ -46,8 +46,8 @@ class HeatingDataFetcher:
             - time_floor: timestamp rounded to hour
             - time_floor_local: time_floor in local timezone
             - Air temperature: forecast temperature (C)
-            - price_total: total electricity price (c/kWh)
-            - price_sell: price for selling back to grid (c/kWh)
+            - price_total: total electricity price (EUR/kWh)
+            - price_sell: price for selling back to grid (EUR/kWh)
             - solar_yield_avg_prediction: predicted solar production (kWh)
         """
         logger.info(

@@ -45,8 +45,10 @@ class Analytics15MinAggregator(AnalyticsAggregatorBase):
 
         # Calculate cost allocation if we have spot price data
         if spotprice:
+            # Prices stored in EUR/kWh
             metrics["price_total"] = spotprice.get("price_total")
             metrics["price_sell"] = spotprice.get("price_sell")
+            metrics["price_withtax"] = spotprice.get("price_withtax")
 
             cost_metrics = self._calculate_cost_allocation(metrics, spotprice)
             metrics.update(cost_metrics)

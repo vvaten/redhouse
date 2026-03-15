@@ -61,7 +61,7 @@ def sample_emeters_5min_data():
 @pytest.fixture
 def sample_spotprice():
     """Sample spot price data."""
-    return {"price_total": 5.5, "price_sell": 3.0}
+    return {"price_total": 0.055, "price_sell": 0.03}
 
 
 @pytest.fixture

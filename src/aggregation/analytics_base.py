@@ -99,9 +99,11 @@ from(bucket: "{bucket}")
             tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
             for table in tables:
                 for record in table.records:
+                    # All prices are in EUR/kWh
                     return {
                         "price_total": record.values.get("price_total"),
                         "price_sell": record.values.get("price_sell"),
+                        "price_withtax": record.values.get("price_withtax"),
                     }
             logger.debug("No spotprice data found")
             return None
@@ -192,8 +194,8 @@ from(bucket: "{bucket}")
     def _calculate_cost_allocation(self, metrics: dict, spotprice: dict) -> dict:
         """Calculate costs using priority-based energy flow allocation."""
         cost_metrics: dict = {}
-        price_total = spotprice.get("price_total")
-        price_sell = spotprice.get("price_sell")
+        price_total = spotprice.get("price_total")  # EUR/kWh
+        price_sell = spotprice.get("price_sell")  # EUR/kWh
 
         if price_total is None or price_sell is None:
             return cost_metrics
@@ -203,12 +205,12 @@ from(bucket: "{bucket}")
             metrics["solar_yield_sum"], metrics["consumption_sum"], metrics["battery_charge_sum"]
         )
         cost_metrics.update(solar_allocation)
-        cost_metrics["solar_direct_value"] = (solar_allocation["solar_to_consumption"] / 1000.0) * (
-            price_total / 100.0
-        )
-        cost_metrics["solar_export_revenue"] = (solar_allocation["solar_to_export"] / 1000.0) * (
-            price_sell / 100.0
-        )
+        cost_metrics["solar_direct_value"] = (
+            solar_allocation["solar_to_consumption"] / 1000.0
+        ) * price_total
+        cost_metrics["solar_export_revenue"] = (
+            solar_allocation["solar_to_export"] / 1000.0
+        ) * price_sell
 
         # Step 4: Battery charging costs
         battery_charge_costs = self._calculate_battery_charging_costs(
@@ -276,13 +278,16 @@ from(bucket: "{bucket}")
     def _calculate_battery_charging_costs(
         self, solar_to_battery: float, battery_charge: float, sell_price: float, buy_price: float
     ) -> dict:
-        """Step 4: Calculate costs for solar and grid battery charging."""
+        """Step 4: Calculate costs for solar and grid battery charging.
+
+        Prices (sell_price, buy_price) are in EUR/kWh. Energy values in Wh.
+        """
         # Solar to battery: opportunity cost (could have exported)
-        battery_charge_from_solar_cost = (solar_to_battery / 1000.0) * (sell_price / 100.0)
+        battery_charge_from_solar_cost = (solar_to_battery / 1000.0) * sell_price
 
         # Grid to battery: actual import cost
         grid_to_battery = battery_charge - solar_to_battery
-        battery_charge_from_grid_cost = (grid_to_battery / 1000.0) * (buy_price / 100.0)
+        battery_charge_from_grid_cost = (grid_to_battery / 1000.0) * buy_price
 
         battery_charge_total_cost = battery_charge_from_solar_cost + battery_charge_from_grid_cost
 
@@ -300,14 +305,17 @@ from(bucket: "{bucket}")
         buy_price: float,
         sell_price: float,
     ) -> dict:
-        """Step 5: Calculate discharge to consumption and export."""
+        """Step 5: Calculate discharge to consumption and export.
+
+        Prices (buy_price, sell_price) are in EUR/kWh. Energy values in Wh.
+        """
         # Battery discharge to consumption
         battery_to_consumption = min(battery_discharge, remaining_consumption)
-        battery_discharge_value = (battery_to_consumption / 1000.0) * (buy_price / 100.0)
+        battery_discharge_value = (battery_to_consumption / 1000.0) * buy_price
 
         # Battery discharge to export
         battery_to_export = battery_discharge - battery_to_consumption
-        battery_export_revenue = (battery_to_export / 1000.0) * (sell_price / 100.0)
+        battery_export_revenue = (battery_to_export / 1000.0) * sell_price
 
         return {
             "battery_to_consumption": battery_to_consumption,
@@ -317,8 +325,11 @@ from(bucket: "{bucket}")
         }
 
     def _calculate_grid_import_cost(self, remaining_consumption: float, buy_price: float) -> float:
-        """Step 6: Calculate cost of remaining consumption from grid."""
-        return (remaining_consumption / 1000.0) * (buy_price / 100.0)
+        """Step 6: Calculate cost of remaining consumption from grid.
+
+        buy_price is in EUR/kWh. remaining_consumption in Wh.
+        """
+        return (remaining_consumption / 1000.0) * buy_price
 
     def _calculate_cost_summary(
         self,
