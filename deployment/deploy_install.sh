@@ -66,6 +66,15 @@ else
     exit 1
 fi
 
+# Set up Grafana alerts
+echo ""
+echo "Setting up Grafana data freshness alerts..."
+if sudo -u pi $VENV_DIR/bin/python -u deployment/setup_grafana_alerts.py --env staging; then
+    echo "[OK] Grafana alerts deployed"
+else
+    echo "[WARNING] Grafana alert setup failed (non-fatal, continuing deployment)"
+fi
+
 # Create log directory
 echo ""
 echo "Creating log directory..."
