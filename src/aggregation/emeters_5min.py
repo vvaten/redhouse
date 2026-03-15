@@ -82,12 +82,19 @@ from(bucket: "{bucket}")
     def _fetch_shelly_data(
         self, start_time: datetime.datetime, end_time: datetime.datetime
     ) -> list:
-        """Fetch Shelly EM3 data from InfluxDB."""
+        """Fetch Shelly EM3 data from InfluxDB.
+
+        Uses end_time + 1s as stop to include the boundary data point,
+        since range() is stop-exclusive and we need the reading at
+        exactly end_time for accurate energy difference calculation.
+        Uses 30s margin to account for timer execution jitter.
+        """
         bucket = self.config.influxdb_bucket_shelly_em3_raw
+        stop_time = end_time + datetime.timedelta(seconds=30)
 
         query = f"""
 from(bucket: "{bucket}")
-  |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
+  |> range(start: {start_time.isoformat()}, stop: {stop_time.isoformat()})
   |> filter(fn: (r) => r._measurement == "shelly_em3")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 """

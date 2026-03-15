@@ -69,7 +69,7 @@ class AggregationPipeline(ABC):
 
             # Step 4: Write results
             if write_to_influx:
-                success = self.write_results(metrics, window_end)
+                success = self.write_results(metrics, window_start)
                 if not success:
                     logger.error(
                         f"Failed to write results for window {window_start} - {window_end}"

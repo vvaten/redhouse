@@ -78,6 +78,30 @@ ALERT_RULES = [
         "max_age_minutes": 480,
         "eval_interval_seconds": 1800,
     },
+    {
+        "name": "5min aggregation stale",
+        "bucket": "emeters_5min",
+        "measurement": "energy",
+        "max_age_minutes": 15,
+        "eval_interval_seconds": 300,
+        "skip_envs": ["wibatemp"],
+    },
+    {
+        "name": "15min aggregation stale",
+        "bucket": "analytics_15min",
+        "measurement": "analytics",
+        "max_age_minutes": 45,
+        "eval_interval_seconds": 600,
+        "skip_envs": ["wibatemp"],
+    },
+    {
+        "name": "1hour aggregation stale",
+        "bucket": "analytics_1hour",
+        "measurement": "analytics",
+        "max_age_minutes": 180,
+        "eval_interval_seconds": 1800,
+        "skip_envs": ["wibatemp"],
+    },
 ]
 
 # Bucket name mapping from production to staging
@@ -87,6 +111,9 @@ STAGING_BUCKET_MAP = {
     "checkwatt_full_data": "checkwatt_staging",
     "weather": "weather_staging",
     "windpower": "windpower_staging",
+    "emeters_5min": "emeters_5min_staging",
+    "analytics_15min": "analytics_15min_staging",
+    "analytics_1hour": "analytics_1hour_staging",
 }
 
 CONTACT_POINT_NAME_ENV = "GRAFANA_CONTACT_POINT_NAME"
