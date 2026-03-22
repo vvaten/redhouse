@@ -5,9 +5,12 @@ After=redhouse-checkwatt.timer
 
 [Timer]
 OnBootSec=5min
-# Run every 5 minutes at :02, :07, :12, :17, :22, :27, :32, :37, :42, :47, :52, :57
-# Runs 1 minute after CheckWatt (:01, :06, ...) to ensure all source data is collected
-OnCalendar=*:02,07,12,17,22,27,32,37,42,47,52,57:00
+# Run every 5 minutes at :03, :08, :13, :18, :23, :28, :33, :38, :43, :48, :53, :58
+# Runs 2 minutes after CheckWatt (:01, :06, ...) to ensure all source data is collected.
+# Shifted +1min from :02 to :03 to avoid overlap with wibatemp checkwatt_dataloader
+# which runs at :01,:06,:11,... and does heavy InfluxDB reads for ~10s.
+# TODO: Shift back to :02 once wibatemp is decommissioned.
+OnCalendar=*:03,08,13,18,23,28,33,38,43,48,53,58:00
 AccuracySec=1s
 
 [Install]

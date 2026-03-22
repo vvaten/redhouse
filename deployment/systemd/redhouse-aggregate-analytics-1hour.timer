@@ -5,9 +5,12 @@ After=redhouse-aggregate-analytics-15min.timer
 
 [Timer]
 OnBootSec=1h
-# Run every hour at :02 past the hour (e.g., 01:02, 02:02, ...)
-# Runs after 15-min aggregator at :01 completes
-OnCalendar=*:02:00
+# Run every hour at :05:30 past the hour (e.g., 01:05:30, 02:05:30, ...)
+# Runs after 15-min aggregator at :04 completes.
+# Shifted from :02 to :05:30 to avoid overlap with wibatemp energy_to_fissio
+# which starts at :04, reads Shelly EM3 at :05, and writes to emeters shortly after.
+# TODO: Shift back to :02 once wibatemp is decommissioned.
+OnCalendar=*:05:30
 AccuracySec=1s
 
 [Install]

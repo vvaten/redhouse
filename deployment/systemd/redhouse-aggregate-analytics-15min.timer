@@ -4,9 +4,11 @@ Requires=redhouse-aggregate-analytics-15min.service
 
 [Timer]
 OnBootSec=15min
-# Run every 15 minutes at :01, :16, :31, :46
-# Runs after emeters_5min aggregation completes (at :02, :07, :12, ...)
-OnCalendar=*:01,16,31,46:00
+# Run every 15 minutes at :04, :19, :34, :49
+# Runs after emeters_5min aggregation completes (at :03, :08, :13, ...)
+# Shifted +3min from :01 to :04 to avoid overlap with wibatemp checkwatt_dataloader.
+# TODO: Shift back to :01 once wibatemp is decommissioned.
+OnCalendar=*:04,19,34,49:00
 AccuracySec=1s
 
 [Install]
