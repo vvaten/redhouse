@@ -5,6 +5,7 @@ After=redhouse-checkwatt.timer
 
 [Timer]
 OnBootSec=5min
+# IMPORTANT: If you change these times, also update deployment/smart_deploy.sh
 # Run every 5 minutes at :03, :08, :13, :18, :23, :28, :33, :38, :43, :48, :53, :58
 # Runs 2 minutes after CheckWatt (:01, :06, ...) to ensure all source data is collected.
 # Shifted +1min from :02 to :03 to avoid overlap with wibatemp checkwatt_dataloader

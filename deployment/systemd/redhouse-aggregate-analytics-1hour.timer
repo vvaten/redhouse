@@ -5,6 +5,7 @@ After=redhouse-aggregate-analytics-15min.timer
 
 [Timer]
 OnBootSec=1h
+# IMPORTANT: If you change these times, also update deployment/smart_deploy.sh
 # Run every hour at :05:30 past the hour (e.g., 01:05:30, 02:05:30, ...)
 # Runs after 15-min aggregator at :04 completes.
 # Shifted from :02 to :05:30 to avoid overlap with wibatemp energy_to_fissio

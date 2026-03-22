@@ -2,9 +2,13 @@
 #
 # Smart deployment script that waits for the next optimal deployment window
 #
-# Optimal windows: :06:10-:08:30, :21:10-:23:30, :36:10-:38:30, :51:10-:53:30
+# Optimal windows: :07:10-:09:30, :22:10-:24:30, :37:10-:39:30, :52:10-:54:30
 # (start 10s after to let Shelly EM3 collector run, end 30s before next collection)
 # Deployment should complete in 2-3 minutes
+# Timer schedule (shifted +1min to avoid wibatemp overlap):
+#   :03,:08,:13,...  emeters_5min aggregation
+#   :04,:19,:34,:49  analytics_15min aggregation
+#   :05:30           analytics_1hour aggregation (hourly)
 #
 # Usage:
 #   ./deploy_smart.sh              # Wait for next window, then deploy
@@ -18,7 +22,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_SCRIPT="${SCRIPT_DIR}/deploy.sh"
 
 # Optimal deployment windows (start minute of each window)
-OPTIMAL_WINDOWS=(6 21 36 51)
+# IMPORTANT: Keep in sync with systemd timer schedules in deployment/systemd/*.timer
+OPTIMAL_WINDOWS=(7 22 37 52)
 # Window timing adjustments
 WINDOW_START_OFFSET=10  # Start 10 seconds after the minute
 WINDOW_END_OFFSET=30    # End 30 seconds before the end minute
@@ -38,7 +43,7 @@ get_next_window() {
     done
 
     # No more windows in current hour, return first window of next hour
-    echo "6"
+    echo "7"
 }
 
 # Function to calculate wait time in seconds
@@ -112,14 +117,16 @@ show_schedule() {
     echo "============================"
     echo ""
     echo "Safe windows (2m 20s each, adjusted for collectors):"
-    echo "  :06:10-:08:30  (after Shelly EM3, before next collection)"
-    echo "  :21:10-:23:30  (after Shelly EM3, before next collection)"
-    echo "  :36:10-:38:30  (after Shelly EM3, before next collection)"
-    echo "  :51:10-:53:30  (after Shelly EM3, before next collection)"
+    echo "  :07:10-:09:30  (after Shelly EM3, before next collection)"
+    echo "  :22:10-:24:30  (after Shelly EM3, before next collection)"
+    echo "  :37:10-:39:30  (after Shelly EM3, before next collection)"
+    echo "  :52:10-:54:30  (after Shelly EM3, before next collection)"
     echo ""
-    echo "Avoid these times:"
+    echo "Avoid these times (keep in sync with systemd/*.timer):"
     echo "  :00, :15, :30, :45  (heating program execution)"
-    echo "  :00, :05, :10, etc. (5-min aggregation)"
+    echo "  :03, :08, :13, etc. (5-min emeters aggregation)"
+    echo "  :04, :19, :34, :49  (15-min analytics aggregation)"
+    echo "  :05:30              (1-hour analytics aggregation)"
     echo "  :X6:00-:X6:10       (Shelly EM3 collection)"
     echo "  :01, :06, :11, etc. (CheckWatt collection)"
     echo ""
