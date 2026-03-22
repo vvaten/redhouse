@@ -47,7 +47,7 @@ def find_gaps(
     )
 
     try:
-        tables = client.query_api.query(query, org=client.config.influxdb_org)
+        tables = client.query_with_retry(query)
         existing_times = set()
         for table in tables:
             for record in table.records:

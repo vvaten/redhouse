@@ -42,7 +42,7 @@ class TestFindGaps:
         ]
 
         client = MagicMock()
-        client.query_api.query.return_value = [_make_table(existing)]
+        client.query_with_retry.return_value = [_make_table(existing)]
         client.config.influxdb_org = "area51"
 
         gaps = find_gaps(client, "emeters_5min", "energy", start, end, 5)
@@ -64,7 +64,7 @@ class TestFindGaps:
         ]
 
         client = MagicMock()
-        client.query_api.query.return_value = [_make_table(existing)]
+        client.query_with_retry.return_value = [_make_table(existing)]
         client.config.influxdb_org = "area51"
 
         gaps = find_gaps(client, "emeters_5min", "energy", start, end, 5)
@@ -80,7 +80,7 @@ class TestFindGaps:
         end = datetime.datetime(2026, 3, 22, 5, 15, tzinfo=UTC)
 
         client = MagicMock()
-        client.query_api.query.return_value = []
+        client.query_with_retry.return_value = []
         client.config.influxdb_org = "area51"
 
         gaps = find_gaps(client, "emeters_5min", "energy", start, end, 5)
@@ -92,7 +92,7 @@ class TestFindGaps:
         end = datetime.datetime(2026, 3, 22, 5, 30, tzinfo=UTC)
 
         client = MagicMock()
-        client.query_api.query.side_effect = Exception("Connection timeout")
+        client.query_with_retry.side_effect = Exception("Connection timeout")
         client.config.influxdb_org = "area51"
 
         gaps = find_gaps(client, "emeters_5min", "energy", start, end, 5)
@@ -111,7 +111,7 @@ class TestFindGaps:
         ]
 
         client = MagicMock()
-        client.query_api.query.return_value = [_make_table(existing)]
+        client.query_with_retry.return_value = [_make_table(existing)]
         client.config.influxdb_org = "area51"
 
         gaps = find_gaps(client, "analytics_15min", "analytics", start, end, 15)
@@ -130,7 +130,7 @@ class TestFindGaps:
         ]
 
         client = MagicMock()
-        client.query_api.query.return_value = [_make_table(existing)]
+        client.query_with_retry.return_value = [_make_table(existing)]
         client.config.influxdb_org = "area51"
 
         gaps = find_gaps(client, "analytics_1hour", "analytics", start, end, 60)

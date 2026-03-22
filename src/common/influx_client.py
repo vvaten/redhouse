@@ -1,6 +1,7 @@
 """InfluxDB client wrapper for home automation system"""
 
 import datetime
+import time
 from typing import Any, Optional
 
 import influxdb_client
@@ -11,6 +12,10 @@ from .config_validator import ConfigValidationError, ConfigValidator
 from .logger import setup_logger
 
 logger = setup_logger(__name__)
+
+QUERY_TIMEOUT_MS = 15_000
+QUERY_MAX_RETRIES = 3
+QUERY_RETRY_DELAY_S = 3
 
 
 class InfluxClient:
@@ -28,7 +33,10 @@ class InfluxClient:
 
         self.config = config
         self.client = influxdb_client.InfluxDBClient(
-            url=config.influxdb_url, token=config.influxdb_token, org=config.influxdb_org
+            url=config.influxdb_url,
+            token=config.influxdb_token,
+            org=config.influxdb_org,
+            timeout=QUERY_TIMEOUT_MS,
         )
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
         self.query_api = self.client.query_api()
@@ -40,6 +48,36 @@ class InfluxClient:
                 logger.warning(msg)
             else:
                 logger.info(msg)
+
+    def query_with_retry(self, query: str) -> list:
+        """Query InfluxDB with automatic retry on timeout.
+
+        Args:
+            query: Flux query string
+
+        Returns:
+            List of FluxTable results
+
+        Raises:
+            Last exception if all retries fail
+        """
+        last_error: Exception = Exception("No attempts made")
+        for attempt in range(1, QUERY_MAX_RETRIES + 1):
+            try:
+                return self.query_api.query(query, org=self.config.influxdb_org)
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                is_timeout = "timed out" in error_str or "timeout" in error_str.lower()
+                if is_timeout and attempt < QUERY_MAX_RETRIES:
+                    logger.warning(
+                        f"Query timeout (attempt {attempt}/{QUERY_MAX_RETRIES}),"
+                        f" retrying in {QUERY_RETRY_DELAY_S}s..."
+                    )
+                    time.sleep(QUERY_RETRY_DELAY_S)
+                else:
+                    raise
+        raise last_error
 
     def write_point(
         self,

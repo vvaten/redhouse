@@ -97,7 +97,7 @@ class TestAnalyticsAggregatorBase:
         mock_table = Mock()
         mock_table.records = [mock_record]
 
-        aggregator.influx.query_api.query.return_value = [mock_table]
+        aggregator.influx.query_with_retry.return_value = [mock_table]
 
         data = aggregator._fetch_emeters_5min_data(window_start, window_end)
 
@@ -109,7 +109,7 @@ class TestAnalyticsAggregatorBase:
     def test_fetch_emeters_5min_data_empty(self, aggregator, time_window):
         """Test fetch of emeters_5min data with no results."""
         window_start, window_end = time_window
-        aggregator.influx.query_api.query.return_value = []
+        aggregator.influx.query_with_retry.return_value = []
 
         data = aggregator._fetch_emeters_5min_data(window_start, window_end)
 
@@ -118,7 +118,7 @@ class TestAnalyticsAggregatorBase:
     def test_fetch_emeters_5min_data_exception(self, aggregator, time_window):
         """Test fetch of emeters_5min data with exception."""
         window_start, window_end = time_window
-        aggregator.influx.query_api.query.side_effect = Exception("Database error")
+        aggregator.influx.query_with_retry.side_effect = Exception("Database error")
 
         data = aggregator._fetch_emeters_5min_data(window_start, window_end)
 
@@ -135,7 +135,7 @@ class TestAnalyticsAggregatorBase:
         mock_table = Mock()
         mock_table.records = [mock_record]
 
-        aggregator.influx.query_api.query.return_value = [mock_table]
+        aggregator.influx.query_with_retry.return_value = [mock_table]
 
         spotprice = aggregator._fetch_spotprice_data(window_end)
 
@@ -146,7 +146,7 @@ class TestAnalyticsAggregatorBase:
     def test_fetch_spotprice_data_empty(self, aggregator, time_window):
         """Test fetch of spot price data with no results."""
         window_start, window_end = time_window
-        aggregator.influx.query_api.query.return_value = []
+        aggregator.influx.query_with_retry.return_value = []
 
         spotprice = aggregator._fetch_spotprice_data(window_end)
 
@@ -155,7 +155,7 @@ class TestAnalyticsAggregatorBase:
     def test_fetch_spotprice_data_exception(self, aggregator, time_window):
         """Test fetch of spot price data with exception."""
         window_start, window_end = time_window
-        aggregator.influx.query_api.query.side_effect = Exception("Database error")
+        aggregator.influx.query_with_retry.side_effect = Exception("Database error")
 
         spotprice = aggregator._fetch_spotprice_data(window_end)
 
@@ -181,7 +181,7 @@ class TestAnalyticsAggregatorBase:
         mock_table = Mock()
         mock_table.records = mock_records
 
-        aggregator.influx.query_api.query.return_value = [mock_table]
+        aggregator.influx.query_with_retry.return_value = [mock_table]
 
         weather = aggregator._fetch_weather_data(window_start, window_end)
 
@@ -194,7 +194,7 @@ class TestAnalyticsAggregatorBase:
     def test_fetch_weather_data_empty(self, aggregator, time_window):
         """Test fetch of weather data with no results."""
         window_start, window_end = time_window
-        aggregator.influx.query_api.query.return_value = []
+        aggregator.influx.query_with_retry.return_value = []
 
         weather = aggregator._fetch_weather_data(window_start, window_end)
 
@@ -203,7 +203,7 @@ class TestAnalyticsAggregatorBase:
     def test_fetch_weather_data_exception(self, aggregator, time_window):
         """Test fetch of weather data with exception."""
         window_start, window_end = time_window
-        aggregator.influx.query_api.query.side_effect = Exception("Database error")
+        aggregator.influx.query_with_retry.side_effect = Exception("Database error")
 
         weather = aggregator._fetch_weather_data(window_start, window_end)
 
@@ -224,7 +224,7 @@ class TestAnalyticsAggregatorBase:
         mock_table = Mock()
         mock_table.records = mock_records
 
-        aggregator.influx.query_api.query.return_value = [mock_table]
+        aggregator.influx.query_with_retry.return_value = [mock_table]
 
         temperatures = aggregator._fetch_temperatures_data(window_start, window_end)
 
@@ -236,7 +236,7 @@ class TestAnalyticsAggregatorBase:
     def test_fetch_temperatures_data_empty(self, aggregator, time_window):
         """Test fetch of temperature data with no results."""
         window_start, window_end = time_window
-        aggregator.influx.query_api.query.return_value = []
+        aggregator.influx.query_with_retry.return_value = []
 
         temperatures = aggregator._fetch_temperatures_data(window_start, window_end)
 
@@ -245,7 +245,7 @@ class TestAnalyticsAggregatorBase:
     def test_fetch_temperatures_data_exception(self, aggregator, time_window):
         """Test fetch of temperature data with exception."""
         window_start, window_end = time_window
-        aggregator.influx.query_api.query.side_effect = Exception("Database error")
+        aggregator.influx.query_with_retry.side_effect = Exception("Database error")
 
         temperatures = aggregator._fetch_temperatures_data(window_start, window_end)
 

@@ -49,7 +49,7 @@ from(bucket: "{bucket}")
         logger.debug(f"Fetching emeters_5min data from {start_time} to {end_time}")
 
         try:
-            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            tables = self.influx.query_with_retry(query)
             data = []
             for table in tables:
                 for record in table.records:
@@ -96,7 +96,7 @@ from(bucket: "{bucket}")
         logger.debug(f"Fetching spotprice data for hour {hour_start}")
 
         try:
-            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            tables = self.influx.query_with_retry(query)
             for table in tables:
                 for record in table.records:
                     # All prices are in EUR/kWh
@@ -128,7 +128,7 @@ from(bucket: "{bucket}")
         logger.debug(f"Fetching weather data from {start_time} to {end_time}")
 
         try:
-            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            tables = self.influx.query_with_retry(query)
             weather_data = {}
             for table in tables:
                 for record in table.records:
@@ -161,7 +161,7 @@ from(bucket: "{bucket}")
         logger.debug(f"Fetching temperatures data from {start_time} to {end_time}")
 
         try:
-            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            tables = self.influx.query_with_retry(query)
             temp_data = {}
             for table in tables:
                 for record in table.records:

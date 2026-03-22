@@ -56,7 +56,7 @@ from(bucket: "{bucket}")
         logger.debug(f"Fetching CheckWatt data from {start_time} to {end_time}")
 
         try:
-            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            tables = self.influx.query_with_retry(query)
             data = []
             for table in tables:
                 for record in table.records:
@@ -102,7 +102,7 @@ from(bucket: "{bucket}")
         logger.debug(f"Fetching Shelly EM3 data from {start_time} to {end_time}")
 
         try:
-            tables = self.influx.query_api.query(query, org=self.config.influxdb_org)
+            tables = self.influx.query_with_retry(query)
             data = []
             for table in tables:
                 for record in table.records:
