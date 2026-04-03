@@ -36,6 +36,48 @@ from src.common.influx_client import InfluxClient
 UTC = pytz.UTC
 
 
+def find_data_range(
+    client: InfluxClient,
+    bucket: str,
+    measurement: str,
+) -> tuple:
+    """Query InfluxDB for the first and last timestamp in a bucket.
+
+    Returns (first_time, last_time) or (None, None) if bucket is empty.
+    """
+    query = f"""
+import "date"
+
+first = from(bucket: "{bucket}")
+  |> range(start: 0)
+  |> filter(fn: (r) => r["_measurement"] == "{measurement}")
+  |> first()
+  |> keep(columns: ["_time"])
+
+last = from(bucket: "{bucket}")
+  |> range(start: 0)
+  |> filter(fn: (r) => r["_measurement"] == "{measurement}")
+  |> last()
+  |> keep(columns: ["_time"])
+
+union(tables: [first, last])
+  |> sort(columns: ["_time"])
+"""
+    try:
+        tables = client.query_with_retry(query)
+        times = []
+        for table in tables:
+            for record in table.records:
+                times.append(record.get_time())
+        if len(times) >= 2:
+            return min(times), max(times)
+        if len(times) == 1:
+            return times[0], times[0]
+    except Exception as e:
+        print(f"  WARNING: Could not detect data range: {e}")
+    return None, None
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -170,6 +212,64 @@ def _resolve_time_range(
         return None, None
 
 
+def _suppress_aggregator_logging() -> None:
+    """Suppress INFO noise from aggregator modules -- progress is shown on stdout.
+
+    Aggregator modules call setup_logger() at import time, which sets INFO level
+    directly on each child logger with its own handlers, so setting the parent
+    "src" logger level has no effect. We must iterate all registered loggers.
+    """
+    for _name, _lgr in logging.Logger.manager.loggerDict.items():
+        if _name.startswith("src.") and isinstance(_lgr, logging.Logger):
+            _lgr.setLevel(logging.WARNING)
+            for _handler in _lgr.handlers:
+                _handler.setLevel(logging.WARNING)
+
+
+def _clamp_to_data_range(
+    client: InfluxClient,
+    config,
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+    skip_5min: bool,
+) -> tuple:
+    """Detect actual data range in the source bucket and clamp the requested range.
+
+    Returns (clamped_start, clamped_end) or (None, None) if no usable range.
+    """
+    if not skip_5min:
+        source_bucket = config.influxdb_bucket_shelly_em3_raw
+        source_measurement = "shelly_em3"
+    else:
+        source_bucket = config.influxdb_bucket_emeters_5min
+        source_measurement = "energy"
+
+    print(f"Detecting data range in {source_bucket}...")
+    data_first, data_last = find_data_range(client, source_bucket, source_measurement)
+
+    if data_first is None:
+        print(f"No data found in {source_bucket} -- nothing to backfill.")
+        return None, None
+
+    clamped_start = max(start_time, data_first)
+    clamped_end = min(end_time, data_last)
+
+    if clamped_start >= clamped_end:
+        print(
+            f"No overlap between requested range and data range "
+            f"({data_first.isoformat()} - {data_last.isoformat()})."
+        )
+        return None, None
+
+    if clamped_start != start_time or clamped_end != end_time:
+        print(f"Data available: {data_first.isoformat()} -> {data_last.isoformat()}")
+        print(f"Clamped range:  {clamped_start.isoformat()} -> {clamped_end.isoformat()}")
+    else:
+        print("Data covers full requested range.")
+
+    return clamped_start, clamped_end
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -178,17 +278,9 @@ def main() -> int:
     if start_time is None:
         return 1
 
-    # Suppress INFO noise from aggregator modules - progress is shown on stdout.
-    # Aggregator modules call setup_logger() at import time, which sets INFO level
-    # directly on each child logger with its own handlers, so setting the parent
-    # "src" logger level has no effect. We must iterate all registered loggers.
-    for _name, _lgr in logging.Logger.manager.loggerDict.items():
-        if _name.startswith("src.") and isinstance(_lgr, logging.Logger):
-            _lgr.setLevel(logging.WARNING)
-            for _handler in _lgr.handlers:
-                _handler.setLevel(logging.WARNING)
+    _suppress_aggregator_logging()
 
-    print(f"Range: {start_time.isoformat()} -> {end_time.isoformat()}")
+    print(f"Requested range: {start_time.isoformat()} -> {end_time.isoformat()}")
     if args.dry_run:
         print("DRY-RUN: no data will be written")
 
@@ -197,6 +289,12 @@ def main() -> int:
 
     try:
         write = not args.dry_run
+
+        start_time, end_time = _clamp_to_data_range(
+            client, config, start_time, end_time, args.skip_5min
+        )
+        if start_time is None:
+            return 0
 
         if not args.skip_5min:
             windows = list(iter_windows(start_time, end_time, 5))
