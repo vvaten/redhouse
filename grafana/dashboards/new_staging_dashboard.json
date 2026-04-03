@@ -3037,7 +3037,7 @@
                         "barAlignment": 0,
                         "barWidthFactor": 0.6,
                         "drawStyle": "line",
-                        "fillOpacity": 20,
+                        "fillOpacity": 0,
                         "gradientMode": "none",
                         "hideFrom": {
                             "legend": false,
@@ -3045,13 +3045,13 @@
                             "viz": false
                         },
                         "insertNulls": false,
-                        "lineInterpolation": "stepBefore",
+                        "lineInterpolation": "stepAfter",
                         "lineWidth": 2,
                         "pointSize": 5,
                         "scaleDistribution": {
                             "type": "linear"
                         },
-                        "showPoints": "always",
+                        "showPoints": "never",
                         "spanNulls": false,
                         "stacking": {
                             "group": "A",
@@ -3080,8 +3080,8 @@
                 "overrides": [
                     {
                         "matcher": {
-                            "id": "byName",
-                            "options": "is_on"
+                            "id": "byRegexp",
+                            "options": "_value|is_on"
                         },
                         "properties": [
                             {
@@ -3091,13 +3091,37 @@
                             {
                                 "id": "color",
                                 "value": {
-                                    "fixedColor": "dark-orange",
+                                    "fixedColor": "orange",
                                     "mode": "fixed"
                                 }
                             },
                             {
                                 "id": "custom.fillOpacity",
-                                "value": 40
+                                "value": 25
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "custom.showPoints",
+                                "value": "never"
+                            },
+                            {
+                                "id": "custom.lineInterpolation",
+                                "value": "stepAfter"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 100
                             }
                         ]
                     },
@@ -3125,6 +3149,10 @@
                             {
                                 "id": "custom.fillOpacity",
                                 "value": 0
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
                             }
                         ]
                     }
@@ -3156,7 +3184,7 @@
                         "type": "influxdb",
                         "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
                     },
-                    "query": "from(bucket: \"load_control_staging\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"load_control\")\n  |> filter(fn: (r) => r[\"_field\"] == \"is_on\")\n  |> filter(fn: (r) => r[\"load_id\"] == \"geothermal_pump\" and r[\"data_type\"] == \"plan\")\n  |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0}))\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])\n  |> yield(name: \"schedule\")",
+                    "query": "from(bucket: \"load_control_staging\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"load_control\")\n  |> filter(fn: (r) => r[\"_field\"] == \"is_on\")\n  |> filter(fn: (r) => r[\"load_id\"] == \"geothermal_pump\" and r[\"data_type\"] == \"plan\")\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value then 100.0 else 0.0, _field: \"is_on\"}))\n  |> group()\n  |> sort(columns: [\"_time\"])\n  |> yield(name: \"schedule\")",
                     "refId": "A"
                 },
                 {

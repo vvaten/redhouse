@@ -383,7 +383,9 @@ class HeatingProgramGenerator:
         points = []
         for load_id, load_data in program["loads"].items():
             for entry in load_data["schedule"]:
-                timestamp = datetime.datetime.fromtimestamp(entry["timestamp"])
+                timestamp = datetime.datetime.fromtimestamp(
+                    entry["timestamp"], tz=datetime.timezone.utc
+                )
                 command = entry["command"]
                 power_kw = self._calculate_power_kw(command, load_data["power_kw"])
 
