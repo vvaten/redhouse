@@ -17,11 +17,11 @@ logger = logging.getLogger(__name__)
 # Critical files whose absence is a hard failure
 CRITICAL_FILES = [
     ".env",
-    "config/config.yaml",
 ]
 
-# Optional files whose absence is a warning
+# Optional files whose absence is a warning (may not exist on all deployments)
 OPTIONAL_FILES = [
+    "config/config.yaml",
     "data/pump_state.json",
 ]
 
