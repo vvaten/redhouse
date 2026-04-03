@@ -136,6 +136,105 @@ class TestAnalytics15MinAggregator:
         # Check battery SoC is last value
         assert metrics["Battery_SoC"] == 67.0
 
+        # Check import/export averages
+        assert metrics["energy_import_avg"] == pytest.approx(500.0, rel=0.01)
+        assert metrics["energy_export_avg"] == pytest.approx(0.0, abs=0.01)
+
+    def test_calculate_energy_metrics_import_export_varying(self, aggregator):
+        """Test energy_import_avg and energy_export_avg with varying values."""
+        base_time = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
+        emeters_data = [
+            {
+                "time": base_time + datetime.timedelta(minutes=i * 5),
+                "solar_yield_avg": 1000.0,
+                "solar_yield_diff": 83.33,
+                "consumption_avg": 1500.0,
+                "consumption_diff": 125.0,
+                "emeter_avg": 500.0,
+                "emeter_diff": 41.67,
+                "battery_charge_avg": 0.0,
+                "battery_charge_diff": 0.0,
+                "battery_discharge_avg": 0.0,
+                "battery_discharge_diff": 0.0,
+                "Battery_SoC": 50.0,
+                "energy_import_avg": import_val,
+                "energy_export_avg": export_val,
+            }
+            for i, (import_val, export_val) in enumerate(
+                [(300.0, 0.0), (600.0, 100.0), (900.0, 200.0)]
+            )
+        ]
+
+        metrics = aggregator._calculate_energy_metrics(emeters_data)
+
+        # (300 + 600 + 900) / 3 = 600
+        assert metrics["energy_import_avg"] == pytest.approx(600.0, rel=0.01)
+        # (0 + 100 + 200) / 3 = 100
+        assert metrics["energy_export_avg"] == pytest.approx(100.0, rel=0.01)
+
+    def test_calculate_energy_metrics_import_export_with_none(self, aggregator):
+        """Test energy_import_avg/energy_export_avg when some values are None."""
+        base_time = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
+        emeters_data = [
+            {
+                "time": base_time + datetime.timedelta(minutes=i * 5),
+                "solar_yield_avg": 1000.0,
+                "solar_yield_diff": 83.33,
+                "consumption_avg": 1500.0,
+                "consumption_diff": 125.0,
+                "emeter_avg": 500.0,
+                "emeter_diff": 41.67,
+                "battery_charge_avg": 0.0,
+                "battery_charge_diff": 0.0,
+                "battery_discharge_avg": 0.0,
+                "battery_discharge_diff": 0.0,
+                "Battery_SoC": 50.0,
+                "energy_import_avg": import_val,
+                "energy_export_avg": export_val,
+            }
+            for i, (import_val, export_val) in enumerate(
+                [(400.0, None), (None, 200.0), (800.0, 100.0)]
+            )
+        ]
+
+        metrics = aggregator._calculate_energy_metrics(emeters_data)
+
+        # safe_mean skips None: (400 + 800) / 2 = 600
+        assert metrics["energy_import_avg"] == pytest.approx(600.0, rel=0.01)
+        # safe_mean skips None: (200 + 100) / 2 = 150
+        assert metrics["energy_export_avg"] == pytest.approx(150.0, rel=0.01)
+
+    def test_calculate_energy_metrics_export_sum_with_varying_export(self, aggregator):
+        """Test export_sum calculation converts W to Wh correctly."""
+        base_time = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
+        emeters_data = [
+            {
+                "time": base_time + datetime.timedelta(minutes=i * 5),
+                "solar_yield_avg": 2000.0,
+                "solar_yield_diff": 166.67,
+                "consumption_avg": 500.0,
+                "consumption_diff": 41.67,
+                "emeter_avg": -1500.0,
+                "emeter_diff": -125.0,
+                "battery_charge_avg": 0.0,
+                "battery_charge_diff": 0.0,
+                "battery_discharge_avg": 0.0,
+                "battery_discharge_diff": 0.0,
+                "Battery_SoC": 80.0,
+                "energy_import_avg": 0.0,
+                "energy_export_avg": export_val,
+            }
+            for i, export_val in enumerate([600.0, 1200.0, 900.0])
+        ]
+
+        metrics = aggregator._calculate_energy_metrics(emeters_data)
+
+        # export_sum: each value * (5/60) then summed
+        # 600*(5/60) + 1200*(5/60) + 900*(5/60) = 50 + 100 + 75 = 225 Wh
+        assert metrics["export_sum"] == pytest.approx(225.0, rel=0.01)
+        # energy_export_avg: (600+1200+900)/3 = 900
+        assert metrics["energy_export_avg"] == pytest.approx(900.0, rel=0.01)
+
     def test_calculate_cost_allocation(self, aggregator, sample_spotprice):
         """Test cost allocation calculation."""
         metrics = {

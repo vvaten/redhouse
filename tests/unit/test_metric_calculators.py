@@ -12,6 +12,7 @@ from src.aggregation.metric_calculators import (
     calculate_self_consumption_ratio,
     calculate_self_sufficiency_ratio,
     calculate_total_consumption,
+    extract_field,
     safe_last,
     safe_mean,
     safe_sum,
@@ -318,6 +319,39 @@ class TestCalculateNetGridPower:
     def test_with_both_none(self):
         result = calculate_net_grid_power(None, None)
         assert result == 0.0
+
+
+class TestExtractField:
+    """Test extract_field function."""
+
+    def test_extract_existing_field(self):
+        records = [{"a": 1.0, "b": 2.0}, {"a": 3.0, "b": 4.0}]
+        result = extract_field(records, "a")
+        assert result == [1.0, 3.0]
+
+    def test_extract_missing_field(self):
+        records = [{"a": 1.0}, {"a": 2.0}]
+        result = extract_field(records, "b")
+        assert result == [None, None]
+
+    def test_extract_partial_field(self):
+        records = [{"a": 1.0, "b": 10.0}, {"a": 2.0}]
+        result = extract_field(records, "b")
+        assert result == [10.0, None]
+
+    def test_extract_empty_records(self):
+        result = extract_field([], "a")
+        assert result == []
+
+    def test_extract_with_none_values(self):
+        records = [{"a": None}, {"a": 5.0}, {"a": None}]
+        result = extract_field(records, "a")
+        assert result == [None, 5.0, None]
+
+    def test_extract_single_record(self):
+        records = [{"x": 42.0}]
+        result = extract_field(records, "x")
+        assert result == [42.0]
 
 
 class TestCalculateTotalConsumption:

@@ -136,6 +136,101 @@ class TestAnalytics1HourAggregator:
         # Check battery SoC is last value
         assert metrics["Battery_SoC"] == 76.0
 
+        # Check import/export averages
+        assert metrics["energy_import_avg"] == pytest.approx(1000.0, rel=0.01)
+        assert metrics["energy_export_avg"] == pytest.approx(0.0, abs=0.01)
+
+    def test_calculate_energy_metrics_import_export_varying(self, aggregator):
+        """Test energy_import_avg and energy_export_avg with varying values."""
+        base_time = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
+        import_values = [100.0 * (i + 1) for i in range(12)]  # 100..1200
+        export_values = [50.0 * i for i in range(12)]  # 0..550
+        emeters_data = [
+            {
+                "time": base_time + datetime.timedelta(minutes=i * 5),
+                "solar_yield_avg": 2000.0,
+                "solar_yield_diff": 166.67,
+                "consumption_avg": 3000.0,
+                "consumption_diff": 250.0,
+                "emeter_avg": 1000.0,
+                "emeter_diff": 83.33,
+                "battery_charge_avg": 0.0,
+                "battery_charge_diff": 0.0,
+                "battery_discharge_avg": 0.0,
+                "battery_discharge_diff": 0.0,
+                "Battery_SoC": 65.0,
+                "energy_import_avg": import_values[i],
+                "energy_export_avg": export_values[i],
+            }
+            for i in range(12)
+        ]
+
+        metrics = aggregator._calculate_energy_metrics(emeters_data)
+
+        # mean(100..1200) = (100+1200)/2 = 650
+        assert metrics["energy_import_avg"] == pytest.approx(650.0, rel=0.01)
+        # mean(0,50,100,...,550) = (0+550)/2 = 275
+        assert metrics["energy_export_avg"] == pytest.approx(275.0, rel=0.01)
+
+    def test_calculate_energy_metrics_import_export_with_none(self, aggregator):
+        """Test energy_import_avg/energy_export_avg when some values are None."""
+        base_time = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
+        emeters_data = [
+            {
+                "time": base_time + datetime.timedelta(minutes=i * 5),
+                "solar_yield_avg": 2000.0,
+                "solar_yield_diff": 166.67,
+                "consumption_avg": 3000.0,
+                "consumption_diff": 250.0,
+                "emeter_avg": 1000.0,
+                "emeter_diff": 83.33,
+                "battery_charge_avg": 0.0,
+                "battery_charge_diff": 0.0,
+                "battery_discharge_avg": 0.0,
+                "battery_discharge_diff": 0.0,
+                "Battery_SoC": 65.0,
+                "energy_import_avg": 500.0 if i % 2 == 0 else None,
+                "energy_export_avg": 200.0 if i % 3 == 0 else None,
+            }
+            for i in range(12)
+        ]
+
+        metrics = aggregator._calculate_energy_metrics(emeters_data)
+
+        # 6 non-None import values (i=0,2,4,6,8,10), all 500 -> mean=500
+        assert metrics["energy_import_avg"] == pytest.approx(500.0, rel=0.01)
+        # 4 non-None export values (i=0,3,6,9), all 200 -> mean=200
+        assert metrics["energy_export_avg"] == pytest.approx(200.0, rel=0.01)
+
+    def test_calculate_energy_metrics_export_sum_with_varying_export(self, aggregator):
+        """Test export_sum calculation converts W to Wh correctly."""
+        base_time = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
+        emeters_data = [
+            {
+                "time": base_time + datetime.timedelta(minutes=i * 5),
+                "solar_yield_avg": 3000.0,
+                "solar_yield_diff": 250.0,
+                "consumption_avg": 1000.0,
+                "consumption_diff": 83.33,
+                "emeter_avg": -2000.0,
+                "emeter_diff": -166.67,
+                "battery_charge_avg": 0.0,
+                "battery_charge_diff": 0.0,
+                "battery_discharge_avg": 0.0,
+                "battery_discharge_diff": 0.0,
+                "Battery_SoC": 90.0,
+                "energy_import_avg": 0.0,
+                "energy_export_avg": 1200.0,
+            }
+            for i in range(12)
+        ]
+
+        metrics = aggregator._calculate_energy_metrics(emeters_data)
+
+        # export_sum: 12 * 1200 * (5/60) = 12 * 100 = 1200 Wh
+        assert metrics["export_sum"] == pytest.approx(1200.0, rel=0.01)
+        assert metrics["energy_export_avg"] == pytest.approx(1200.0, rel=0.01)
+
     def test_calculate_peak_power(self, aggregator):
         """Test peak power calculation."""
         emeters_data = [

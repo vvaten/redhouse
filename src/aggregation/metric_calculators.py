@@ -236,6 +236,19 @@ def calculate_net_grid_power(import_power: float, export_power: float) -> float:
     return import_val - export_val
 
 
+def extract_field(records: list, field: str) -> list:
+    """Extract a single field from a list of record dicts.
+
+    Args:
+        records: List of dicts (e.g. emeters_5min data points)
+        field: Field name to extract
+
+    Returns:
+        List of values (may contain None)
+    """
+    return [r.get(field) for r in records]
+
+
 def calculate_total_consumption(
     grid_power: float,
     solar_power: float,

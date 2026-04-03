@@ -73,43 +73,48 @@ class Analytics1HourAggregator(AnalyticsAggregatorBase):
 
     def _calculate_energy_metrics(self, emeters_data: list) -> dict:
         """Aggregate energy data from 12x 5-min windows."""
-        from src.aggregation.metric_calculators import safe_last, safe_mean, safe_sum
+        from src.aggregation.metric_calculators import (
+            extract_field,
+            safe_last,
+            safe_mean,
+            safe_sum,
+        )
 
         metrics = {}
 
-        # Average power values (W) using safe_mean helper
-        metrics["solar_yield_avg"] = safe_mean([p.get("solar_yield_avg") for p in emeters_data])
-        metrics["consumption_avg"] = safe_mean([p.get("consumption_avg") for p in emeters_data])
-        metrics["emeter_avg"] = safe_mean([p.get("emeter_avg") for p in emeters_data])
-        metrics["battery_charge_avg"] = safe_mean(
-            [p.get("battery_charge_avg") for p in emeters_data]
-        )
-        metrics["battery_discharge_avg"] = safe_mean(
-            [p.get("battery_discharge_avg") for p in emeters_data]
-        )
+        # Average power values (W)
+        for field in [
+            "solar_yield_avg",
+            "consumption_avg",
+            "emeter_avg",
+            "battery_charge_avg",
+            "battery_discharge_avg",
+            "energy_import_avg",
+            "energy_export_avg",
+        ]:
+            metrics[field] = safe_mean(extract_field(emeters_data, field))
 
-        # Sum energy deltas (Wh) for 1-hour totals using safe_sum helper
-        metrics["solar_yield_sum"] = safe_sum([p.get("solar_yield_diff") for p in emeters_data])
-        metrics["consumption_sum"] = safe_sum([p.get("consumption_diff") for p in emeters_data])
-        metrics["emeter_sum"] = safe_sum([p.get("emeter_diff") for p in emeters_data])
-        metrics["battery_charge_sum"] = safe_sum(
-            [p.get("battery_charge_diff") for p in emeters_data]
-        )
-        metrics["battery_discharge_sum"] = safe_sum(
-            [p.get("battery_discharge_diff") for p in emeters_data]
-        )
+        # Sum energy deltas (Wh) for 1-hour totals
+        sum_field_map = {
+            "solar_yield_sum": "solar_yield_diff",
+            "consumption_sum": "consumption_diff",
+            "emeter_sum": "emeter_diff",
+            "battery_charge_sum": "battery_charge_diff",
+            "battery_discharge_sum": "battery_discharge_diff",
+        }
+        for target, source in sum_field_map.items():
+            metrics[target] = safe_sum(extract_field(emeters_data, source))
 
-        # Export is calculated from CheckWatt data
-        export_values = []
-        for p in emeters_data:
-            if p.get("energy_export_avg") is not None:
-                # energy_export_avg is in W, convert to Wh for 5 minutes
-                export_values.append(p["energy_export_avg"] * (5.0 / 60.0))
-
+        # Export: energy_export_avg is in W, convert to Wh for 5 minutes
+        export_values = [
+            v * (5.0 / 60.0)
+            for v in extract_field(emeters_data, "energy_export_avg")
+            if v is not None
+        ]
         metrics["export_sum"] = safe_sum(export_values)
 
         # Battery SoC: use last value
-        metrics["Battery_SoC"] = safe_last([p.get("Battery_SoC") for p in emeters_data])
+        metrics["Battery_SoC"] = safe_last(extract_field(emeters_data, "Battery_SoC"))
 
         return metrics
 
