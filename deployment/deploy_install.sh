@@ -107,6 +107,7 @@ TIMERS=(
     "redhouse-generate-program"
     "redhouse-execute-program"
     "redhouse-health-check"
+    "redhouse-backup"
 )
 
 for timer in "${TIMERS[@]}"; do
