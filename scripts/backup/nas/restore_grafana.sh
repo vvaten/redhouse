@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Restore Grafana dashboards and alert configuration from backup.
 #
 # Imports dashboard JSON files and alert rules via REST API.
@@ -9,7 +9,7 @@
 #   ./restore_grafana.sh /share/Backups/redhouse/nas/2026-04-03_033000/grafana
 #   ./restore_grafana.sh /share/Backups/redhouse/nas/latest/grafana
 
-set -euo pipefail
+set -eu
 
 BACKUP_DIR="$1"
 DRY_RUN="${2:-}"
@@ -47,7 +47,8 @@ fi
 
 echo ""
 echo "WARNING: This will overwrite existing dashboards with matching UIDs."
-read -p "Continue? [y/N] " CONFIRM
+printf "Continue? [y/N] "
+read CONFIRM
 if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
     echo "Aborted."
     exit 0
@@ -68,7 +69,7 @@ dashboard = data.get('dashboard', data)
 dashboard.pop('id', None)
 payload = {'dashboard': dashboard, 'overwrite': True}
 print(json.dumps(payload))
-" 2>/dev/null)
+" 2>/dev/null || true)
 
     if [ -z "$DASHBOARD_JSON" ]; then
         echo "  FAILED: Could not parse $(basename "$FILE")"

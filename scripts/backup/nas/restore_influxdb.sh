@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Restore InfluxDB from a native backup.
 #
 # Requires:
@@ -11,7 +11,7 @@
 #   ./restore_influxdb.sh /share/Backups/redhouse/nas/2026-04-03_033000/influxdb
 #   ./restore_influxdb.sh /share/Backups/redhouse/nas/latest/influxdb
 
-set -euo pipefail
+set -eu
 
 BACKUP_DIR="$1"
 DRY_RUN="${2:-}"
@@ -48,7 +48,8 @@ fi
 
 # Map host path to container path
 # Host: /share/Backups/redhouse/nas/... -> Container: /backups/...
-SNAPSHOT_NAME=$(basename "$(dirname "$BACKUP_DIR")")
+PARENT_DIR=$(dirname "$BACKUP_DIR")
+SNAPSHOT_NAME=$(basename "$PARENT_DIR")
 CONTAINER_PATH="/backups/$SNAPSHOT_NAME/influxdb"
 
 echo ""
@@ -56,7 +57,8 @@ echo "WARNING: This will restore data into InfluxDB."
 echo "  - Existing data in matching buckets may be overwritten"
 echo "  - Container path: $CONTAINER_PATH"
 echo ""
-read -p "Continue? [y/N] " CONFIRM
+printf "Continue? [y/N] "
+read CONFIRM
 if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
     echo "Aborted."
     exit 0

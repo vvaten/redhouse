@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Back up Grafana dashboards and alert rules via REST API.
 #
 # Exports all dashboards as JSON files and alert configuration.
@@ -8,7 +8,7 @@
 #   ./backup_grafana.sh /share/Backups/redhouse/nas/2026-04-03_033000/grafana
 #   ./backup_grafana.sh /share/Backups/redhouse/nas/2026-04-03_033000/grafana --dry-run
 
-set -euo pipefail
+set -eu
 
 BACKUP_DIR="$1"
 DRY_RUN="${2:-}"
@@ -45,7 +45,7 @@ mkdir -p "$BACKUP_DIR/dashboards"
 # Export dashboards
 DASHBOARD_COUNT=0
 DASHBOARD_UIDS=$(curl -s -H "$AUTH_HEADER" "$GRAFANA_URL/api/search?type=dash-db&limit=1000" | \
-    python3 -c "import sys,json; [print(d['uid']) for d in json.load(sys.stdin)]" 2>/dev/null)
+    python3 -c "import sys,json; [print(d['uid']) for d in json.load(sys.stdin)]" 2>/dev/null || true)
 
 if [ -z "$DASHBOARD_UIDS" ]; then
     echo "  WARNING: No dashboards found or API error"
@@ -54,8 +54,8 @@ else
         RESPONSE=$(curl -s -H "$AUTH_HEADER" "$GRAFANA_URL/api/dashboards/uid/$UID")
 
         # Extract title for filename
-        TITLE=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('dashboard',{}).get('title','unknown'))" 2>/dev/null)
-        SAFE_TITLE=$(echo "$TITLE" | tr ' /:' '___' | tr -cd '[:alnum:]_-')
+        TITLE=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('dashboard',{}).get('title','unknown'))" 2>/dev/null || echo "unknown")
+        SAFE_TITLE=$(echo "$TITLE" | tr ' /:' '___' | tr -cd 'a-zA-Z0-9_-')
 
         echo "$RESPONSE" > "$BACKUP_DIR/dashboards/${UID}_${SAFE_TITLE}.json"
         DASHBOARD_COUNT=$((DASHBOARD_COUNT + 1))

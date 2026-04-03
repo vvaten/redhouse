@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # NAS backup orchestrator: InfluxDB + Grafana.
 #
 # Runs on the Asustor NAS as a scheduled job (03:30 daily).
@@ -9,7 +9,7 @@
 #   ./run_backup_nas.sh
 #   ./run_backup_nas.sh --dry-run
 
-set -euo pipefail
+set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKUP_ROOT="/share/Backups/redhouse/nas"
@@ -18,8 +18,7 @@ DRY_RUN="${1:-}"
 TIMESTAMP=$(date -u +"%Y-%m-%d_%H%M%S")
 SNAPSHOT_DIR="$BACKUP_ROOT/$TIMESTAMP"
 
-# Retention settings (match Pi-side cleanup_old_backups.py)
-DAILY_RETENTION_DAYS=30
+# Retention: delete snapshots older than 114 days
 WEEKLY_RETENTION_DAYS=114
 
 echo "=== NAS Backup [$TIMESTAMP] ==="
@@ -32,7 +31,7 @@ FAILURES=""
 
 # Step 1: InfluxDB backup
 echo "[1/3] InfluxDB backup..."
-if bash "$SCRIPT_DIR/backup_influxdb.sh" "$SNAPSHOT_DIR/influxdb" $DRY_RUN; then
+if sh "$SCRIPT_DIR/backup_influxdb.sh" "$SNAPSHOT_DIR/influxdb" "$DRY_RUN"; then
     INFLUX_STATUS="ok"
 else
     INFLUX_STATUS="failed"
@@ -42,7 +41,7 @@ fi
 
 # Step 2: Grafana backup
 echo "[2/3] Grafana backup..."
-if bash "$SCRIPT_DIR/backup_grafana.sh" "$SNAPSHOT_DIR/grafana" $DRY_RUN; then
+if sh "$SCRIPT_DIR/backup_grafana.sh" "$SNAPSHOT_DIR/grafana" "$DRY_RUN"; then
     GRAFANA_STATUS="ok"
 else
     GRAFANA_STATUS="failed"
@@ -85,18 +84,18 @@ fi
 # Step 4: Clean up old snapshots
 echo "[4/4] Cleaning up old snapshots..."
 if [ "$DRY_RUN" != "--dry-run" ]; then
-    # List snapshot dirs (exclude 'latest' symlink and hidden files)
-    CUTOFF_DELETE=$(date -u -d "$WEEKLY_RETENTION_DAYS days ago" +%Y-%m-%d 2>/dev/null || \
-                    date -u -v-${WEEKLY_RETENTION_DAYS}d +%Y-%m-%d 2>/dev/null || echo "")
+    # Compute cutoff date (POSIX-compatible using awk)
+    CUTOFF_DELETE=$(awk "BEGIN { print strftime(\"%Y-%m-%d\", systime() - $WEEKLY_RETENTION_DAYS * 86400) }" 2>/dev/null || echo "")
 
     if [ -n "$CUTOFF_DELETE" ]; then
         DELETED=0
         for DIR in "$BACKUP_ROOT"/????-??-??_??????; do
             [ -d "$DIR" ] || continue
             DIR_NAME=$(basename "$DIR")
-            DIR_DATE=${DIR_NAME:0:10}
+            # Extract date part (first 10 chars) using cut
+            DIR_DATE=$(echo "$DIR_NAME" | cut -c1-10)
 
-            if [ "$DIR_DATE" \< "$CUTOFF_DELETE" ]; then
+            if expr "$DIR_DATE" \< "$CUTOFF_DELETE" > /dev/null 2>&1; then
                 rm -rf "$DIR"
                 echo "  Deleted old snapshot: $DIR_NAME"
                 DELETED=$((DELETED + 1))

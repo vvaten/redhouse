@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Back up InfluxDB using native influx backup command.
 #
 # Requires:
@@ -10,7 +10,7 @@
 #   ./backup_influxdb.sh /share/Backups/redhouse/nas/2026-04-03_033000/influxdb
 #   ./backup_influxdb.sh /share/Backups/redhouse/nas/2026-04-03_033000/influxdb --dry-run
 
-set -euo pipefail
+set -eu
 
 BACKUP_DIR="$1"
 DRY_RUN="${2:-}"
@@ -37,7 +37,9 @@ fi
 
 # Map host backup dir to container path
 # Host: /share/Backups/redhouse/nas/... -> Container: /backups/...
-CONTAINER_PATH="/backups/$(basename "$(dirname "$BACKUP_DIR")")/influxdb"
+PARENT_DIR=$(dirname "$BACKUP_DIR")
+SNAPSHOT_NAME=$(basename "$PARENT_DIR")
+CONTAINER_PATH="/backups/$SNAPSHOT_NAME/influxdb"
 
 echo "  InfluxDB backup -> $BACKUP_DIR"
 
