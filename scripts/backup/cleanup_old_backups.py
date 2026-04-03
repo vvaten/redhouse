@@ -21,6 +21,7 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 DAILY_RETENTION_DAYS = 30
 WEEKLY_RETENTION_DAYS = 114  # 30 daily + 12 weeks = ~42 recovery points
@@ -29,7 +30,7 @@ WEEKLY_RETENTION_DAYS = 114  # 30 daily + 12 weeks = ~42 recovery points
 SNAPSHOT_FORMAT = "%Y-%m-%d_%H%M%S"
 
 
-def parse_snapshot_date(name: str) -> datetime | None:
+def parse_snapshot_date(name: str) -> Optional[datetime]:
     """Parse a snapshot directory name into a datetime, or None if invalid."""
     try:
         return datetime.strptime(name, SNAPSHOT_FORMAT).replace(tzinfo=timezone.utc)
@@ -45,7 +46,7 @@ def _iso_week_key(dt: datetime) -> str:
 
 def find_snapshots_to_delete(
     backup_root: Path,
-    now: datetime | None = None,
+    now: Optional[datetime] = None,
 ) -> tuple[list[Path], list[Path]]:
     """Determine which snapshot directories to delete.
 
