@@ -307,6 +307,76 @@ def _clamp_to_data_range(
     return clamped_start, clamped_end
 
 
+def run_analytics_bulk(
+    label: str,
+    client: InfluxClient,
+    config,
+    aggregator,
+    start_time,
+    end_time,
+    interval_minutes: int,
+    write_to_influx: bool,
+) -> tuple:
+    """Bulk backfill analytics by pre-fetching data per day, then slicing locally.
+
+    Returns (succeeded, skipped).
+    """
+    from deployment.backfill_bulk import fetch_and_process_day
+
+    const_day = datetime.timedelta(days=1)
+    bucket = (
+        config.influxdb_bucket_analytics_15min
+        if interval_minutes == 15
+        else config.influxdb_bucket_analytics_1hour
+    )
+
+    total_windows = len(list(iter_windows(start_time, end_time, interval_minutes)))
+    print(f"\n--- {label} ({total_windows} windows, bulk mode) ---")
+    succeeded = 0
+    skipped = 0
+
+    day_start = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    while day_start < end_time:
+        day_end = min(day_start + const_day, end_time)
+        day_label = day_start.strftime("%Y-%m-%d")
+
+        points, day_ok, day_skip = fetch_and_process_day(
+            client,
+            config,
+            aggregator,
+            day_start,
+            day_end,
+            interval_minutes,
+            iter_windows,
+            write_to_influx,
+        )
+
+        # Batch write all points for this day
+        if points:
+            try:
+                client.write_api.write(
+                    bucket=bucket,
+                    org=config.influxdb_org,
+                    record=points,
+                )
+            except Exception as e:
+                print(f"  ERROR writing {day_label}: {e}")
+                skipped += len(points)
+                day_start = day_end
+                continue
+
+        succeeded += day_ok
+        skipped += day_skip
+        done = succeeded + skipped
+        print(f"  {day_label}: {day_ok} written, {day_skip} skipped  [{done}/{total_windows}]")
+
+        day_start = day_end
+
+    print(f"  Done: {succeeded} written, {skipped} skipped")
+    return succeeded, skipped
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -343,20 +413,26 @@ def main() -> int:
             )
 
         if not args.skip_15min:
-            windows = list(iter_windows(start_time, end_time, 15))
-            run_tier(
+            run_analytics_bulk(
                 "15-minute analytics aggregation",
-                windows,
+                client,
+                config,
                 Analytics15MinAggregator(client, config),
+                start_time,
+                end_time,
+                15,
                 write,
             )
 
         if not args.skip_1hour:
-            windows = list(iter_windows(start_time, end_time, 60))
-            run_tier(
+            run_analytics_bulk(
                 "1-hour analytics aggregation",
-                windows,
+                client,
+                config,
                 Analytics1HourAggregator(client, config),
+                start_time,
+                end_time,
+                60,
                 write,
             )
 
