@@ -106,7 +106,7 @@ for TEST_BKT in $TEST_BUCKETS; do
         --host "$INFLUX_HOST" --token "$OPERATOR_TOKEN" --org "$ORG" \
         --raw \
         "from(bucket: \"$PROD_BKT\") |> range(start: -30d) |> group() |> count()" \
-        2>/dev/null | grep -v "^#" | grep -v "^$" | grep -v "^," | tail -1 | rev | cut -d',' -f1 | rev || echo "0")
+        2>/dev/null | grep -v "^#" | grep -v "^$" | grep "^," | tail -1 | awk -F',' '{print $NF}' || echo "0")
 
     if [ -z "$PROD_COUNT" ] || [ "$PROD_COUNT" = "0" ]; then
         echo "  WARNING: No production data in $PROD_BKT (last 30d), skipping"
@@ -134,7 +134,7 @@ for TEST_BKT in $TEST_BUCKETS; do
         --host "$INFLUX_HOST" --token "$OPERATOR_TOKEN" --org "$ORG" \
         --raw \
         "from(bucket: \"$TEST_BKT\") |> range(start: -30d) |> group() |> count()" \
-        2>/dev/null | grep -v "^#" | grep -v "^$" | grep -v "^," | tail -1 | rev | cut -d',' -f1 | rev || echo "0")
+        2>/dev/null | grep -v "^#" | grep -v "^$" | grep "^," | tail -1 | awk -F',' '{print $NF}' || echo "0")
 
     echo "  Restored record count (30d): $RESTORED_COUNT"
 
