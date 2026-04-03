@@ -2837,13 +2837,13 @@
                         "type": "influxdb",
                         "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
                     },
-                    "query": "windowDuration = int(v: v.timeRangeStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\n\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else v.timeRangeStart\n\nfrom(bucket: \"temperatures\")\n  |> range(start: v.timeRangeStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"humidities\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
+                    "query": "import \"strings\"\n\nwindowDuration = int(v: v.timeRangeStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else v.timeRangeStart\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else v.timeRangeStart\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else v.timeRangeStart\n\nraw = from(bucket: \"temperatures\")\n  |> range(start: v.timeRangeStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"humidities\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min_staging\")\n  |> range(start: v.timeRangeStart, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^hum_/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: strings.trimPrefix(v: r._field, prefix: \"hum_\")}))\n\nt3 = from(bucket: \"analytics_1hour_staging\")\n  |> range(start: v.timeRangeStart, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^hum_/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: strings.trimPrefix(v: r._field, prefix: \"hum_\")}))\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
                     "refId": "A"
                 }
             ],
             "title": "Humidity",
             "type": "timeseries",
-            "description": "Raw humidity data -- zoom to < 48h for data"
+            "description": "Raw < 48h, 15min < 8d, 1hour > 8d"
         },
         {
             "datasource": {

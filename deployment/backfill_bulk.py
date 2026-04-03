@@ -78,6 +78,17 @@ from(bucket: "{bucket}")
     return _bulk_fetch_field_records(client, query)
 
 
+def bulk_fetch_humidities(client: InfluxClient, config, start, end) -> list:
+    """Fetch all humidity data for a range (raw records for local averaging)."""
+    bucket = config.influxdb_bucket_temperatures
+    query = f"""
+from(bucket: "{bucket}")
+  |> range(start: {start.isoformat()}, stop: {end.isoformat()})
+  |> filter(fn: (r) => r._measurement == "humidities")
+"""
+    return _bulk_fetch_field_records(client, query)
+
+
 def bulk_fetch_temperatures(client: InfluxClient, config, start, end) -> list:
     """Fetch all temperature data for a range (raw records for local averaging)."""
     bucket = config.influxdb_bucket_temperatures
@@ -127,6 +138,7 @@ def fetch_and_process_day(
     spotprices = bulk_fetch_spotprices(client, config, day_start, day_end)
     weather = bulk_fetch_weather(client, config, day_start, day_end)
     temps = bulk_fetch_temperatures(client, config, day_start, day_end)
+    humidities = bulk_fetch_humidities(client, config, day_start, day_end)
 
     return process_day_windows(
         aggregator,
@@ -134,6 +146,7 @@ def fetch_and_process_day(
         spotprices,
         weather,
         temps,
+        humidities,
         day_start,
         day_end,
         interval_minutes,
@@ -142,12 +155,21 @@ def fetch_and_process_day(
     )
 
 
+def _avg_humidities_with_prefix(records: list, window_start, window_end) -> dict:
+    """Average humidity records and add hum_ prefix to match analytics field names."""
+    raw = avg_field_records(records, window_start, window_end)
+    if not raw:
+        return {}
+    return {f"hum_{k}": v for k, v in raw.items()}
+
+
 def process_day_windows(
     aggregator,
     emeters: list,
     spotprices: dict,
     weather: list,
     temps: list,
+    humidities: list,
     day_start,
     day_end,
     interval_minutes: int,
@@ -178,6 +200,7 @@ def process_day_windows(
             "spotprice": spotprices.get(hour_key),
             "weather": avg_field_records(weather, window_start, window_end) or None,
             "temperatures": avg_field_records(temps, window_start, window_end) or None,
+            "humidities": _avg_humidities_with_prefix(humidities, window_start, window_end) or None,
         }
 
         metrics = aggregator.calculate_metrics(raw_data, window_start, window_end)

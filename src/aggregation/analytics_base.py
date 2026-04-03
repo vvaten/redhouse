@@ -20,17 +20,19 @@ class AnalyticsAggregatorBase(AggregationPipeline):
     INTERVAL_SECONDS: int  # Must be defined in subclasses
 
     def fetch_data(self, window_start: datetime.datetime, window_end: datetime.datetime) -> dict:
-        """Fetch data from all sources: emeters, spotprice, weather, temperatures."""
+        """Fetch data from all sources: emeters, spotprice, weather, temperatures, humidities."""
         emeters_data = self._fetch_emeters_5min_data(window_start, window_end)
         spotprice = self._fetch_spotprice_data(window_end)
         weather = self._fetch_weather_data(window_start, window_end)
         temperatures = self._fetch_temperatures_data(window_start, window_end)
+        humidities = self._fetch_humidities_data(window_start, window_end)
 
         return {
             "emeters": emeters_data,
             "spotprice": spotprice,
             "weather": weather,
             "temperatures": temperatures,
+            "humidities": humidities,
         }
 
     def _fetch_emeters_5min_data(
@@ -176,6 +178,39 @@ from(bucket: "{bucket}")
             return None
         except Exception as e:
             logger.error(f"Error fetching temperature data: {e}")
+            return None
+
+    def _fetch_humidities_data(
+        self, start_time: datetime.datetime, end_time: datetime.datetime
+    ) -> Optional[dict]:
+        """Fetch humidity data for the given time range."""
+        bucket = self.config.influxdb_bucket_temperatures
+
+        query = f"""
+from(bucket: "{bucket}")
+  |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
+  |> filter(fn: (r) => r._measurement == "humidities")
+  |> mean()
+"""
+
+        logger.debug(f"Fetching humidities data from {start_time} to {end_time}")
+
+        try:
+            tables = self.influx.query_with_retry(query)
+            hum_data = {}
+            for table in tables:
+                for record in table.records:
+                    field_name = f"hum_{record.get_field()}"
+                    hum_data[field_name] = record.get_value()
+
+            if hum_data:
+                logger.debug(f"Fetched humidity data: {list(hum_data.keys())}")
+                return hum_data
+
+            logger.debug("No humidity data found")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching humidity data: {e}")
             return None
 
     def validate_data(self, raw_data: dict) -> bool:
@@ -378,9 +413,13 @@ from(bucket: "{bucket}")
         return self_consumption_metrics
 
     def _add_weather_and_temperature_fields(
-        self, metrics: dict, weather: Optional[dict], temperatures: Optional[dict]
+        self,
+        metrics: dict,
+        weather: Optional[dict],
+        temperatures: Optional[dict],
+        humidities: Optional[dict] = None,
     ) -> None:
-        """Add weather and temperature data to metrics."""
+        """Add weather, temperature, and humidity data to metrics."""
         # Add weather data
         if weather:
             metrics["air_temperature"] = weather.get("air_temperature")
@@ -391,4 +430,9 @@ from(bucket: "{bucket}")
         # Add all temperature data
         if temperatures:
             for field_name, value in temperatures.items():
+                metrics[field_name] = value
+
+        # Add humidity data (prefixed with hum_ to avoid name collisions)
+        if humidities:
+            for field_name, value in humidities.items():
                 metrics[field_name] = value

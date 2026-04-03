@@ -21,12 +21,13 @@ QUERY_RETRY_DELAY_S = 3
 class InfluxClient:
     """Wrapper for InfluxDB client with common operations"""
 
-    def __init__(self, config: Optional[Any] = None):
+    def __init__(self, config: Optional[Any] = None, timeout_ms: int = QUERY_TIMEOUT_MS):
         """
         Initialize InfluxDB client
 
         Args:
             config: Configuration object (uses global config if None)
+            timeout_ms: Query timeout in milliseconds (default: 15s)
         """
         if config is None:
             config = get_config()
@@ -36,7 +37,7 @@ class InfluxClient:
             url=config.influxdb_url,
             token=config.influxdb_token,
             org=config.influxdb_org,
-            timeout=QUERY_TIMEOUT_MS,
+            timeout=timeout_ms,
         )
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
         self.query_api = self.client.query_api()

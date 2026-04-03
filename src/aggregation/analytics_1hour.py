@@ -36,6 +36,7 @@ class Analytics1HourAggregator(AnalyticsAggregatorBase):
         spotprice = raw_data.get("spotprice")
         weather = raw_data.get("weather")
         temperatures = raw_data.get("temperatures")
+        humidities = raw_data.get("humidities")
 
         metrics = {}
 
@@ -61,8 +62,8 @@ class Analytics1HourAggregator(AnalyticsAggregatorBase):
         self_consumption_metrics = self._calculate_self_consumption(metrics)
         metrics.update(self_consumption_metrics)
 
-        # Add weather and temperature fields
-        self._add_weather_and_temperature_fields(metrics, weather, temperatures)
+        # Add weather, temperature, and humidity fields
+        self._add_weather_and_temperature_fields(metrics, weather, temperatures, humidities)
 
         logger.info(
             f"Aggregated 1-hour window: {len(emeters_data)} emeters_5min points, "

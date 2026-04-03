@@ -392,7 +392,8 @@ def main() -> int:
         print("DRY-RUN: no data will be written")
 
     config = get_config()
-    client = InfluxClient(config)
+    # Bulk queries fetch a full day at once -- need longer timeout than the 15s default
+    client = InfluxClient(config, timeout_ms=120_000)
 
     try:
         write = not args.dry_run

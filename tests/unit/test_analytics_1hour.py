@@ -82,6 +82,12 @@ def sample_temperatures():
 
 
 @pytest.fixture
+def sample_humidities():
+    """Sample humidity data (already prefixed with hum_)."""
+    return {"hum_Hilla": 50.0, "hum_Niila": 47.0}
+
+
+@pytest.fixture
 def time_window():
     """Create a test time window."""
     tz = pytz.timezone("Europe/Helsinki")
@@ -368,6 +374,7 @@ class TestAnalytics1HourAggregator:
         sample_spotprice,
         sample_weather,
         sample_temperatures,
+        sample_humidities,
         time_window,
     ):
         """Test full metrics calculation."""
@@ -377,6 +384,7 @@ class TestAnalytics1HourAggregator:
             "spotprice": sample_spotprice,
             "weather": sample_weather,
             "temperatures": sample_temperatures,
+            "humidities": sample_humidities,
         }
 
         metrics = aggregator.calculate_metrics(raw_data, window_start, window_end)
@@ -403,6 +411,10 @@ class TestAnalytics1HourAggregator:
         assert "air_temperature" in metrics
         assert "PaaMH" in metrics
 
+        # Humidity
+        assert metrics["hum_Hilla"] == 50.0
+        assert metrics["hum_Niila"] == 47.0
+
     def test_calculate_metrics_emeters_only(
         self, aggregator, sample_emeters_5min_data, time_window
     ):
@@ -413,6 +425,7 @@ class TestAnalytics1HourAggregator:
             "spotprice": None,
             "weather": None,
             "temperatures": None,
+            "humidities": None,
         }
 
         metrics = aggregator.calculate_metrics(raw_data, window_start, window_end)
