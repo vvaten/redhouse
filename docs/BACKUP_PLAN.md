@@ -15,24 +15,24 @@ Two independent backup jobs, each running where the data lives:
 
 ```
 Pi (03:00 daily, systemd timer)
-    run_backup_pi.py --> /mnt/nas-backup/redhouse/pi/
-                             +-- YYYY-MM-DD_HHMMSS/
-                             |     +-- .env, config.yaml, pump_state.json
-                             |     +-- systemd/  (redhouse-*.service, *.timer)
-                             |     +-- backup_manifest.json
-                             +-- latest -> symlink
+    run_backup_pi.py --> /tmp/redhouse-backup/ --> rsync --> NAS:/share/Backups/redhouse/pi/
+                                                                +-- YYYY-MM-DD_HHMMSS/
+                                                                |     +-- .env, config.yaml, pump_state.json
+                                                                |     +-- systemd/  (redhouse-*.service, *.timer)
+                                                                |     +-- backup_manifest.json
+                                                                +-- latest -> symlink
 
 NAS (03:30 daily, Asustor scheduled job)
-    run_backup_nas.sh --> /share/Backups/redhouse/
-                             +-- YYYY-MM-DD_HHMMSS/
-                             |     +-- influxdb/  (native InfluxDB backup)
-                             |     +-- grafana/   (dashboard JSON + alert rules)
-                             |     +-- backup_manifest.json
-                             +-- latest -> symlink
+    run_backup_nas.sh --> /share/Backups/redhouse/nas/
+                              +-- YYYY-MM-DD_HHMMSS/
+                              |     +-- influxdb/  (native InfluxDB backup)
+                              |     +-- grafana/   (dashboard JSON + alert rules)
+                              |     +-- backup_manifest.json
+                              +-- latest -> symlink
 ```
 
-**Key principle**: each machine backs up only its own data. No cross-network
-round-trips.
+**Key principle**: each machine backs up only its own data. Pi pushes its
+files to NAS via rsync (no fragile mounts).
 
 ## Design Decisions
 
@@ -41,7 +41,8 @@ round-trips.
 | Split Pi / NAS | Two independent jobs | Avoids NAS->Pi->NAS round-trip for InfluxDB; each machine backs up its own data |
 | InfluxDB backup method | `influx backup` (native) via Docker exec | Fast, consistent snapshot; no query timeouts; supports full restore with `influx restore` |
 | Grafana backup method | REST API JSON export from NAS | Data stays local; same pattern as `clone_grafana_dashboard_to_staging.py` |
-| Pi backup target | NAS via NFS/CIFS mount | Pi SD card is most failure-prone; backups must survive Pi death |
+| Pi -> NAS transfer | rsync over SSH | No fragile mounts; resumes on failure; rsync server already enabled on NAS |
+| Pi NAS account | Dedicated `redhouse-backup` | Least privilege (write only to backup dir); SSH key auth (no passwords in scripts) |
 | NAS backup target | Local NAS directory | Data already on NAS; no network needed |
 | Backup schedule | Pi at 03:00, NAS at 03:30 | Low-activity window; staggered to avoid overlap |
 | InfluxDB full vs incremental | Weekly full + daily incremental (`--since`) | `influx backup --since` supports incremental; balances speed vs coverage |
@@ -125,6 +126,52 @@ Full backup size (~18 months of accumulated data):
 - 5-year total with retention: ~70-170 GB
 - Well within NAS storage capacity
 
+## NAS Account & SSH Key Setup
+
+### On the Asustor NAS
+1. Create local user `redhouse-backup` via Asustor admin panel (Access Control > Local Users)
+2. Create shared folder `/share/Backups/redhouse/` if it doesn't exist
+3. Grant `redhouse-backup` read/write access to that folder only
+4. Ensure SSH service is enabled (already enabled per current config)
+5. **Important**: Asustor only allows SSH for `administrators` group members
+   (shown in red text on the SSH settings page). Add the user to that group:
+   ```bash
+   addgroup redhouse-backup administrators
+   ```
+   (Asustor uses BusyBox -- `usermod` is not available, use `addgroup` instead)
+
+   **Note**: This grants NAS admin privileges -- an Asustor limitation with no
+   workaround. The SSH key (no passphrase, Pi-only) is the practical security
+   boundary. The backup scripts only write to `/share/Backups/redhouse/`.
+
+### On the Raspberry Pi
+1. Generate SSH key pair (no passphrase -- runs unattended):
+   ```bash
+   sudo -u pi ssh-keygen -t ed25519 -f /home/pi/.ssh/redhouse_backup_key -N "" -C "redhouse-backup@pi"
+   ```
+2. Copy public key to NAS:
+   ```bash
+   ssh-copy-id -i /home/pi/.ssh/redhouse_backup_key.pub redhouse-backup@192.168.1.164
+   ```
+3. Test connectivity:
+   ```bash
+   ssh -i /home/pi/.ssh/redhouse_backup_key redhouse-backup@192.168.1.164 "echo OK"
+   ```
+4. Test rsync:
+   ```bash
+   rsync -avz --dry-run -e "ssh -i /home/pi/.ssh/redhouse_backup_key" \
+       /opt/redhouse/.env \
+       redhouse-backup@192.168.1.164:/share/Backups/redhouse/pi/test/
+   ```
+
+### New `.env` keys
+```
+BACKUP_NAS_HOST=192.168.1.164
+BACKUP_NAS_USER=redhouse-backup
+BACKUP_NAS_SSH_KEY=/home/pi/.ssh/redhouse_backup_key
+BACKUP_NAS_PATH=/share/Backups/redhouse/pi
+```
+
 ## File Structure
 
 ```
@@ -158,10 +205,12 @@ docs/
 
 #### 1. `run_backup_pi.py` -- Pi Orchestrator
 - Args: `--dry-run`, `--verbose`
-- Creates dated backup dir on NAS mount, copies Pi files, verifies, cleans up
+- Creates dated backup dir locally at `/tmp/redhouse-backup/YYYY-MM-DD_HHMMSS/`
+- Copies Pi files, writes `backup_manifest.json` with SHA-256 hashes
+- Rsyncs the dated dir to NAS: `rsync -avz -e "ssh -i $KEY" /tmp/... $USER@$HOST:$PATH/`
+- Updates `latest` symlink on NAS via SSH
+- Cleans up local temp dir
 - On failure: sends alert email via existing `email_sender.send_alert_email()`
-- Writes `backup_manifest.json` with SHA-256 hashes per file
-- New `.env` key: `BACKUP_DIR=/mnt/nas-backup/redhouse/pi`
 
 #### 2. `backup_pi_files.py`
 - Copies: `.env`, `config/config.yaml`, `data/pump_state.json`, systemd units from `/etc/systemd/system/redhouse-*`
@@ -214,17 +263,24 @@ restores to `_test` buckets, never touches production.
 #   ./test_restore_influxdb.sh /share/Backups/redhouse/2026-04-03_033000
 ```
 
+Uses temporary `_restore_test` buckets (not the `_test` buckets used by
+integration tests) -- created before the test, deleted after.
+
 Steps:
 1. Pick the smallest production bucket (`spotprice`) for fast testing
 2. Query production bucket record count via Flux:
    `from(bucket: "spotprice") |> range(start: -30d) |> count()`
-3. Drop and recreate `spotprice_test` bucket (7-day retention, safe)
-4. Restore backup into `spotprice_test`:
-   `docker exec influxdb influx restore /backups/... --bucket spotprice --new-bucket spotprice_test`
-5. Query `spotprice_test` record count
+3. Create temporary `spotprice_restore_test` bucket (7-day retention)
+4. Restore backup into it:
+   `docker exec influxdb influx restore /backups/... --bucket spotprice --new-bucket spotprice_restore_test`
+5. Query `spotprice_restore_test` record count
 6. Compare: if counts match (within 1% tolerance for timing), PASS
 7. Print summary: bucket name, expected count, actual count, PASS/FAIL
-8. Exit code 0 on pass, 1 on fail (usable in CI or health checks)
+8. **Cleanup**: delete `spotprice_restore_test` bucket
+9. Exit code 0 on pass, 1 on fail (usable in CI or health checks)
+
+Cleanup runs in a trap handler so buckets are deleted even if the script
+fails or is interrupted.
 
 Optional `--full` flag: tests all buckets (slower but comprehensive).
 
@@ -253,7 +309,9 @@ Steps:
 ### Health Check Integration
 
 - Add `check_backup_freshness()` to `src/monitoring/health_check.py` (runs on Pi)
-- Checks both Pi backup dir and NAS backup dir (both visible via NAS mount)
+- Pi backup freshness: SSH to NAS to check `latest/backup_manifest.json` timestamp
+  `ssh -i $KEY $USER@$HOST "stat -c %Y $PATH/latest/backup_manifest.json"`
+- NAS backup freshness: same SSH check against NAS backup dir
 - Alerts if most recent backup is >48 hours old
 
 ## Restoration Runbook
@@ -264,19 +322,25 @@ The Pi has no unique InfluxDB/Grafana data -- only config files.
 
 1. Flash new Raspbian on SD card
 2. Clone repo: `cd /opt && git clone <url> redhouse`
-3. Mount NAS backup share: configure `/etc/fstab`, `mount /mnt/nas-backup`
-4. Restore Pi files from latest backup:
+3. Set up SSH key for NAS access (see "NAS Account & SSH Key Setup" above)
+4. Pull latest backup from NAS:
    ```bash
-   LATEST=/mnt/nas-backup/redhouse/pi/latest
-   cp $LATEST/.env /opt/redhouse/.env
-   cp $LATEST/config.yaml /opt/redhouse/config/config.yaml
-   cp $LATEST/pump_state.json /opt/redhouse/data/pump_state.json
-   sudo cp $LATEST/systemd/* /etc/systemd/system/
+   rsync -avz -e "ssh -i /home/pi/.ssh/redhouse_backup_key" \
+       redhouse-backup@192.168.1.164:/share/Backups/redhouse/pi/latest/ \
+       /tmp/redhouse-restore/
+   ```
+5. Restore Pi files:
+   ```bash
+   cp /tmp/redhouse-restore/.env /opt/redhouse/.env
+   cp /tmp/redhouse-restore/config.yaml /opt/redhouse/config/config.yaml
+   mkdir -p /opt/redhouse/data
+   cp /tmp/redhouse-restore/pump_state.json /opt/redhouse/data/pump_state.json
+   sudo cp /tmp/redhouse-restore/systemd/* /etc/systemd/system/
    sudo systemctl daemon-reload
    ```
-5. Create venv and install deps: `python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
-6. Enable and start services: `sudo systemctl enable --now redhouse-*.timer redhouse-*.service`
-7. Verify: `python -u src/monitoring/health_check.py`
+6. Create venv and install deps: `python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
+7. Enable and start services: `sudo systemctl enable --now redhouse-*.timer redhouse-*.service`
+8. Verify: `python -u src/monitoring/health_check.py`
 
 ### Scenario B: InfluxDB data loss / corruption
 
@@ -327,19 +391,29 @@ Worst case -- NAS disk failure or hardware death.
 2. Reinstall Docker, InfluxDB, Grafana containers
 3. If NAS backup disk survived: restore InfluxDB (Scenario B) + Grafana (Scenario C)
 4. If backup disk lost: data is gone; Pi will start collecting fresh data immediately once NAS is reachable
-5. Restore Pi config files from Pi's own backup (if NAS mount was the only copy, these are lost too)
+5. Pi config files: if NAS backups are lost, `.env` and `config.yaml` must be recreated manually from `.env.example` and `config.yaml.example`
 
 **Mitigation**: consider periodic off-site copy of NAS backups (USB drive, cloud) for critical data.
 
 ## Verification Plan
 
-1. Pi: Run `run_backup_pi.py --dry-run` to verify NAS mount and file access
+### Initial deployment (manual, one-time)
+1. Pi: Run `run_backup_pi.py --dry-run` to verify SSH/rsync connectivity to NAS
 2. NAS: Run `run_backup_nas.sh --dry-run` to verify Docker exec and Grafana API
 3. Run full backups, inspect manifests and file sizes
-4. Test InfluxDB restore to a test org/bucket
-5. Test Grafana restore to verify dashboards render correctly
-6. Simulate Pi restore: compare backup copies to originals with `diff`
-7. Verify health check detects stale backups (temporarily rename latest)
+4. Simulate Pi restore: compare backup copies to originals with `diff`
+5. Verify health check detects stale backups (temporarily rename latest)
+
+### Automated restoration tests (run periodically, e.g. weekly)
+6. `test_restore_influxdb.sh /share/Backups/redhouse/latest` -- restores
+   `spotprice` to `_test` bucket, compares record counts, cleans up
+7. `test_restore_influxdb.sh --full /share/Backups/redhouse/latest` -- tests
+   all buckets (run monthly or after backup system changes)
+8. `test_restore_grafana.sh /share/Backups/redhouse/latest` -- round-trips
+   all dashboards through restore with "[TEST]" prefix, verifies, cleans up
+
+Both scripts exit 0/1 and can be wired into the NAS scheduled jobs or called
+from the Pi health check for ongoing confidence.
 
 ## Implementation Order
 

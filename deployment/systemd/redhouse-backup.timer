@@ -1,0 +1,10 @@
+[Unit]
+Description=RedHouse Pi Backup Timer
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+AccuracySec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

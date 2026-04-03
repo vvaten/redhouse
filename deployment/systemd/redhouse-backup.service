@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse Pi Backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python -u /opt/redhouse/scripts/backup/run_backup_pi.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-backup
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

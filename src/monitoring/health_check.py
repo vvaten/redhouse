@@ -1,5 +1,6 @@
-"""Pi-side health check: disk, services, NAS reachability."""
+"""Pi-side health check: disk, services, NAS reachability, backup freshness."""
 
+import json
 import platform
 import shutil
 import socket
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.common.config import get_config
@@ -152,6 +154,123 @@ def check_nas_reachability() -> tuple[list[str], list[str]]:
     return failures, warnings
 
 
+def _check_manifest_freshness(
+    nas_host: str,
+    nas_user: str,
+    nas_ssh_key: str,
+    manifest_path: str,
+    label: str,
+) -> tuple[list[str], list[str]]:
+    """Check a single backup manifest's freshness via SSH.
+
+    Args:
+        nas_host: NAS hostname or IP
+        nas_user: NAS SSH user
+        nas_ssh_key: Path to SSH private key
+        manifest_path: Full path to backup_manifest.json on NAS
+        label: Human-readable label (e.g. "Pi backup", "NAS backup")
+
+    Returns:
+        Tuple of (failures, warnings)
+    """
+    failures: list[str] = []
+    warnings: list[str] = []
+
+    try:
+        result = subprocess.run(
+            [
+                "ssh",
+                "-i",
+                nas_ssh_key,
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                "ConnectTimeout=10",
+                f"{nas_user}@{nas_host}",
+                f"cat {manifest_path}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            failures.append(f"Cannot read {label} manifest from NAS: {result.stderr.strip()}")
+            return failures, warnings
+
+        manifest = json.loads(result.stdout)
+        timestamp_str = manifest.get("timestamp")
+        if not timestamp_str:
+            failures.append(f"{label} manifest has no timestamp field")
+            return failures, warnings
+
+        backup_time = datetime.fromisoformat(timestamp_str)
+        age_hours = (datetime.now(timezone.utc) - backup_time).total_seconds() / 3600
+
+        if age_hours > 48:
+            failures.append(f"{label} is {age_hours:.0f}h old (last: {timestamp_str})")
+        elif age_hours > 26:
+            warnings.append(f"{label} is {age_hours:.0f}h old (last: {timestamp_str})")
+        else:
+            logger.info("%s OK: %.0fh old", label, age_hours)
+
+    except subprocess.TimeoutExpired:
+        warnings.append(f"SSH to NAS timed out checking {label} freshness")
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        failures.append(f"Cannot parse {label} manifest: {e}")
+    except FileNotFoundError:
+        warnings.append(f"SSH not available, cannot check {label} freshness")
+
+    return failures, warnings
+
+
+def check_backup_freshness() -> tuple[list[str], list[str]]:
+    """Check that Pi and NAS backups are less than 48 hours old.
+
+    Uses SSH to read backup manifest timestamps on the NAS.
+
+    Returns:
+        Tuple of (failures, warnings)
+    """
+    failures: list[str] = []
+    warnings: list[str] = []
+    config = get_config()
+
+    nas_host = config.get("BACKUP_NAS_HOST")
+    nas_user = config.get("BACKUP_NAS_USER")
+    nas_ssh_key = config.get("BACKUP_NAS_SSH_KEY")
+    nas_path = config.get("BACKUP_NAS_PATH")
+
+    if not all([nas_host, nas_user, nas_ssh_key, nas_path]):
+        logger.info("Backup config not set, skipping backup freshness check")
+        return failures, warnings
+
+    # Check Pi backup freshness
+    pi_f, pi_w = _check_manifest_freshness(
+        nas_host,
+        nas_user,
+        nas_ssh_key,
+        f"{nas_path}/latest/backup_manifest.json",
+        "Pi backup",
+    )
+    failures.extend(pi_f)
+    warnings.extend(pi_w)
+
+    # Check NAS backup freshness
+    nas_backup_path = config.get("BACKUP_NAS_LOCAL_PATH")
+    if nas_backup_path:
+        nas_f, nas_w = _check_manifest_freshness(
+            nas_host,
+            nas_user,
+            nas_ssh_key,
+            f"{nas_backup_path}/latest/backup_manifest.json",
+            "NAS backup",
+        )
+        failures.extend(nas_f)
+        warnings.extend(nas_w)
+
+    return failures, warnings
+
+
 def run_health_check() -> int:
     """Run all health checks and send alert email if problems found.
 
@@ -168,6 +287,7 @@ def run_health_check() -> int:
         ("disk space", check_disk_space),
         ("systemd services", check_systemd_services),
         ("NAS reachability", check_nas_reachability),
+        ("backup freshness", check_backup_freshness),
     ]
 
     for check_name, check_fn in checks:
