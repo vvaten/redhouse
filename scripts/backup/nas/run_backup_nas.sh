@@ -9,6 +9,10 @@
 #   ./run_backup_nas.sh
 #   ./run_backup_nas.sh --dry-run
 
+# Ensure Asustor system binaries are in PATH (sudo resets PATH)
+PATH="/usr/builtin/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
