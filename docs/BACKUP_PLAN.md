@@ -88,43 +88,44 @@ Daily data generation rates (for estimating incremental size):
 | `analytics_1hour` | 1/hour aggregate | 24 | ~0.2 MB |
 | **All buckets** | | | **~14.5 MB/day raw** |
 
-Native `influx backup` uses compressed binary format (~2-5x smaller than raw CSV).
+Native `influx backup` uses compressed binary format.
 
-Full backup size (~18 months of accumulated data):
+**Measured**: Full backup of all buckets (~18 months of data) = **~300 MB, 1366 files, 2.5 minutes**.
+This is much smaller than initial estimates due to InfluxDB's efficient binary compression.
 
-| Bucket | Retention | Raw Estimate | Native Backup Est. |
-|--------|-----------|-------------|-------------------|
-| `temperatures` | infinite | ~3.5 GB | ~0.7-1.8 GB |
-| `shelly_em3_emeters_raw` | infinite | ~2.3 GB | ~0.5-1.2 GB |
-| `checkwatt_full_data` | infinite | ~270 MB | ~55-135 MB |
-| `emeters` | infinite | ~270 MB | ~55-135 MB |
-| `analytics_15min` | 5 years | ~486 MB | ~100-245 MB |
-| `analytics_1hour` | infinite | ~108 MB | ~22-54 MB |
-| `load_control` | infinite | ~108 MB | ~22-54 MB |
-| `emeters_5min` | 90 days | ~117 MB | ~24-59 MB |
-| `weather` | infinite | ~54 MB | ~11-27 MB |
-| `spotprice` | infinite | ~16 MB | ~3-8 MB |
-| `windpower` | infinite | ~16 MB | ~3-8 MB |
-| **Total full backup** | | **~7.3 GB raw** | **~1.5-3.7 GB** |
-
-### Total NAS storage with retention policy
+### Total NAS storage with retention policy (revised from measured data)
 
 | Item | Estimated Size |
 |------|---------------|
-| Single weekly full (InfluxDB) | ~1.5-3.7 GB |
-| Single daily incremental (InfluxDB) | ~3-7 MB |
-| 30 daily incrementals | ~90-210 MB |
-| 12 weekly fulls | ~18-44 GB |
+| Single full backup (InfluxDB) | ~300 MB |
+| 30 daily backups | ~9 GB |
+| 12 weekly backups | ~3.6 GB |
 | 30 daily Pi file backups | ~1.2 MB |
 | 30 daily Grafana backups | ~60 MB |
 | **Total** | **~20-45 GB** |
 
 ### Growth projection
 
-- Infinite-retention buckets grow ~14.5 MB/day raw (~3-7 MB/day compressed)
-- After 5 years: weekly full ~5-14 GB (native backup)
-- 5-year total with retention: ~70-170 GB
+- Measured ~300 MB for ~18 months of data
+- At this rate, after 5 years: full backup ~1 GB
+- Total with retention (30 daily + 12 weekly): ~50 GB
 - Well within NAS storage capacity
+
+### InfluxDB operator token
+
+The `influx backup` command requires an **operator token** (not an all-access token).
+Regular all-access tokens are scoped to an org and lack `read:authorizations` at the
+system level. The operator token was created via:
+
+```bash
+docker stop influxdb2
+docker run --rm -v /volume1/home/vvaten/influxdb2:/var/lib/influxdb2 influxdb:latest \
+    influxd recovery auth create-operator --org area51 --username pi \
+    --bolt-path /var/lib/influxdb2/influxd.bolt
+docker start influxdb2
+```
+
+The token is stored in `/share/Backups/redhouse/nas/.operator_token` (chmod 600).
 
 ## NAS Account & SSH Key Setup
 
