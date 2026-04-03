@@ -153,19 +153,13 @@ Sold Electricity, Net Cost, Solar Savings, Battery Arbitrage, Total Cost.
 Panels 2-3 (Consumption Effect, Avg. Actual Price) stay on `analytics_1hour`
 because they join with hourly spot prices.
 
-### Phase 4: Temperature Panels (Panels 15, 17, 19, 21)
+### Phase 4: Temperature Panels (Panels 15, 17, 19, 21) [DONE]
 
-3-tier switching. Temperature data exists at 1-min resolution in the
-`temperatures` bucket, and as window means in analytics tiers.
+3-tier switching for temperature panels, 48h guard for humidity.
 
-- Window <= 48h: `temperatures` bucket (1-min resolution)
-- Window <= 8d: `analytics_15min_staging` (15-min means)
-- Window > 8d: `analytics_1hour_staging` (1-hour means)
-
-Analytics tiers store temperature fields with the same room names
-(Ulkolampo, Hilla, etc.). Humidity data (measurement: `humidities`) is
-NOT in analytics tiers, so the Humidity panel (21) stays on raw data
-or gets a 48h limit like Shelly EM3.
+- Panels 15, 17, 19: 3-tier (raw/15min/1hour) with same field names
+- Panel 21 (Humidity): 48h guard only (humidity not in analytics tiers)
+- Panel 15 query B (weather forecast) unchanged -- already lightweight
 
 ### Panels Not Changed (Reference Data)
 
@@ -175,11 +169,7 @@ already use `aggregateWindow(v.windowPeriod)` for downsampling:
 - Avg. Spot Price (Panel 1) -- `spotprice_staging`
 - Spot Price chart (Panel 12) -- `spotprice_staging`
 - Weather Forecast (Panel 13) -- `weather_staging`
-- Outdoor Temperatures (Panel 15) -- `temperatures` + `weather_staging`
-- Indoor Temperatures (Panel 17) -- `temperatures`
 - Cost per Hour (Panel 18) -- `analytics_1hour_staging` (naturally hourly)
-- Water Temperature (Panel 19) -- `temperatures`
-- Humidity (Panel 21) -- `temperatures`
 - Wind Power (Panel 22) -- `windpower_staging`
 - Heating Schedule (Panel 23) -- `load_control_staging` + `spotprice_staging`
 - Cost per Day (Panel 25) -- `analytics_1hour_staging` (aggregated to daily)
