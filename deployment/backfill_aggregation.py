@@ -36,6 +36,23 @@ from src.common.influx_client import InfluxClient
 UTC = pytz.UTC
 
 
+def find_bucket_retention(client: InfluxClient, bucket_name: str) -> int:
+    """Query InfluxDB for a bucket's retention period in seconds.
+
+    Returns retention in seconds, or 0 for infinite retention.
+    """
+    try:
+        buckets_api = client.client.buckets_api()
+        bucket = buckets_api.find_bucket_by_name(bucket_name)
+        if bucket and bucket.retention_rules:
+            for rule in bucket.retention_rules:
+                if rule.every_seconds and rule.every_seconds > 0:
+                    return rule.every_seconds
+    except Exception as e:
+        print(f"  WARNING: Could not query retention for {bucket_name}: {e}")
+    return 0
+
+
 def find_data_range(
     client: InfluxClient,
     bucket: str,
@@ -235,6 +252,9 @@ def _clamp_to_data_range(
 ) -> tuple:
     """Detect actual data range in the source bucket and clamp the requested range.
 
+    Also checks target bucket retention policies so we don't attempt writes
+    that InfluxDB will reject as "beyond retention policy".
+
     Returns (clamped_start, clamped_end) or (None, None) if no usable range.
     """
     if not skip_5min:
@@ -254,11 +274,28 @@ def _clamp_to_data_range(
     clamped_start = max(start_time, data_first)
     clamped_end = min(end_time, data_last)
 
+    # Check target bucket retention policies and clamp start forward
+    now = datetime.datetime.now(UTC)
+    target_buckets = []
+    if not skip_5min:
+        target_buckets.append(config.influxdb_bucket_emeters_5min)
+    target_buckets.append(config.influxdb_bucket_analytics_15min)
+    target_buckets.append(config.influxdb_bucket_analytics_1hour)
+
+    for bucket_name in target_buckets:
+        retention_s = find_bucket_retention(client, bucket_name)
+        if retention_s > 0:
+            # Add 1h buffer to avoid edge-case rejections
+            earliest_writable = now - datetime.timedelta(seconds=retention_s - 3600)
+            if earliest_writable > clamped_start:
+                print(
+                    f"  {bucket_name}: {retention_s // 86400}d retention, "
+                    f"earliest writable ~{earliest_writable.strftime('%Y-%m-%d %H:%M')}"
+                )
+                clamped_start = max(clamped_start, earliest_writable)
+
     if clamped_start >= clamped_end:
-        print(
-            f"No overlap between requested range and data range "
-            f"({data_first.isoformat()} - {data_last.isoformat()})."
-        )
+        print("No writable range after applying retention constraints.")
         return None, None
 
     if clamped_start != start_time or clamped_end != end_time:
