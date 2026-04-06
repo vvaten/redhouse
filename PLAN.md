@@ -49,6 +49,7 @@ Modernizing a home automation system running on Raspberry Pi that controls a geo
 - [TODO] Automatic snow cover factor detection in predict_solar_yield.py (currently hardcoded to 0.0)
 - [TODO] Port pinglogger script to redhouse (currently using old wibatemp/pinglogger.py with hardcoded credentials; dashboard panel already added)
 - [TODO] Email alert when temperature sensor (incl. Shelly HT) has no data for 24h (battery/connection issue)
+- [TODO] Infrastructure maintenance plan: Pi OS updates, NAS Docker/InfluxDB/Grafana updates, update schedule
 
 ---
 

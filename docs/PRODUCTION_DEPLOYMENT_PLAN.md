@@ -173,12 +173,21 @@ Scripts:
 Redhouse has never controlled the real pump. Before the gradual migration,
 do a controlled test to verify I2C communication works.
 
+NOTE: control_pump.py does not write to InfluxDB, so no bucket name
+changes are needed. But STAGING_MODE must be set to false temporarily
+because PumpController uses mock hardware when staging mode is on.
+
 ### Preparation
 
 1. Choose a safe time (daytime, mild weather, not during EVU-OFF)
 2. Note current pump state:
    ```bash
    cat /home/pi/wibatemp/mlp_status.txt
+   ```
+3. Verify I2C bus is working:
+   ```bash
+   i2cdetect -y 1
+   # Should show device at address 0x10
    ```
 
 ### Test procedure
@@ -191,15 +200,16 @@ crontab -e
 #   Line 35: mlp_cycle_evu_off (*/2 :23)
 # Do NOT comment out line 33 (generate) - it only runs at 16:05
 
-# 2. On redhouse, temporarily disable staging mode
+# 2. Temporarily disable staging mode (for real I2C access)
 cd /opt/redhouse
 sudo -u pi nano .env
 # Change: STAGING_MODE=false
+# Do NOT change bucket names (pump control doesn't write to InfluxDB)
 
 # 3. Test pump ON command
 source venv/bin/activate
 python control_pump.py ON --verbose
-# Verify: pump turns on, no errors
+# Verify: pump turns on, no I2C errors
 
 # 4. Test pump ALE command (lower temperature mode)
 python control_pump.py ALE --verbose
@@ -210,37 +220,32 @@ python control_pump.py ON --verbose
 
 # 6. Test EVU cycle
 python control_pump.py EVU --verbose
-# Wait 30 seconds
+sleep 30
 python control_pump.py ON --verbose
 # Verify: pump goes to EVU-OFF and back
 
-# 7. Test execute_heating_program_v2 with real hardware
-python execute_heating_program_v2.py --verbose
-# Verify: reads today's schedule, executes current timeslot command
-
-# 8. Restore staging mode
+# 7. Restore staging mode
 sudo -u pi nano .env
 # Change: STAGING_MODE=true
 
-# 9. Restore wibatemp heating control
+# 8. Restore wibatemp heating control
 crontab -e
 # Uncomment lines 34 and 35
 
-# 10. Verify wibatemp resumes
+# 9. Verify wibatemp resumes
 # Wait for next */15 minute mark
-journalctl -u cron --since "1 min ago"
+tail -5 /home/pi/wibatemp/execute_heating_program.log
 ```
 
 ### Expected results
 
 - Each pump command completes without I2C errors
 - Pump physically responds (listen for relay click or check pump display)
-- execute_heating_program_v2 reads schedule and sends correct command
 - No stale state issues after switching back to wibatemp
 
 ### If test fails
 
-- Restore wibatemp immediately (step 9)
+- Restore wibatemp immediately (step 6)
 - Check I2C bus: `i2cdetect -y 1` (should show device at 0x10)
 - Check redhouse logs for error details
 - Fix issue and re-test before proceeding with migration
@@ -253,6 +258,14 @@ Verify redhouse writes temperatures (and humidities) to production buckets
 in the same format as wibatemp. Run for one full day to catch any edge
 cases (sensor dropouts, Shelly reconnects, etc.).
 
+NOTE: Temperature collection is disabled entirely when STAGING_MODE=true.
+The config validator also blocks writes to production buckets in staging
+mode. Both STAGING_MODE and bucket name must be changed together.
+
+IMPORTANT: While STAGING_MODE=false, all running redhouse timers will
+attempt to use real hardware and production buckets. Stop all other
+redhouse timers first, then only enable the temperature timer.
+
 ### Preparation
 
 1. Verify humidity gap is fixed first (pre-requisite P0)
@@ -261,33 +274,41 @@ cases (sensor dropouts, Shelly reconnects, etc.).
 ### Test procedure
 
 ```bash
-# 1. Stop wibatemp temperature collection
+# 1. Stop ALL redhouse timers (prevent other services from
+#    accidentally using production buckets or real hardware)
+sudo systemctl stop redhouse-*.timer
+
+# 2. Stop wibatemp temperature collection
 crontab -e
 # Comment out line 28: run_wibatemp.sh
 
-# 2. Point redhouse to production temperature bucket
+# 3. Switch to production mode for temperature bucket
 cd /opt/redhouse
 sudo -u pi nano .env
+# Change: STAGING_MODE=false
 # Change: INFLUXDB_BUCKET_TEMPERATURES=temperatures
 #   (was temperatures_staging)
-# Keep STAGING_MODE=true (only affects pump, not data collection)
+# Leave other bucket names as *_staging for now (no timers running)
 
-# 3. Restart redhouse temperature timer
-sudo systemctl restart redhouse-temperature.timer
+# 4. Start ONLY the temperature timer
+sudo systemctl start redhouse-temperature.timer
 
-# 4. Verify first data point appears
+# 5. Verify first data point appears
 # Wait 1-2 minutes
 journalctl -u redhouse-temperature.service --since "2 min ago"
-# Check Grafana: production temperature data flowing
+# Check Grafana production dashboard: temperature data flowing
+# Check: Shelly HT sensors included (Autotalli, PaaMH3, etc.)
+# Check: Humidity data in humidities measurement
 
-# 5. Monitor throughout the day
+# 6. Monitor throughout the day
 # Check for:
 #   - All sensors reporting (including intermittent ones like Eteinen)
-#   - Humidity data flowing (if gap is fixed)
+#   - Humidity data flowing
 #   - No duplicate or missing data points
 #   - Shelly HT sensors included
+#   - Sensor names match wibatemp names in Grafana
 
-# 6. After 24 hours, verify in Grafana
+# 7. After 24 hours, verify in Grafana
 # - No gaps in temperature graphs
 # - All sensor names match wibatemp names
 # - Humidity data present
@@ -295,8 +316,13 @@ journalctl -u redhouse-temperature.service --since "2 min ago"
 
 ### If successful
 
-Leave redhouse temperature collection running. One feature migrated.
-Do NOT re-enable wibatemp temperature cron.
+Leave redhouse temperature collection running on the production bucket.
+Do NOT re-enable wibatemp temperature cron. This is the first feature
+migrated - it stays running through the rest of the gradual migration.
+
+Note: STAGING_MODE is now false and one bucket is production.
+Other timers are stopped so this is safe. As more features migrate,
+more bucket names will be switched and more timers enabled.
 
 ### If problems found
 
@@ -304,15 +330,16 @@ Do NOT re-enable wibatemp temperature cron.
 # 1. Stop redhouse temperature timer
 sudo systemctl stop redhouse-temperature.timer
 
-# 2. Revert bucket name in .env
+# 2. Revert .env
 sudo -u pi nano .env
+# Change: STAGING_MODE=true
 # Change: INFLUXDB_BUCKET_TEMPERATURES=temperatures_staging
 
 # 3. Restore wibatemp
 crontab -e
 # Uncomment line 28
 
-# 4. Fix issue and re-test
+# 4. Fix issue in /opt/redhouse-staging, test, deploy, re-test
 ```
 
 ---
@@ -392,6 +419,9 @@ python generate_heating_program_v2.py --dry-run
 ### Switching /opt/redhouse from staging to production mode
 
 The current /opt/redhouse has STAGING_MODE=true and staging bucket names.
+IMPORTANT: The config validator blocks writes to production buckets when
+STAGING_MODE=true. Both must be changed together.
+
 Before starting the gradual migration:
 
 1. Stop all redhouse timers (they are writing to staging buckets):
@@ -399,20 +429,21 @@ Before starting the gradual migration:
    sudo systemctl stop redhouse-*.timer
    ```
 
-2. Update .env -- change all bucket names from *_staging to production:
+2. Update .env -- change bucket names AND staging mode:
    ```bash
    sudo -u pi nano /opt/redhouse/.env
+   # STAGING_MODE=false
    # INFLUXDB_BUCKET_TEMPERATURES=temperatures  (was temperatures_staging)
    # INFLUXDB_BUCKET_WEATHER=weather             (was weather_staging)
    # ... etc for all buckets
-   # Keep STAGING_MODE=true (flipped later at Step 4 for pump control)
    ```
 
 3. Do NOT restart any timers yet -- they will be enabled one by one
    in the gradual migration steps below.
 
-After this, /opt/redhouse is configured for production buckets but no
-timers are running. Each migration step enables specific timers.
+After this, /opt/redhouse is configured for production but no timers
+are running. Which features are active is controlled solely by which
+timers are enabled.
 
 ### Per-step procedure
 
