@@ -10,3 +10,4 @@
   - Use --quick flag to skip coverage for faster checks: python scripts/run_all_checks.py --quick
 - When committing, NEVER use git add -A or git add . - always add files individually
 - Do not use default values in Dict().get(key, ...) unless explicitly requested by human operator. Check the output if the key was found and show error message and abort program run if that happens.
+- Always place imports at the top of the file, never inside functions. Use the standard Python import ordering: stdlib, third-party, local.

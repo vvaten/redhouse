@@ -3,7 +3,11 @@
 
 import argparse
 import asyncio
+import datetime
+import inspect
+import logging
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -52,13 +56,13 @@ def list_available_logs(data_source: Optional[str] = None, days: int = 30) -> di
 
 
 def _load_and_validate_log(log_file: Path, data_source: str):
-    """Load log file and validate contents."""
+    """Load log file and validate contents. Returns (data, timestamp) tuple."""
     json_logger = JSONDataLogger(data_source)
     log_entry = json_logger.load_log(log_file)
 
     if not log_entry:
         logger.error(f"Failed to load log file: {log_file}")
-        return None
+        return None, None
 
     data = log_entry.get("data")
     metadata = log_entry.get("metadata", {})
@@ -67,7 +71,7 @@ def _load_and_validate_log(log_file: Path, data_source: str):
     logger.info(f"Log timestamp: {timestamp}")
     logger.info(f"Metadata: {metadata}")
 
-    return data
+    return data, timestamp
 
 
 async def _replay_spot_prices(data):
@@ -91,7 +95,6 @@ async def _replay_checkwatt(data):
 
 def _replay_weather(data):
     """Replay weather data to InfluxDB."""
-    import datetime
 
     from src.data_collection.weather import write_weather_to_influx
 
@@ -108,11 +111,11 @@ async def _replay_windpower(data):
     return latest_timestamp is not None
 
 
-def _replay_temperature(data):
+def _replay_temperature(data, timestamp=None):
     """Replay temperature data to InfluxDB."""
     from src.data_collection.temperature import write_temperatures_to_influx
 
-    return write_temperatures_to_influx(data)
+    return write_temperatures_to_influx(data, timestamp=timestamp)
 
 
 async def _replay_shelly_em3(data):
@@ -150,17 +153,29 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
     Returns:
         True if successful
     """
-    import inspect
-
     logger.info(f"Processing log file: {log_file}")
 
-    data = _load_and_validate_log(log_file, data_source)
+    data, timestamp = _load_and_validate_log(log_file, data_source)
     if data is None:
         return False
 
+    # Parse timestamp string to datetime for handlers that need it
+    log_timestamp = None
+    if timestamp:
+
+        try:
+            log_timestamp = datetime.datetime.fromisoformat(timestamp)
+            # Convert to UTC if naive
+            if log_timestamp.tzinfo is None:
+                log_timestamp = log_timestamp.replace(tzinfo=datetime.timezone.utc)
+            else:
+                log_timestamp = log_timestamp.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            logger.warning(f"Could not parse timestamp: {timestamp}")
+
     if dry_run:
         logger.info(f"[DRY-RUN] Would replay data from {log_file}")
-        logger.info(f"[DRY-RUN] Data source: {data_source}")
+        logger.info(f"[DRY-RUN] Data source: {data_source}, timestamp: {log_timestamp}")
         return True
 
     # Dispatch to appropriate handler
@@ -170,11 +185,16 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
             logger.error(f"Unknown data source: {data_source}")
             return False
 
-        # Call handler (async or sync)
+        # Call handler (async or sync), passing timestamp if handler accepts it
+        sig = inspect.signature(handler)
+        kwargs = {}
+        if "timestamp" in sig.parameters:
+            kwargs["timestamp"] = log_timestamp
+
         if inspect.iscoroutinefunction(handler):
-            success = await handler(data)
+            success = await handler(data, **kwargs)
         else:
-            success = handler(data)
+            success = handler(data, **kwargs)
 
         if success:
             logger.info(f"Successfully replayed data from {log_file}")
@@ -185,14 +205,71 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
 
     except Exception as e:
         logger.error(f"Exception replaying log file {log_file}: {e}")
-        import traceback
-
         traceback.print_exc()
         return False
 
 
+def _parse_log_filename_time(log_file: Path) -> Optional[str]:
+    """Extract YYYYMMDD_HHMMSS from log filename."""
+    stem = log_file.stem  # e.g. "20260406_145544"
+    if len(stem) == 15 and stem[8] == "_":
+        return stem
+    return None
+
+
+def _filter_logs_by_time(
+    log_files: list[Path], start: Optional[str], stop: Optional[str]
+) -> list[Path]:
+    """Filter log files by time range using filename timestamps.
+
+    Args:
+        log_files: List of log file paths
+        start: Start time as HHMM or YYYYMMDD_HHMM (inclusive)
+        stop: Stop time as HHMM or YYYYMMDD_HHMM (inclusive)
+    """
+    if not start and not stop:
+        return log_files
+
+    filtered = []
+    for log_file in log_files:
+        file_time = _parse_log_filename_time(log_file)
+        if not file_time:
+            continue
+
+        # Support both HHMM (today) and YYYYMMDD_HHMM formats
+        if start:
+            start_cmp = start.replace(":", "").replace("-", "").replace("_", "")
+            if len(start_cmp) <= 4:
+                # HHMM - compare only time portion
+                file_hhmm = file_time[9:13]
+                if file_hhmm < start_cmp:
+                    continue
+            else:
+                if file_time < start_cmp[:15]:
+                    continue
+
+        if stop:
+            stop_cmp = stop.replace(":", "").replace("-", "").replace("_", "")
+            if len(stop_cmp) <= 4:
+                file_hhmm = file_time[9:13]
+                if file_hhmm > stop_cmp:
+                    continue
+            else:
+                if file_time > stop_cmp[:15]:
+                    continue
+
+        filtered.append(log_file)
+
+    return filtered
+
+
 async def replay_logs(
-    data_source: str, days: int = 7, dry_run: bool = False, limit: Optional[int] = None
+    data_source: str,
+    days: int = 7,
+    dry_run: bool = False,
+    limit: Optional[int] = None,
+    start: Optional[str] = None,
+    stop: Optional[str] = None,
 ) -> tuple[int, int]:
     """
     Replay JSON logs for a data source.
@@ -202,6 +279,8 @@ async def replay_logs(
         days: Number of days to look back
         dry_run: If True, don't actually write to InfluxDB
         limit: Maximum number of files to replay
+        start: Start time filter (HHMM or YYYYMMDD_HHMM)
+        stop: Stop time filter (HHMM or YYYYMMDD_HHMM)
 
     Returns:
         Tuple of (success_count, failure_count)
@@ -216,6 +295,10 @@ async def replay_logs(
         return 0, 0
 
     logger.info(f"Found {len(log_files)} log files")
+
+    if start or stop:
+        log_files = _filter_logs_by_time(log_files, start, stop)
+        logger.info(f"After time filter: {len(log_files)} files")
 
     if limit:
         log_files = log_files[:limit]
@@ -239,7 +322,7 @@ async def replay_logs(
     return success_count, failure_count
 
 
-def _parse_arguments():
+def _parse_arguments(print_help: bool = False):
     """Parse and return command line arguments."""
     parser = argparse.ArgumentParser(
         description="Replay JSON log files to InfluxDB for data recovery",
@@ -260,6 +343,9 @@ Examples:
 
   # Replay only 5 most recent weather logs
   python -m src.tools.replay_json_logs --source weather --limit 5
+
+  # Replay temperature logs between 14:55 and 15:35 today
+  python -m src.tools.replay_json_logs --source temperature --days 1 --start 1455 --stop 1535
         """,
     )
     parser.add_argument("--list", action="store_true", help="List available log files")
@@ -267,12 +353,17 @@ Examples:
     parser.add_argument(
         "--days", type=int, default=7, help="Number of days to look back (default: 7)"
     )
+    parser.add_argument("--start", help="Start time filter (HHMM or YYYYMMDD_HHMM)")
+    parser.add_argument("--stop", help="Stop time filter (HHMM or YYYYMMDD_HHMM)")
     parser.add_argument(
         "--dry-run", action="store_true", help="Show what would be replayed without writing"
     )
     parser.add_argument("--limit", type=int, help="Limit number of files to replay")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
+    if print_help:
+        parser.print_help()
+        return None
     return parser.parse_args()
 
 
@@ -288,8 +379,6 @@ def _handle_list_mode(data_source: Optional[str], days: int) -> int:
         print(f"\n{source_name}: {len(log_files)} log files")
         for log_file in log_files[:10]:
             mtime = log_file.stat().st_mtime
-            import datetime
-
             mtime_str = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
             print(f"  {log_file.name} ({mtime_str})")
         if len(log_files) > 10:
@@ -299,7 +388,12 @@ def _handle_list_mode(data_source: Optional[str], days: int) -> int:
 
 
 async def _handle_replay_mode(
-    data_source: str, days: int, dry_run: bool, limit: Optional[int]
+    data_source: str,
+    days: int,
+    dry_run: bool,
+    limit: Optional[int],
+    start: Optional[str] = None,
+    stop: Optional[str] = None,
 ) -> int:
     """Handle replay mode: replay logs to InfluxDB."""
     success_count, failure_count = await replay_logs(
@@ -307,6 +401,8 @@ async def _handle_replay_mode(
         days=days,
         dry_run=dry_run,
         limit=limit,
+        start=start,
+        stop=stop,
     )
     return 1 if failure_count > 0 else 0
 
@@ -316,24 +412,25 @@ def main():
     args = _parse_arguments()
 
     if args.verbose:
-        import logging
-
         logger.setLevel(logging.DEBUG)
 
     if args.list:
         return _handle_list_mode(args.source, args.days)
 
     if not args.source:
-        print("Error: --source is required (unless using --list)")
+        print("Error: --source is required (unless using --list)\n")
+        _parse_arguments(print_help=True)
         return 1
 
     # Replay logs
     try:
-        return asyncio.run(_handle_replay_mode(args.source, args.days, args.dry_run, args.limit))
+        return asyncio.run(
+            _handle_replay_mode(
+                args.source, args.days, args.dry_run, args.limit, args.start, args.stop
+            )
+        )
     except Exception as e:
         logger.error(f"Unhandled exception: {e}")
-        import traceback
-
         traceback.print_exc()
         return 1
 

@@ -364,7 +364,9 @@ def _prepare_influx_fields(
 
 
 def write_temperatures_to_influx(
-    temperature_status: dict[str, dict[str, float]], dry_run: bool = False
+    temperature_status: dict[str, dict[str, float]],
+    dry_run: bool = False,
+    timestamp: Optional[datetime.datetime] = None,
 ) -> bool:
     """Write temperature and humidity data to InfluxDB.
 
@@ -380,7 +382,8 @@ def write_temperatures_to_influx(
             logger.warning("No valid temperature fields to write")
             return False
 
-        timestamp = datetime.datetime.utcnow()
+        if timestamp is None:
+            timestamp = datetime.datetime.utcnow()
 
         if dry_run:
             logger.info(f"[DRY-RUN] Would write {len(temp_fields)} temperatures to InfluxDB")
