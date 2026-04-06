@@ -2,7 +2,7 @@
 
 **Project Name:** `redhouse`
 **Started:** 2025-10-18
-**Current Phase:** Phase 6 (Phases 1-5.5 Complete)
+**Current Phase:** Phase 6+ (Phases 1-5.5 Complete, Grafana Dynamic Buckets Done)
 
 ---
 
@@ -44,9 +44,9 @@ Modernizing a home automation system running on Raspberry Pi that controls a geo
 - [TODO] Monitoring and alerts
 - [PARTIAL] Extensibility for garage heating and EV charging (multi-load architecture exists, no implementations yet)
 - [TODO] Grafana dashboard controls
-- [PARTIAL] Grafana staging dashboard (new_staging_dashboard.json created and being refined)
+- [DONE] Grafana staging dashboard with dynamic bucket selection (see docs/GRAFANA_DYNAMIC_BUCKET_PLAN.md)
+- [DONE] Backup system -- Pi files + InfluxDB + Grafana (see docs/BACKUP_PLAN.md)
 - [TODO] Automatic snow cover factor detection in predict_solar_yield.py (currently hardcoded to 0.0)
-- [TODO] Grafana dynamic bucket selection based on time range (use emeters for short ranges, emeters_5min/analytics_15min/analytics_1hour for longer ranges to avoid querying 1-5 min resolution over weeks)
 
 ---
 
