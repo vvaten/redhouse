@@ -47,6 +47,7 @@ Modernizing a home automation system running on Raspberry Pi that controls a geo
 - [DONE] Grafana staging dashboard with dynamic bucket selection (see docs/GRAFANA_DYNAMIC_BUCKET_PLAN.md)
 - [DONE] Backup system -- Pi files + InfluxDB + Grafana (see docs/BACKUP_PLAN.md)
 - [TODO] Automatic snow cover factor detection in predict_solar_yield.py (currently hardcoded to 0.0)
+- [TODO] Port pinglogger script to redhouse (currently using old wibatemp/pinglogger.py with hardcoded credentials; dashboard panel already added)
 
 ---
 

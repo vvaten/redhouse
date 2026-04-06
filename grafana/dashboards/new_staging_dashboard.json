@@ -3531,6 +3531,202 @@
             ],
             "title": "Cost per Day",
             "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "log": 2,
+                            "type": "log"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green"
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "ms"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "stats_lost_ratio"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "right"
+                            },
+                            {
+                                "id": "unit",
+                                "value": "none"
+                            },
+                            {
+                                "id": "custom.scaleDistribution",
+                                "value": {
+                                    "type": "linear"
+                                }
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "dark-red",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "rtt_avg_ms"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "avg"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "rtt_max_ms"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "max"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "rtt_min_ms"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "min"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "rtt_p10_ms"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "p10"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "rtt_p50_ms"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "p50"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "rtt_p90_ms"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "p90"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 64
+            },
+            "id": 26,
+            "options": {
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "single",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"network\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"network\")\n  |> filter(fn: (r) => r[\"_field\"] == \"rtt_avg_ms\" or r[\"_field\"] == \"rtt_max_ms\" or r[\"_field\"] == \"rtt_min_ms\" or r[\"_field\"] == \"rtt_p50_ms\" or r[\"_field\"] == \"rtt_p10_ms\" or r[\"_field\"] == \"rtt_p90_ms\" or r[\"_field\"] == \"stats_lost_ratio\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
+                    "refId": "A"
+                }
+            ],
+            "title": "Network Ping",
+            "type": "timeseries"
         }
     ],
     "refresh": "5m",
