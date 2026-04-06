@@ -129,6 +129,11 @@ fi
 mkdir -p /var/log/redhouse
 chown pi:pi /var/log/redhouse
 
+# --- Generate staging systemd units (installed but NOT enabled) ---
+
+echo ""
+"$DEPLOY_DIR/deployment/generate_staging_systemd.sh"
+
 # --- Copy latest production data to staging buckets ---
 
 echo ""
@@ -151,6 +156,12 @@ echo "  cd $DEPLOY_DIR"
 echo "  source venv/bin/activate"
 echo "  python collect_temperatures.py --dry-run --verbose"
 echo "  python generate_heating_program_v2.py --dry-run"
+echo ""
+echo "Staging timers (not enabled by default):"
+echo "  sudo deployment/staging_timers.sh start             # Start all"
+echo "  sudo deployment/staging_timers.sh start temperature  # Start one"
+echo "  sudo deployment/staging_timers.sh stop               # Stop all"
+echo "  sudo deployment/staging_timers.sh status             # Show active"
 echo ""
 echo "Staging data is from production (last 2 days)."
 echo "To refresh: python deployment/copy_production_to_staging.py --days 1"
