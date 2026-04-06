@@ -159,19 +159,24 @@ class TestFetchFingridData:
         start_time = datetime.datetime(2024, 1, 15, 10, 0, 0)
         end_time = datetime.datetime(2024, 1, 15, 12, 0, 0)
 
-        with patch("aiohttp.ClientSession") as mock_session_class:
-            with patch("time.sleep"):  # Mock sleep
-                mock_response = AsyncMock()
-                mock_response.status = 500
-                mock_response.text = AsyncMock(return_value="Internal Server Error")
+        with patch("src.data_collection.windpower.get_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.fingrid_api_key = "test-api-key"
+            mock_get_config.return_value = mock_config
 
-                mock_session = AsyncMock()
-                mock_session.get.return_value.__aenter__.return_value = mock_response
-                mock_session_class.return_value.__aenter__.return_value = mock_session
+            with patch("aiohttp.ClientSession") as mock_session_class:
+                with patch("time.sleep"):
+                    mock_response = AsyncMock()
+                    mock_response.status = 500
+                    mock_response.text = AsyncMock(return_value="Internal Server Error")
 
-                result = await fetch_fingrid_data(75, start_time, end_time)
+                    mock_session = AsyncMock()
+                    mock_session.get.return_value.__aenter__.return_value = mock_response
+                    mock_session_class.return_value.__aenter__.return_value = mock_session
 
-                assert result is None
+                    result = await fetch_fingrid_data(75, start_time, end_time)
+
+                    assert result is None
 
     @pytest.mark.asyncio
     async def test_fetch_fingrid_data_exception(self):
@@ -179,15 +184,20 @@ class TestFetchFingridData:
         start_time = datetime.datetime(2024, 1, 15, 10, 0, 0)
         end_time = datetime.datetime(2024, 1, 15, 12, 0, 0)
 
-        with patch("aiohttp.ClientSession") as mock_session_class:
-            with patch("time.sleep"):  # Mock sleep
-                mock_session = Mock()
-                mock_session.get.side_effect = Exception("Connection error")
-                mock_session_class.return_value.__aenter__.return_value = mock_session
+        with patch("src.data_collection.windpower.get_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.fingrid_api_key = "test-api-key"
+            mock_get_config.return_value = mock_config
 
-                result = await fetch_fingrid_data(75, start_time, end_time)
+            with patch("aiohttp.ClientSession") as mock_session_class:
+                with patch("time.sleep"):
+                    mock_session = Mock()
+                    mock_session.get.side_effect = Exception("Connection error")
+                    mock_session_class.return_value.__aenter__.return_value = mock_session
 
-                assert result is None
+                    result = await fetch_fingrid_data(75, start_time, end_time)
+
+                    assert result is None
 
 
 class TestFetchFmiWindpowerForecast:

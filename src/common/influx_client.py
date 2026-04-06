@@ -329,7 +329,7 @@ class InfluxClient:
         Returns:
             Display name or None
         """
-        sensor_mapping = self.config.get("sensor_mapping", {})
+        sensor_mapping = self.config.sensor_mapping
 
         # Try direct lookup
         if sensor_id in sensor_mapping:

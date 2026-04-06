@@ -5,9 +5,44 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import pytest
-
 from src.common.config import Config, get_config
+
+# Minimal valid config.yaml content for tests
+MINIMAL_CONFIG_YAML = """
+heating:
+  curve:
+    -20: 10
+    0: 6
+    16: 2
+  evuoff_threshold_price: 0.30
+  evuoff_max_continuous_hours: 3
+hardware:
+  pump_i2c_bus: 1
+  pump_i2c_address: 0x10
+  shelly_relay_url: http://192.168.1.5
+  shelly_em3_url: http://192.168.1.5
+data_collection:
+  spot_prices:
+    value_added_tax: 1.255
+    sellers_margin: 0.50
+    production_buyback_margin: 0.30
+    transfer_day_price: 2.59
+    transfer_night_price: 1.35
+    transfer_tax_price: 2.79372
+logging:
+  level: INFO
+  dir: /var/log/redhouse
+  max_bytes: 10485760
+  backup_count: 5
+"""
+
+
+def _make_temp_config(yaml_content=MINIMAL_CONFIG_YAML):
+    """Create a temporary config.yaml file and return its path."""
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+    f.write(yaml_content)
+    f.close()
+    return f.name
 
 
 class TestConfig(unittest.TestCase):
@@ -15,10 +50,15 @@ class TestConfig(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        # Clear any cached config
         import src.common.config
 
         src.common.config._config = None
+
+    def test_config_requires_yaml_file(self):
+        """Test that Config raises FileNotFoundError when config.yaml is missing."""
+        with self.assertRaises(FileNotFoundError) as ctx:
+            Config(config_path="/nonexistent/config.yaml")
+        self.assertIn("config.yaml", str(ctx.exception))
 
     def test_config_loads_env_variables(self):
         """Test that config loads environment variables."""
@@ -35,27 +75,26 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.influxdb_token, "test-token")
             self.assertEqual(config.influxdb_org, "test-org")
 
-    def test_config_required_values(self):
-        """Test that critical config values are required (no defaults)."""
-        # Create config without loading .env file
-        with patch("src.common.config.load_dotenv"):
-            with patch.dict(os.environ, {}, clear=True):
-                config = Config()
-                # Critical InfluxDB config must raise ValueError when missing
-                with self.assertRaises(ValueError) as ctx:
-                    _ = config.influxdb_url
-                self.assertIn("INFLUXDB_URL", str(ctx.exception))
+    def test_config_required_env_values(self):
+        """Test that critical env values raise ValueError when missing."""
+        yaml_path = _make_temp_config()
+        try:
+            with patch("src.common.config.load_dotenv"):
+                with patch.dict(os.environ, {}, clear=True):
+                    config = Config(config_path=yaml_path)
+                    with self.assertRaises(ValueError) as ctx:
+                        _ = config.influxdb_url
+                    self.assertIn("INFLUXDB_URL", str(ctx.exception))
 
-                with self.assertRaises(ValueError) as ctx:
-                    _ = config.influxdb_token
-                self.assertIn("INFLUXDB_TOKEN", str(ctx.exception))
+                    with self.assertRaises(ValueError) as ctx:
+                        _ = config.influxdb_token
+                    self.assertIn("INFLUXDB_TOKEN", str(ctx.exception))
 
-                with self.assertRaises(ValueError) as ctx:
-                    _ = config.influxdb_org
-                self.assertIn("INFLUXDB_ORG", str(ctx.exception))
-
-                # Non-critical config can have defaults
-                self.assertEqual(config.log_level, "INFO")
+                    with self.assertRaises(ValueError) as ctx:
+                        _ = config.influxdb_org
+                    self.assertIn("INFLUXDB_ORG", str(ctx.exception))
+        finally:
+            os.unlink(yaml_path)
 
     def test_config_bucket_properties(self):
         """Test bucket configuration properties."""
@@ -76,137 +115,178 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.influxdb_bucket_emeters, "emeters_test")
             self.assertEqual(config.influxdb_bucket_checkwatt, "checkwatt_test")
 
-    def test_config_hardware_properties(self):
-        """Test hardware configuration properties."""
-        with patch.dict(
-            os.environ,
-            {
-                "PUMP_I2C_BUS": "2",
-                "PUMP_I2C_ADDRESS": "0x20",
-                "SHELLY_RELAY_URL": "http://192.168.1.10",
-            },
-        ):
-            config = Config()
+    def test_config_hardware_from_yaml(self):
+        """Test hardware configuration comes from config.yaml."""
+        yaml_content = (
+            MINIMAL_CONFIG_YAML.replace("pump_i2c_bus: 1", "pump_i2c_bus: 2")
+            .replace("pump_i2c_address: 0x10", "pump_i2c_address: 0x20")
+            .replace(
+                "shelly_relay_url: http://192.168.1.5",
+                "shelly_relay_url: http://192.168.1.10",
+            )
+        )
+        yaml_path = _make_temp_config(yaml_content)
+        try:
+            config = Config(config_path=yaml_path)
             self.assertEqual(config.pump_i2c_bus, 2)
             self.assertEqual(config.pump_i2c_address, 0x20)
             self.assertEqual(config.shelly_relay_url, "http://192.168.1.10")
+        finally:
+            os.unlink(yaml_path)
 
-    @pytest.mark.skip(
-        reason="Environment isolation difficult in test; functionality tested in test_config_hardware_properties"
-    )
-    def test_config_i2c_address_formats(self):
-        """Test I2C address handles both hex and decimal notation."""
-        # Hex notation
-        with patch("src.common.config.load_dotenv"):
-            with patch.dict(os.environ, {"PUMP_I2C_ADDRESS": "0x10"}, clear=True):
-                config = Config(config_path="/nonexistent.yaml")
-                self.assertEqual(config.pump_i2c_address, 16)
+    def test_config_hardware_required(self):
+        """Test that missing hardware config raises ValueError."""
+        yaml_content = """
+heating:
+  curve:
+    -20: 10
+    0: 6
+    16: 2
+  evuoff_threshold_price: 0.30
+  evuoff_max_continuous_hours: 3
+data_collection:
+  spot_prices:
+    value_added_tax: 1.255
+    sellers_margin: 0.50
+    production_buyback_margin: 0.30
+    transfer_day_price: 2.59
+    transfer_night_price: 1.35
+    transfer_tax_price: 2.79372
+"""
+        yaml_path = _make_temp_config(yaml_content)
+        try:
+            config = Config(config_path=yaml_path)
+            with self.assertRaises(ValueError) as ctx:
+                _ = config.pump_i2c_bus
+            self.assertIn("hardware.pump_i2c_bus", str(ctx.exception))
+        finally:
+            os.unlink(yaml_path)
 
-        # Decimal notation
-        with patch("src.common.config.load_dotenv"):
-            with patch.dict(os.environ, {"PUMP_I2C_ADDRESS": "20"}, clear=True):
-                config = Config(config_path="/nonexistent.yaml")
-                self.assertEqual(config.pump_i2c_address, 20)
+    def test_config_heating_curve_from_yaml(self):
+        """Test heating curve comes from config.yaml."""
+        yaml_content = (
+            MINIMAL_CONFIG_YAML.replace("-20: 10", "-20: 14")
+            .replace("0: 6", "0: 8")
+            .replace("16: 2", "16: 3")
+        )
+        yaml_path = _make_temp_config(yaml_content)
+        try:
+            config = Config(config_path=yaml_path)
+            curve = config.heating_curve
+            self.assertEqual(curve[-20], 14.0)
+            self.assertEqual(curve[0], 8.0)
+            self.assertEqual(curve[16], 3.0)
+        finally:
+            os.unlink(yaml_path)
 
-    def test_config_heating_curve(self):
+    def test_config_heating_curve_types(self):
         """Test heating curve returns dict with int keys and float values."""
         config = Config()
         curve = config.heating_curve
         self.assertIsInstance(curve, dict)
-        # Check keys are integers and values are floats
         for key, value in curve.items():
             self.assertIsInstance(key, int)
             self.assertIsInstance(value, float)
 
-    def test_config_heating_curve_reads_env_keys(self):
-        """Test that heating curve reads individual HEATING_CURVE_* env vars."""
-        with patch.dict(
-            os.environ,
-            {
-                "HEATING_CURVE_MINUS20": "14",
-                "HEATING_CURVE_0": "7",
-                "HEATING_CURVE_16": "3",
-            },
-        ):
-            config = Config()
-            curve = config.heating_curve
-            self.assertEqual(curve[-20], 14.0)
-            self.assertEqual(curve[0], 7.0)
-            self.assertEqual(curve[16], 3.0)
-
-    def test_config_logging_properties(self):
-        """Test logging configuration properties."""
-        with patch.dict(
-            os.environ,
-            {
-                "LOG_LEVEL": "DEBUG",
-                "LOG_DIR": "/tmp/test-logs",
-                "LOG_MAX_BYTES": "20971520",
-                "LOG_BACKUP_COUNT": "10",
-            },
-        ):
-            config = Config()
-            self.assertEqual(config.log_level, "DEBUG")
-            self.assertEqual(config.log_dir, "/tmp/test-logs")
-            self.assertEqual(config.log_max_bytes, 20971520)
-            self.assertEqual(config.log_backup_count, 10)
-
-    def test_config_yaml_loading(self):
-        """Test YAML configuration file loading."""
-        yaml_content = """
-heating:
-  evuoff_threshold_price: 0.30
-  evuoff_max_continuous_hours: 3
-"""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(yaml_content)
-            yaml_path = f.name
-
+    def test_config_evuoff_from_yaml(self):
+        """Test EVU-OFF config comes from config.yaml."""
+        yaml_path = _make_temp_config()
         try:
-            with patch.dict(
-                os.environ,
-                {
-                    "HEATING_CURVE_MINUS20": "15",
-                    "HEATING_CURVE_0": "10",
-                    "HEATING_CURVE_16": "5",
-                },
-            ):
-                config = Config(config_path=yaml_path)
-                curve = config.heating_curve
-                self.assertEqual(curve[-20], 15.0)
-                self.assertEqual(curve[0], 10.0)
-                self.assertEqual(curve[16], 5.0)
+            config = Config(config_path=yaml_path)
             self.assertEqual(config.evuoff_threshold_price, 0.30)
             self.assertEqual(config.evuoff_max_continuous_hours, 3)
         finally:
             os.unlink(yaml_path)
 
-    @pytest.mark.skip(
-        reason="Environment isolation difficult in test; functionality tested in test_config_loads_env_variables"
-    )
-    def test_config_env_overrides_yaml(self):
-        """Test that environment variables override YAML config."""
+    def test_config_spot_prices_from_yaml(self):
+        """Test spot price config comes from config.yaml."""
+        yaml_path = _make_temp_config()
+        try:
+            config = Config(config_path=yaml_path)
+            spot_cfg = config.spot_prices_config
+            self.assertEqual(spot_cfg["value_added_tax"], 1.255)
+            self.assertEqual(spot_cfg["sellers_margin"], 0.50)
+            self.assertEqual(spot_cfg["transfer_day_price"], 2.59)
+        finally:
+            os.unlink(yaml_path)
+
+    def test_config_logging_from_yaml(self):
+        """Test logging config comes from config.yaml with sensible defaults."""
+        yaml_content = MINIMAL_CONFIG_YAML.replace("level: INFO", "level: DEBUG").replace(
+            "dir: /var/log/redhouse", "dir: /tmp/test-logs"
+        )
+        yaml_path = _make_temp_config(yaml_content)
+        try:
+            config = Config(config_path=yaml_path)
+            self.assertEqual(config.log_level, "DEBUG")
+            self.assertEqual(config.log_dir, "/tmp/test-logs")
+            self.assertEqual(config.log_max_bytes, 10485760)
+            self.assertEqual(config.log_backup_count, 5)
+        finally:
+            os.unlink(yaml_path)
+
+    def test_config_logging_defaults(self):
+        """Test logging has sensible defaults if not in config.yaml."""
         yaml_content = """
 heating:
+  curve:
+    -20: 10
+    0: 6
+    16: 2
   evuoff_threshold_price: 0.30
+  evuoff_max_continuous_hours: 3
+hardware:
+  pump_i2c_bus: 1
+  pump_i2c_address: 0x10
+  shelly_relay_url: http://192.168.1.5
+  shelly_em3_url: http://192.168.1.5
+data_collection:
+  spot_prices:
+    value_added_tax: 1.255
+    sellers_margin: 0.50
+    production_buyback_margin: 0.30
+    transfer_day_price: 2.59
+    transfer_night_price: 1.35
+    transfer_tax_price: 2.79372
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(yaml_content)
-            yaml_path = f.name
+        yaml_path = _make_temp_config(yaml_content)
+        try:
+            config = Config(config_path=yaml_path)
+            self.assertEqual(config.log_level, "INFO")
+            self.assertEqual(config.log_dir, "/var/log/redhouse")
+            self.assertEqual(config.log_max_bytes, 10485760)
+            self.assertEqual(config.log_backup_count, 5)
+        finally:
+            os.unlink(yaml_path)
+
+    def test_config_sensor_mapping(self):
+        """Test sensor mapping loads from sensors.yaml."""
+        yaml_path = _make_temp_config()
+        sensors_path = yaml_path.replace(".yaml", "_sensors.yaml")
+        # Create sensors.yaml next to config.yaml
+        sensors_dir = os.path.dirname(yaml_path)
+        sensors_file = os.path.join(sensors_dir, os.path.basename(sensors_path))
+        with open(sensors_file, "w") as f:
+            f.write('sensor_mapping:\n  "28-abc": "TestRoom"\n')
 
         try:
-            # Create config with only YAML (no env loading)
-            with patch("src.common.config.load_dotenv"):
-                with patch.dict(os.environ, {}, clear=True):
-                    config_yaml_only = Config(config_path=yaml_path)
-                    self.assertEqual(config_yaml_only.evuoff_threshold_price, 0.30)
+            # Config looks for sensors.yaml in same dir as config.yaml
+            # We need to place it as "sensors.yaml" in the same directory
+            actual_sensors = os.path.join(sensors_dir, "sensors.yaml")
+            os.rename(sensors_file, actual_sensors)
+            config = Config(config_path=yaml_path)
+            self.assertEqual(config.sensor_mapping["28-abc"], "TestRoom")
+        finally:
+            os.unlink(yaml_path)
+            if os.path.exists(actual_sensors):
+                os.unlink(actual_sensors)
 
-            # Now test with env var override
-            with patch("src.common.config.load_dotenv"):
-                with patch.dict(os.environ, {"EVUOFF_THRESHOLD_PRICE": "0.99"}, clear=True):
-                    config_with_env = Config(config_path=yaml_path)
-                    # Environment variable should override YAML
-                    self.assertEqual(config_with_env.evuoff_threshold_price, 0.99)
+    def test_config_sensor_mapping_empty_without_file(self):
+        """Test sensor mapping is empty dict when sensors.yaml doesn't exist."""
+        yaml_path = _make_temp_config()
+        try:
+            config = Config(config_path=yaml_path)
+            self.assertEqual(config.sensor_mapping, {})
         finally:
             os.unlink(yaml_path)
 
@@ -222,15 +302,15 @@ heating:
 
     def test_config_get_method(self):
         """Test generic get method with dot notation."""
-        yaml_content = """
+        yaml_content = (
+            MINIMAL_CONFIG_YAML
+            + """
 custom:
   nested:
     value: 42
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(yaml_content)
-            yaml_path = f.name
-
+        )
+        yaml_path = _make_temp_config(yaml_content)
         try:
             config = Config(config_path=yaml_path)
             value = config.get("custom.nested.value")
@@ -244,11 +324,24 @@ custom:
         value = config.get("nonexistent.key", "default_value")
         self.assertEqual(value, "default_value")
 
-    def test_config_weather_latlon(self):
-        """Test weather location configuration."""
+    def test_config_weather_latlon_from_env(self):
+        """Test weather location comes from .env (PII)."""
         with patch.dict(os.environ, {"WEATHER_LATLON": "61.0,25.0"}):
             config = Config()
             self.assertEqual(config.weather_latlon, "61.0,25.0")
+
+    def test_config_weather_latlon_required(self):
+        """Test weather location raises error when missing."""
+        yaml_path = _make_temp_config()
+        try:
+            with patch("src.common.config.load_dotenv"):
+                with patch.dict(os.environ, {}, clear=True):
+                    config = Config(config_path=yaml_path)
+                    with self.assertRaises(ValueError) as ctx:
+                        _ = config.weather_latlon
+                    self.assertIn("WEATHER_LATLON", str(ctx.exception))
+        finally:
+            os.unlink(yaml_path)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,10 @@
+# Temperature sensor ID to display name mapping
+# Copy this file to sensors.yaml and fill in actual sensor IDs.
+# This file contains PII (room/person names) and must NOT be committed.
+
+sensor_mapping:
+  "28-xxxx01": "Room1"
+  "28-xxxx02": "Room2"
+  "28-xxxx03": "Outdoor"
+  "shelly-180": "Garage"
+  "shelly-181": "Sensor2"

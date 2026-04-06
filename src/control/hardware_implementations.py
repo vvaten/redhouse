@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 class I2CHardwareInterface(PumpHardwareInterface):
     """Real I2C hardware implementation for MLP pump control."""
 
-    # I2C configuration
-    I2C_BUS = 1
-    I2C_ADDRESS = 0x10
+    # I2C register addresses
     I2C_REG1 = 0x01
     I2C_REG2 = 0x02
 
@@ -34,7 +32,7 @@ class I2CHardwareInterface(PumpHardwareInterface):
         "EVU": (0xFF, 0xFF),  # EVU-OFF (pump disabled)
     }
 
-    def __init__(self, i2c_bus: int = 1, i2c_address: int = 0x10):
+    def __init__(self, i2c_bus: int, i2c_address: int):
         """
         Initialize I2C interface.
 
@@ -90,16 +88,14 @@ class I2CHardwareInterface(PumpHardwareInterface):
 class ShellyRelayInterface(PumpHardwareInterface):
     """Shelly relay implementation for AC pump control."""
 
-    SHELLY_RELAY_URL = "http://192.168.1.5/relay/0"
-
-    def __init__(self, relay_url: Optional[str] = None):
+    def __init__(self, relay_url: str):
         """
         Initialize Shelly relay interface.
 
         Args:
-            relay_url: Shelly relay URL (default: http://192.168.1.5/relay/0)
+            relay_url: Shelly relay URL (e.g., http://192.168.1.5/relay/0)
         """
-        self.relay_url = relay_url or self.SHELLY_RELAY_URL
+        self.relay_url = relay_url
 
     def write_pump_command(self, command: str) -> bool:
         """Shelly relay doesn't control pump commands."""
@@ -137,7 +133,7 @@ class ShellyRelayInterface(PumpHardwareInterface):
 class CombinedHardwareInterface(PumpHardwareInterface):
     """Combined I2C + Shelly relay implementation."""
 
-    def __init__(self, i2c_bus: int = 1, i2c_address: int = 0x10, relay_url: Optional[str] = None):
+    def __init__(self, i2c_bus: int, i2c_address: int, relay_url: str):
         """
         Initialize combined hardware interface.
 

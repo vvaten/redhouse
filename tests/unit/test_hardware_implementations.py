@@ -22,7 +22,7 @@ class TestI2CHardwareInterface:
         """Test initialization when smbus2 is available."""
         mock_smbus = MagicMock()
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus)}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
             assert interface.available is True
             assert interface.bus == 1
             assert interface.address == 0x10
@@ -38,7 +38,7 @@ class TestI2CHardwareInterface:
     def test_init_without_smbus2(self):
         """Test initialization when smbus2 is not available."""
         with patch.dict("sys.modules", {"smbus2": None}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
             assert interface.available is False
 
     def test_write_pump_command_success(self):
@@ -48,7 +48,7 @@ class TestI2CHardwareInterface:
         mock_smbus_class.return_value = mock_smbus_instance
 
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
             result = interface.write_pump_command("ON")
 
             assert result is True
@@ -61,7 +61,7 @@ class TestI2CHardwareInterface:
         mock_smbus_class.return_value = mock_smbus_instance
 
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
 
             # Test ON command
             result = interface.write_pump_command("ON")
@@ -79,7 +79,7 @@ class TestI2CHardwareInterface:
         """Test invalid command handling."""
         mock_smbus_class = MagicMock()
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
             result = interface.write_pump_command("INVALID")
 
             assert result is False
@@ -87,7 +87,7 @@ class TestI2CHardwareInterface:
     def test_write_pump_command_i2c_unavailable(self):
         """Test command write when I2C is unavailable."""
         with patch.dict("sys.modules", {"smbus2": None}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
             result = interface.write_pump_command("ON")
 
             assert result is False
@@ -100,7 +100,7 @@ class TestI2CHardwareInterface:
         mock_smbus_class.return_value = mock_smbus_instance
 
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
             result = interface.write_pump_command("ON")
 
             assert result is False
@@ -109,7 +109,7 @@ class TestI2CHardwareInterface:
         """Test circulation pump control (not implemented for I2C)."""
         mock_smbus_class = MagicMock()
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
             result = interface.control_circulation_pump(True)
 
             assert result is True  # Always returns True (handled by Shelly)
@@ -118,7 +118,7 @@ class TestI2CHardwareInterface:
         """Test pump status retrieval (not implemented for I2C)."""
         mock_smbus_class = MagicMock()
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = I2CHardwareInterface()
+            interface = I2CHardwareInterface(i2c_bus=1, i2c_address=0x10)
             status = interface.get_pump_status()
 
             assert status is None
@@ -129,7 +129,7 @@ class TestShellyRelayInterface:
 
     def test_init_default_url(self):
         """Test initialization with default URL."""
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         assert interface.relay_url == "http://192.168.1.5/relay/0"
 
     def test_init_custom_url(self):
@@ -145,7 +145,7 @@ class TestShellyRelayInterface:
         mock_response.status_code = 200
         mock_get.return_value = mock_response
 
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         result = interface.control_circulation_pump(True)
 
         assert result is True
@@ -158,7 +158,7 @@ class TestShellyRelayInterface:
         mock_response.status_code = 200
         mock_get.return_value = mock_response
 
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         result = interface.control_circulation_pump(False)
 
         assert result is True
@@ -171,7 +171,7 @@ class TestShellyRelayInterface:
         mock_response.status_code = 500
         mock_get.return_value = mock_response
 
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         result = interface.control_circulation_pump(True)
 
         assert result is False
@@ -181,7 +181,7 @@ class TestShellyRelayInterface:
         """Test circulation pump control with exception."""
         mock_get.side_effect = Exception("Network error")
 
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         result = interface.control_circulation_pump(True)
 
         assert result is False
@@ -194,7 +194,7 @@ class TestShellyRelayInterface:
         mock_response.json.return_value = {"ison": True, "mode": "relay"}
         mock_get.return_value = mock_response
 
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         status = interface.get_pump_status()
 
         assert status == {"ison": True, "mode": "relay"}
@@ -206,7 +206,7 @@ class TestShellyRelayInterface:
         mock_response.status_code = 404
         mock_get.return_value = mock_response
 
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         status = interface.get_pump_status()
 
         assert status is None
@@ -216,14 +216,14 @@ class TestShellyRelayInterface:
         """Test getting pump status with exception."""
         mock_get.side_effect = Exception("Network error")
 
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         status = interface.get_pump_status()
 
         assert status is None
 
     def test_write_pump_command(self):
         """Test pump command write (not implemented for Shelly)."""
-        interface = ShellyRelayInterface()
+        interface = ShellyRelayInterface(relay_url="http://192.168.1.5/relay/0")
         result = interface.write_pump_command("ON")
 
         assert result is True  # Always returns True (handled by I2C)
@@ -236,7 +236,9 @@ class TestCombinedHardwareInterface:
         """Test initialization with default configuration."""
         mock_smbus_class = MagicMock()
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = CombinedHardwareInterface()
+            interface = CombinedHardwareInterface(
+                i2c_bus=1, i2c_address=0x10, relay_url="http://192.168.1.5/relay/0"
+            )
             assert interface.i2c is not None
             assert interface.shelly is not None
 
@@ -255,7 +257,9 @@ class TestCombinedHardwareInterface:
         """Test that pump command is delegated to I2C."""
         mock_smbus_class = MagicMock()
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = CombinedHardwareInterface()
+            interface = CombinedHardwareInterface(
+                i2c_bus=1, i2c_address=0x10, relay_url="http://192.168.1.5/relay/0"
+            )
             interface.i2c.write_pump_command = Mock(return_value=True)
 
             result = interface.write_pump_command("ON")
@@ -272,7 +276,9 @@ class TestCombinedHardwareInterface:
 
         mock_smbus_class = MagicMock()
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = CombinedHardwareInterface()
+            interface = CombinedHardwareInterface(
+                i2c_bus=1, i2c_address=0x10, relay_url="http://192.168.1.5/relay/0"
+            )
             result = interface.control_circulation_pump(True)
 
             assert result is True
@@ -287,7 +293,9 @@ class TestCombinedHardwareInterface:
 
         mock_smbus_class = MagicMock()
         with patch.dict("sys.modules", {"smbus2": MagicMock(SMBus=mock_smbus_class)}):
-            interface = CombinedHardwareInterface()
+            interface = CombinedHardwareInterface(
+                i2c_bus=1, i2c_address=0x10, relay_url="http://192.168.1.5/relay/0"
+            )
             status = interface.get_pump_status()
 
             assert status == {"ison": True}

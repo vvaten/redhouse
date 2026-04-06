@@ -3,7 +3,6 @@
 
 import asyncio
 import datetime
-import os
 from typing import Optional
 
 import aiohttp
@@ -156,11 +155,9 @@ async def collect_shelly_em3_data(dry_run: bool = False) -> int:
     """
     logger.info("Starting Shelly EM3 data collection")
 
-    # Get device URL from environment (required)
-    device_url = os.getenv("SHELLY_EM3_URL")
-    if not device_url:
-        logger.error("SHELLY_EM3_URL environment variable not set")
-        return 1
+    # Get device URL from config (required)
+    config = get_config()
+    device_url = config.shelly_em3_url
 
     # Fetch status data
     status_data = await fetch_shelly_em3_status(device_url)

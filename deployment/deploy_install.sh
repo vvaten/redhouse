@@ -56,6 +56,22 @@ else
     exit 1
 fi
 
+# Validate config/sensors.yaml (PII - not in git, must exist on Pi)
+echo ""
+echo "Validating sensor mapping configuration..."
+if [ -f "$DEPLOY_DIR/config/sensors.yaml" ]; then
+    echo "[OK] config/sensors.yaml exists"
+else
+    echo "[WARNING] No config/sensors.yaml found"
+    echo "Creating from config/sensors.yaml.example..."
+    cp $DEPLOY_DIR/config/sensors.yaml.example $DEPLOY_DIR/config/sensors.yaml
+    chown pi:pi $DEPLOY_DIR/config/sensors.yaml
+    echo ""
+    echo "[ACTION REQUIRED] Please edit $DEPLOY_DIR/config/sensors.yaml with actual sensor IDs"
+    echo "Then run this script again"
+    exit 1
+fi
+
 # Run tests (unit tests only, skip integration tests)
 echo ""
 echo "Running unit tests..."

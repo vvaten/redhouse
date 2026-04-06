@@ -58,35 +58,15 @@ def _validate_config_parameters(config: Any) -> dict:
     Extract and validate all required price parameters from config.
 
     Args:
-        config: Configuration object with price parameters
+        config: Configuration object with spot_prices_config property
 
     Returns:
         Dictionary with all validated price parameters
 
     Raises:
-        ValueError: If any required parameter is missing
+        ValueError: If any required parameter is missing (raised by config.spot_prices_config)
     """
-    required_params = [
-        "spot_value_added_tax",
-        "spot_sellers_margin",
-        "spot_production_buyback_margin",
-        "spot_transfer_day_price",
-        "spot_transfer_night_price",
-        "spot_transfer_tax_price",
-    ]
-
-    for param in required_params:
-        if not config.get(param):
-            raise ValueError(f"Missing required config: {param.upper()}")
-
-    return {
-        "value_added_tax": float(config.get("spot_value_added_tax")),
-        "sellers_margin": float(config.get("spot_sellers_margin")),
-        "production_buyback_margin": float(config.get("spot_production_buyback_margin")),
-        "transfer_day_price": float(config.get("spot_transfer_day_price")),
-        "transfer_night_price": float(config.get("spot_transfer_night_price")),
-        "transfer_tax_price": float(config.get("spot_transfer_tax_price")),
-    }
+    return config.spot_prices_config
 
 
 def _parse_entry_datetime(entry: dict) -> tuple[datetime.datetime, int]:

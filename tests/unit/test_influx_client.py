@@ -24,7 +24,7 @@ def mock_config():
     config.influxdb_bucket_temperatures = "temperatures"
     config.influxdb_bucket_weather = "weather"
     config.influxdb_bucket_spotprice = "spotprice"
-    config.get = Mock(return_value={})  # For sensor_mapping
+    config.sensor_mapping = {}  # Loaded from sensors.yaml in production
     return config
 
 
@@ -209,7 +209,7 @@ class TestWriteTemperatures:
         client = InfluxClient(mock_config)
 
         # Setup sensor mapping
-        mock_config.get.return_value = {
+        mock_config.sensor_mapping = {
             "28-xxxx8a": "Sensor1",
             "28-xxxxc1": "Sensor2",
         }
@@ -230,7 +230,7 @@ class TestWriteTemperatures:
         """Test write_temperatures skips None values."""
         client = InfluxClient(mock_config)
 
-        mock_config.get.return_value = {"sensor1": "TestSensor"}
+        mock_config.sensor_mapping = {"sensor1": "TestSensor"}
 
         temperature_data = {
             "sensor1": {"temp": None, "updated": 1609459200},
@@ -265,7 +265,7 @@ class TestWriteHumidities:
         """Test basic write_humidities operation."""
         client = InfluxClient(mock_config)
 
-        mock_config.get.return_value = {"sensor1": "TestSensor"}
+        mock_config.sensor_mapping = {"sensor1": "TestSensor"}
 
         humidity_data = {"sensor1": {"hum": 45.0}}
 
@@ -280,7 +280,7 @@ class TestWriteHumidities:
         """Test write_humidities skips None values."""
         client = InfluxClient(mock_config)
 
-        mock_config.get.return_value = {}
+        mock_config.sensor_mapping = {}
 
         humidity_data = {"sensor1": {"hum": None}, "sensor2": {"hum": 50.0}}
 
@@ -426,7 +426,7 @@ class TestConvertSensorIdToName:
         """Test direct sensor ID lookup."""
         client = InfluxClient(mock_config)
 
-        mock_config.get.return_value = {"28-xxxx8a": "TestSensor"}
+        mock_config.sensor_mapping = {"28-xxxx8a": "TestSensor"}
 
         name = client._convert_sensor_id_to_name("28-xxxx8a")
 
@@ -438,7 +438,7 @@ class TestConvertSensorIdToName:
         """Test DS18B20 sensor suffix matching."""
         client = InfluxClient(mock_config)
 
-        mock_config.get.return_value = {"28-abcd8a": "TestSensor"}
+        mock_config.sensor_mapping = {"28-abcd8a": "TestSensor"}
 
         # Should match by last 2 characters
         name = client._convert_sensor_id_to_name("28-xxxx8a")
@@ -451,7 +451,7 @@ class TestConvertSensorIdToName:
         """Test Shelly sensor suffix matching."""
         client = InfluxClient(mock_config)
 
-        mock_config.get.return_value = {"shelly-180": "ShellySensor"}
+        mock_config.sensor_mapping = {"shelly-180": "ShellySensor"}
 
         # Should match by last 3 characters
         name = client._convert_sensor_id_to_name("shelly-180")
@@ -464,7 +464,7 @@ class TestConvertSensorIdToName:
         """Test sensor ID with no mapping."""
         client = InfluxClient(mock_config)
 
-        mock_config.get.return_value = {}
+        mock_config.sensor_mapping = {}
 
         name = client._convert_sensor_id_to_name("unknown-sensor")
 

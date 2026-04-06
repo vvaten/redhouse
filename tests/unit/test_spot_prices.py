@@ -30,14 +30,14 @@ class TestSpotPriceCollection(unittest.TestCase):
         ]
 
         self.mock_config = Mock()
-        self.mock_config.get = lambda key: {
-            "spot_value_added_tax": 1.24,
-            "spot_sellers_margin": 0.50,
-            "spot_production_buyback_margin": 0.30,
-            "spot_transfer_day_price": 2.59,
-            "spot_transfer_night_price": 1.35,
-            "spot_transfer_tax_price": 2.79372,
-        }.get(key)
+        self.mock_config.spot_prices_config = {
+            "value_added_tax": 1.24,
+            "sellers_margin": 0.50,
+            "production_buyback_margin": 0.30,
+            "transfer_day_price": 2.59,
+            "transfer_night_price": 1.35,
+            "transfer_tax_price": 2.79372,
+        }
         self.mock_config.influxdb_bucket_spotprice = "spotprice_test"
 
     def test_process_spot_prices_success(self):
@@ -65,16 +65,15 @@ class TestSpotPriceCollection(unittest.TestCase):
         self.assertEqual(result[0]["price_sell"], expected_sell)
 
     def test_process_spot_prices_missing_config(self):
-        """Test that missing config parameters raise error."""
+        """Test that missing spot price config results in no processed entries."""
         config = Mock()
-        config.get = lambda key: None
+        # spot_prices_config returns a non-dict, causing processing errors
+        config.spot_prices_config = None
 
         raw_prices = [{"DateTime": "2025-10-18T14:00:00+03:00", "PriceNoTax": 10.0}]
 
-        with self.assertRaises(ValueError) as ctx:
-            process_spot_prices(raw_prices, config)
-
-        self.assertIn("Missing required config", str(ctx.exception))
+        result = process_spot_prices(raw_prices, config)
+        self.assertEqual(len(result), 0)
 
     def test_process_spot_prices_quarter_hourly(self):
         """Test processing of 15-minute interval prices."""
@@ -402,14 +401,14 @@ async def test_collect_spot_prices_success():
                             ) as mock_save_status:
                                 # Setup mocks
                                 mock_config = MagicMock()
-                                mock_config.get = lambda key: {
-                                    "spot_value_added_tax": 1.24,
-                                    "spot_sellers_margin": 0.50,
-                                    "spot_production_buyback_margin": 0.30,
-                                    "spot_transfer_day_price": 2.59,
-                                    "spot_transfer_night_price": 1.35,
-                                    "spot_transfer_tax_price": 2.79372,
-                                }.get(key)
+                                mock_config.spot_prices_config = {
+                                    "value_added_tax": 1.24,
+                                    "sellers_margin": 0.50,
+                                    "production_buyback_margin": 0.30,
+                                    "transfer_day_price": 2.59,
+                                    "transfer_night_price": 1.35,
+                                    "transfer_tax_price": 2.79372,
+                                }
                                 mock_get_config.return_value = mock_config
 
                                 mock_load_status.return_value = {"latest_epoch_timestamp": 0}
@@ -479,14 +478,14 @@ async def test_collect_spot_prices_no_processed_data():
                 with patch("src.data_collection.spot_prices.save_spot_prices_to_file"):
                     with patch("src.data_collection.spot_prices.JSONDataLogger"):
                         mock_config = MagicMock()
-                        mock_config.get = lambda key: {
-                            "spot_value_added_tax": 1.24,
-                            "spot_sellers_margin": 0.50,
-                            "spot_production_buyback_margin": 0.30,
-                            "spot_transfer_day_price": 2.59,
-                            "spot_transfer_night_price": 1.35,
-                            "spot_transfer_tax_price": 2.79372,
-                        }.get(key)
+                        mock_config.spot_prices_config = {
+                            "value_added_tax": 1.24,
+                            "sellers_margin": 0.50,
+                            "production_buyback_margin": 0.30,
+                            "transfer_day_price": 2.59,
+                            "transfer_night_price": 1.35,
+                            "transfer_tax_price": 2.79372,
+                        }
                         mock_get_config.return_value = mock_config
 
                         mock_load_status.return_value = {"latest_epoch_timestamp": 0}
@@ -512,14 +511,14 @@ async def test_collect_spot_prices_write_fails():
                             "src.data_collection.spot_prices.write_spot_prices_to_influx"
                         ) as mock_write:
                             mock_config = MagicMock()
-                            mock_config.get = lambda key: {
-                                "spot_value_added_tax": 1.24,
-                                "spot_sellers_margin": 0.50,
-                                "spot_production_buyback_margin": 0.30,
-                                "spot_transfer_day_price": 2.59,
-                                "spot_transfer_night_price": 1.35,
-                                "spot_transfer_tax_price": 2.79372,
-                            }.get(key)
+                            mock_config.spot_prices_config = {
+                                "value_added_tax": 1.24,
+                                "sellers_margin": 0.50,
+                                "production_buyback_margin": 0.30,
+                                "transfer_day_price": 2.59,
+                                "transfer_night_price": 1.35,
+                                "transfer_tax_price": 2.79372,
+                            }
                             mock_get_config.return_value = mock_config
 
                             mock_load_status.return_value = {"latest_epoch_timestamp": 0}
@@ -548,14 +547,14 @@ async def test_collect_spot_prices_dry_run():
                                 "src.data_collection.spot_prices.save_status"
                             ) as mock_save_status:
                                 mock_config = MagicMock()
-                                mock_config.get = lambda key: {
-                                    "spot_value_added_tax": 1.24,
-                                    "spot_sellers_margin": 0.50,
-                                    "spot_production_buyback_margin": 0.30,
-                                    "spot_transfer_day_price": 2.59,
-                                    "spot_transfer_night_price": 1.35,
-                                    "spot_transfer_tax_price": 2.79372,
-                                }.get(key)
+                                mock_config.spot_prices_config = {
+                                    "value_added_tax": 1.24,
+                                    "sellers_margin": 0.50,
+                                    "production_buyback_margin": 0.30,
+                                    "transfer_day_price": 2.59,
+                                    "transfer_night_price": 1.35,
+                                    "transfer_tax_price": 2.79372,
+                                }
                                 mock_get_config.return_value = mock_config
 
                                 mock_load_status.return_value = {"latest_epoch_timestamp": 0}

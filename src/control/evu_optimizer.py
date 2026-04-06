@@ -4,6 +4,7 @@
 import math
 from typing import Any
 
+from src.common.config import get_config
 from src.common.logger import setup_logger
 from src.control.heating_optimizer import HeatingOptimizer
 
@@ -18,13 +19,10 @@ class EvuOptimizer:
     direct heating during high electricity price periods.
 
     Responsible for:
-    - Identifying expensive hours above threshold
+    - Identifying expensive hours above threshold (price_total in EUR/kWh)
     - Grouping consecutive hours with max continuous length limit
     - Merging adjacent groups when possible
     """
-
-    EVU_OFF_THRESHOLD_PRICE = 15.0
-    EVU_OFF_MAX_CONTINUOUS_HOURS = 4
 
     def __init__(self, optimizer: HeatingOptimizer):
         """
@@ -34,6 +32,9 @@ class EvuOptimizer:
             optimizer: HeatingOptimizer instance for filtering priorities
         """
         self.optimizer = optimizer
+        config = get_config()
+        self.EVU_OFF_THRESHOLD_PRICE = config.evuoff_threshold_price
+        self.EVU_OFF_MAX_CONTINUOUS_HOURS = config.evuoff_max_continuous_hours
 
     def generate_evu_off_periods(
         self, df, priorities_df, hours_to_heat: float, date_offset: int
@@ -62,9 +63,9 @@ class EvuOptimizer:
         day_priorities = self.optimizer.filter_day_priorities(priorities_df, date_offset)
 
         expensive_hours = day_priorities[
-            day_priorities["heating_prio"] > self.EVU_OFF_THRESHOLD_PRICE
+            day_priorities["price_total"] > self.EVU_OFF_THRESHOLD_PRICE
         ].sort_values(
-            by="heating_prio", ascending=False
+            by="price_total", ascending=False
         )  # type: ignore[call-overload]
 
         expensive_hours = expensive_hours.head(evu_off_max_hours)

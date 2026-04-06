@@ -31,7 +31,7 @@ class TestHeatingProgramGenerator(unittest.TestCase):
         """Test generator initialization."""
         self.assertIsNotNone(self.generator)
         self.assertEqual(self.generator.VERSION, "2.0.0")
-        self.assertEqual(self.generator.evu_optimizer.EVU_OFF_THRESHOLD_PRICE, 15.0)
+        self.assertEqual(self.generator.evu_optimizer.EVU_OFF_THRESHOLD_PRICE, 0.40)
         self.assertEqual(self.generator.evu_optimizer.EVU_OFF_MAX_CONTINUOUS_HOURS, 4)
 
     def test_loads_configuration(self):
@@ -827,8 +827,8 @@ class TestGenerateEvuOffPeriods(unittest.TestCase):
         timestamps = pd.date_range(
             start="2025-01-15 00:00:00", periods=24, freq="H", tz="Europe/Helsinki"
         )
-        df = pd.DataFrame({"price_total": [10.0] * 24}, index=timestamps)
-        priorities_df = pd.DataFrame({"heating_prio": [10.0] * 24}, index=timestamps)
+        df = pd.DataFrame({"price_total": [0.50] * 24}, index=timestamps)
+        priorities_df = pd.DataFrame({"price_total": [0.50] * 24}, index=timestamps)
 
         self.mock_optimizer.filter_day_priorities.return_value = priorities_df
 
@@ -841,8 +841,8 @@ class TestGenerateEvuOffPeriods(unittest.TestCase):
         timestamps = pd.date_range(
             start="2025-01-15 00:00:00", periods=24, freq="H", tz="Europe/Helsinki"
         )
-        df = pd.DataFrame({"price_total": [5.0] * 24}, index=timestamps)
-        priorities_df = pd.DataFrame({"heating_prio": [5.0] * 24}, index=timestamps)
+        df = pd.DataFrame({"price_total": [0.10] * 24}, index=timestamps)
+        priorities_df = pd.DataFrame({"price_total": [0.10] * 24}, index=timestamps)
 
         self.mock_optimizer.filter_day_priorities.return_value = priorities_df
 
@@ -856,9 +856,9 @@ class TestGenerateEvuOffPeriods(unittest.TestCase):
             start="2025-01-15 00:00:00", periods=24, freq="H", tz="Europe/Helsinki"
         )
 
-        # Make hours 12-15 expensive (above threshold of 15.0)
-        prices = [5.0] * 12 + [20.0] * 4 + [5.0] * 8
-        priorities_df = pd.DataFrame({"heating_prio": prices}, index=timestamps)
+        # Make hours 12-15 expensive (above threshold of 0.40 EUR/kWh)
+        total_prices = [0.10] * 12 + [0.60] * 4 + [0.10] * 8
+        priorities_df = pd.DataFrame({"price_total": total_prices}, index=timestamps)
 
         self.mock_optimizer.filter_day_priorities.return_value = priorities_df
 

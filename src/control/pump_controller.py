@@ -88,16 +88,7 @@ class PumpController:
     def _create_default_hardware(
         self, dry_run: bool = False, shelly_url: Optional[str] = None
     ) -> PumpHardwareInterface:
-        """
-        Create default hardware interface based on environment.
-
-        Args:
-            dry_run: If True, use mock hardware
-            shelly_url: Optional Shelly relay URL (deprecated)
-
-        Returns:
-            Hardware interface implementation
-        """
+        """Create default hardware interface based on environment."""
         # Check for test/staging mode
         staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
         test_mode = os.getenv("TEST_MODE", "false").lower() in ("true", "1", "yes")
@@ -106,10 +97,18 @@ class PumpController:
             logger.info("Using mock hardware interface (test/staging/dry-run mode)")
             return MockHardwareInterface()
 
-        # Try real hardware
+        # Try real hardware with config values
         try:
+            from src.common.config import get_config
+
+            config = get_config()
+            relay = shelly_url or (config.shelly_relay_url + "/relay/0")
             logger.info("Using combined I2C + Shelly hardware interface")
-            return CombinedHardwareInterface(relay_url=shelly_url)
+            return CombinedHardwareInterface(
+                i2c_bus=config.pump_i2c_bus,
+                i2c_address=config.pump_i2c_address,
+                relay_url=relay,
+            )
         except Exception as e:
             logger.warning(f"Hardware initialization failed, using mock: {e}")
             return MockHardwareInterface()
