@@ -16,28 +16,6 @@ from src.common.logger import setup_logger
 logger = setup_logger(__name__, "temperature.log")
 
 # Sensor ID mapping to human-readable names
-SENSOR_NAMES = {
-    "8a": "Hilla",
-    "c1": "Niila",
-    "6a": "Savupiippu",
-    "3e": "Valto",
-    "a0": "PaaMH",
-    "c2": "Pukuhuone",
-    "44": "Kirjasto",
-    "f0": "Eteinen",
-    "4a": "Keittio",
-    "c9": "Tyohuone",
-    "aa": "Leffahuone",
-    "e6": "Kayttovesi ylh",
-    "66": "Kayttovesi alh",
-    "02": "Ulkolampo",
-    "180": "Autotalli",
-    "181": "PaaMH2",
-    "190": "PaaMH3",
-    "191": "YlakertaKH",
-    "192": "KeskikerrosKH",
-    "193": "AlakertaKH",
-}
 
 # Global state for previous temperature readings
 _previous_temps: dict[str, float] = {}
@@ -250,32 +228,34 @@ def get_temperature(meter_id: str) -> Optional[float]:
 
 
 def convert_internal_id_to_influxid(internal_id: str) -> Optional[str]:
-    """Convert internal sensor ID to InfluxDB field name.
+    """Convert internal sensor ID to InfluxDB field name using sensors.yaml.
 
-    Args:
-        internal_id: Full sensor ID (e.g., '28-...6a')
-
-    Returns:
-        Human-readable sensor name, or None if not found
+    Looks up the sensor ID in the config sensor_mapping. Tries direct match
+    first, then suffix matching (last 2 chars for DS18B20, last 3 for Shelly).
     """
-    if str(internal_id)[:2] == "28":
-        conversion_id = internal_id[-2:]
-    elif str(internal_id)[:6] == "shelly":
-        conversion_id = internal_id[-3:]
-    elif str(internal_id)[-4:-1] == "-19":
-        conversion_id = internal_id[-3:]
-    else:
-        logger.warning(f"Unknown internal_id type: {internal_id}")
-        return None
+    config = get_config()
+    sensor_mapping = config.sensor_mapping
 
-    if conversion_id in SENSOR_NAMES:
-        return SENSOR_NAMES.get(conversion_id)
-    else:
-        logger.warning(
-            f"No conversion found for internal_id {internal_id} "
-            f"(conversion_id: {conversion_id})"
-        )
-        return None
+    # Direct lookup
+    if internal_id in sensor_mapping:
+        return sensor_mapping[internal_id]
+
+    # Suffix matching for DS18B20 (last 2 chars)
+    if internal_id.startswith("28-"):
+        suffix = internal_id[-2:]
+        for key, value in sensor_mapping.items():
+            if key.endswith(suffix):
+                return value
+
+    # Suffix matching for Shelly and other sensors (last 3 chars)
+    if internal_id.startswith("shelly") or "-19" in internal_id[-4:]:
+        suffix = internal_id[-3:]
+        for key, value in sensor_mapping.items():
+            if key.endswith(suffix):
+                return value
+
+    logger.warning(f"No sensor mapping found for: {internal_id}")
+    return None
 
 
 # Shelly HT: max 24h stale (energy saving mode only updates on value change)

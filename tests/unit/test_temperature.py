@@ -6,7 +6,6 @@ import unittest
 from unittest.mock import Mock, mock_open, patch
 
 from src.data_collection.temperature import (
-    SENSOR_NAMES,
     SHELLY_HT_MAX_AGE_SECONDS,
     _prepare_influx_fields,
     collect_temperatures,
@@ -21,11 +20,6 @@ from src.data_collection.temperature import (
 
 class TestTemperatureCollection(unittest.TestCase):
     """Test temperature collection functions."""
-
-    def test_sensor_names_no_unicode(self):
-        """Verify sensor names contain no unicode characters."""
-        for name in SENSOR_NAMES.values():
-            self.assertTrue(name.isascii(), f"Name {name} contains non-ASCII characters")
 
     @patch("os.popen")
     def test_get_temperature_meter_ids(self, mock_popen):
@@ -48,17 +42,36 @@ class TestTemperatureCollection(unittest.TestCase):
 
         self.assertEqual(result, [])
 
-    def test_convert_internal_id_to_influxid_ds18b20(self):
-        """Test converting DS18B20 sensor IDs."""
-        self.assertEqual(convert_internal_id_to_influxid("28-000006a"), "Savupiippu")
-        self.assertEqual(convert_internal_id_to_influxid("28-00003e"), "Valto")
+    @patch("src.data_collection.temperature.get_config")
+    def test_convert_internal_id_to_influxid_ds18b20(self, mock_config):
+        """Test converting DS18B20 sensor IDs via direct match."""
+        mock_config.return_value.sensor_mapping = {
+            "28-0000000016a": "SensorA",
+            "28-0000000023e": "SensorB",
+        }
+        self.assertEqual(convert_internal_id_to_influxid("28-0000000016a"), "SensorA")
+        self.assertEqual(convert_internal_id_to_influxid("28-0000000023e"), "SensorB")
 
-    def test_convert_internal_id_to_influxid_shelly(self):
+    @patch("src.data_collection.temperature.get_config")
+    def test_convert_internal_id_to_influxid_suffix(self, mock_config):
+        """Test suffix matching for DS18B20 sensors."""
+        mock_config.return_value.sensor_mapping = {
+            "28-0000000016a": "SensorA",
+        }
+        self.assertEqual(convert_internal_id_to_influxid("28-other6a"), "SensorA")
+
+    @patch("src.data_collection.temperature.get_config")
+    def test_convert_internal_id_to_influxid_shelly(self, mock_config):
         """Test converting Shelly sensor IDs."""
-        self.assertEqual(convert_internal_id_to_influxid("shelly-180"), "Autotalli")
+        mock_config.return_value.sensor_mapping = {
+            "shellyht-AABB-180": "GarageSensor",
+        }
+        self.assertEqual(convert_internal_id_to_influxid("shellyht-AABB-180"), "GarageSensor")
 
-    def test_convert_internal_id_to_influxid_unknown(self):
+    @patch("src.data_collection.temperature.get_config")
+    def test_convert_internal_id_to_influxid_unknown(self, mock_config):
         """Test handling of unknown sensor IDs."""
+        mock_config.return_value.sensor_mapping = {}
         result = convert_internal_id_to_influxid("unknown-type-123")
         self.assertIsNone(result)
 
@@ -232,16 +245,22 @@ class TestTemperatureCollection(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    def test_convert_internal_id_to_influxid_shelly_variant(self):
+    @patch("src.data_collection.temperature.get_config")
+    def test_convert_internal_id_to_influxid_shelly_variant(self, mock_config):
         """Test converting Shelly sensor IDs with different patterns."""
-        self.assertEqual(convert_internal_id_to_influxid("shelly-191"), "YlakertaKH")
+        mock_config.return_value.sensor_mapping = {"device-191": "BathroomSensor"}
+        self.assertEqual(convert_internal_id_to_influxid("shelly-191"), "BathroomSensor")
 
-    def test_convert_internal_id_to_influxid_hyphen19_pattern(self):
+    @patch("src.data_collection.temperature.get_config")
+    def test_convert_internal_id_to_influxid_hyphen19_pattern(self, mock_config):
         """Test converting sensor IDs with -19X pattern."""
-        self.assertEqual(convert_internal_id_to_influxid("device-190"), "PaaMH3")
+        mock_config.return_value.sensor_mapping = {"SomeDevice-190": "BedroomSensor"}
+        self.assertEqual(convert_internal_id_to_influxid("device-190"), "BedroomSensor")
 
-    def test_convert_internal_id_to_influxid_not_in_mapping(self):
+    @patch("src.data_collection.temperature.get_config")
+    def test_convert_internal_id_to_influxid_not_in_mapping(self, mock_config):
         """Test converting valid format but sensor not in mapping."""
+        mock_config.return_value.sensor_mapping = {}
         result = convert_internal_id_to_influxid("28-000099")
         self.assertIsNone(result)
 
@@ -255,6 +274,10 @@ class TestWriteToInflux(unittest.TestCase):
         """Test successful write to InfluxDB."""
         mock_config_obj = Mock()
         mock_config_obj.influxdb_bucket_temperatures = "temperatures_test"
+        mock_config_obj.sensor_mapping = {
+            "28-000006a": "SensorA",
+            "28-00003e": "SensorB",
+        }
         mock_config.return_value = mock_config_obj
 
         mock_influx = Mock()
@@ -272,14 +295,15 @@ class TestWriteToInflux(unittest.TestCase):
         mock_influx.write_point.assert_called_once()
         call_args = mock_influx.write_point.call_args
         self.assertEqual(call_args[1]["measurement"], "temperatures")
-        self.assertEqual(call_args[1]["fields"]["Savupiippu"], 21.5)
-        self.assertEqual(call_args[1]["fields"]["Valto"], 22.0)
+        self.assertEqual(call_args[1]["fields"]["SensorA"], 21.5)
+        self.assertEqual(call_args[1]["fields"]["SensorB"], 22.0)
 
     @patch("src.data_collection.temperature.get_config")
     def test_write_temperatures_to_influx_dry_run(self, mock_config):
         """Test dry-run mode (no actual write)."""
         mock_config_obj = Mock()
         mock_config_obj.influxdb_bucket_temperatures = "temperatures_test"
+        mock_config_obj.sensor_mapping = {"28-000006a": "SensorA"}
         mock_config.return_value = mock_config_obj
 
         temp_status = {"28-000006a": {"temp": 21.5, "updated": 1234567890.0}}
@@ -292,6 +316,7 @@ class TestWriteToInflux(unittest.TestCase):
     def test_write_temperatures_to_influx_no_valid_fields(self, mock_config):
         """Test handling of no valid temperature fields."""
         mock_config_obj = Mock()
+        mock_config_obj.sensor_mapping = {}
         mock_config.return_value = mock_config_obj
 
         # Unknown sensor ID that won't convert
@@ -306,6 +331,7 @@ class TestWriteToInflux(unittest.TestCase):
     def test_write_temperatures_to_influx_write_failure(self, mock_influx_cls, mock_config):
         """Test handling of InfluxDB write failure."""
         mock_config_obj = Mock()
+        mock_config_obj.sensor_mapping = {"28-000006a": "SensorA"}
         mock_config.return_value = mock_config_obj
 
         mock_influx = Mock()
@@ -323,6 +349,7 @@ class TestWriteToInflux(unittest.TestCase):
     def test_write_temperatures_to_influx_exception(self, mock_influx_cls, mock_config):
         """Test handling of exception during write."""
         mock_config_obj = Mock()
+        mock_config_obj.sensor_mapping = {"28-000006a": "SensorA"}
         mock_config.return_value = mock_config_obj
 
         # Make InfluxClient throw exception
@@ -405,21 +432,31 @@ class TestLoadShellyHtData(unittest.TestCase):
 class TestPrepareInfluxFields(unittest.TestCase):
     """Test _prepare_influx_fields helper."""
 
-    def test_temps_and_humidity(self):
+    @patch("src.data_collection.temperature.get_config")
+    def test_temps_and_humidity(self, mock_config):
         """Test extracting both temperature and humidity fields."""
+        mock_config.return_value.sensor_mapping = {
+            "28-000006a": "SensorA",
+            "shellyht-AABB-180": "GarageSensor",
+        }
         status = {
             "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
-            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
+            "shellyht-AABB-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
         }
         temp_fields, hum_fields = _prepare_influx_fields(status)
 
-        self.assertEqual(temp_fields["Savupiippu"], 21.5)
-        self.assertEqual(temp_fields["Autotalli"], 6.12)
-        self.assertEqual(hum_fields["Autotalli"], 72.0)
-        self.assertNotIn("Savupiippu", hum_fields)
+        self.assertEqual(temp_fields["SensorA"], 21.5)
+        self.assertEqual(temp_fields["GarageSensor"], 6.12)
+        self.assertEqual(hum_fields["GarageSensor"], 72.0)
+        self.assertNotIn("SensorA", hum_fields)
 
-    def test_no_humidity(self):
+    @patch("src.data_collection.temperature.get_config")
+    def test_no_humidity(self, mock_config):
         """Test that 1-wire sensors produce no humidity fields."""
+        mock_config.return_value.sensor_mapping = {
+            "28-000006a": "SensorA",
+            "28-00003e": "SensorB",
+        }
         status = {
             "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
             "28-00003e": {"temp": 22.0, "updated": 1234567890.0},
@@ -429,8 +466,10 @@ class TestPrepareInfluxFields(unittest.TestCase):
         self.assertEqual(len(temp_fields), 2)
         self.assertEqual(len(hum_fields), 0)
 
-    def test_unknown_sensor_skipped(self):
+    @patch("src.data_collection.temperature.get_config")
+    def test_unknown_sensor_skipped(self, mock_config):
         """Test that unknown sensor IDs are skipped."""
+        mock_config.return_value.sensor_mapping = {}
         status = {
             "unknown-xyz": {"temp": 21.5, "hum": 50.0, "updated": 1234567890.0},
         }
@@ -449,6 +488,10 @@ class TestWriteHumidityToInflux(unittest.TestCase):
         """Test that both temperatures and humidities are written."""
         mock_config_obj = Mock()
         mock_config_obj.influxdb_bucket_temperatures = "temperatures_test"
+        mock_config_obj.sensor_mapping = {
+            "28-000006a": "SensorA",
+            "shellyht-AABB-180": "GarageSensor",
+        }
         mock_config.return_value = mock_config_obj
 
         mock_influx = Mock()
@@ -457,7 +500,7 @@ class TestWriteHumidityToInflux(unittest.TestCase):
 
         temp_status = {
             "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
-            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
+            "shellyht-AABB-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
         }
 
         result = write_temperatures_to_influx(temp_status)
@@ -467,13 +510,14 @@ class TestWriteHumidityToInflux(unittest.TestCase):
         calls = mock_influx.write_point.call_args_list
         self.assertEqual(calls[0][1]["measurement"], "temperatures")
         self.assertEqual(calls[1][1]["measurement"], "humidities")
-        self.assertEqual(calls[1][1]["fields"]["Autotalli"], 72.0)
+        self.assertEqual(calls[1][1]["fields"]["GarageSensor"], 72.0)
 
     @patch("src.data_collection.temperature.get_config")
     @patch("src.data_collection.temperature.InfluxClient")
     def test_skips_humidity_when_none(self, mock_influx_cls, mock_config):
         """Test that humidity write is skipped when no humidity data."""
         mock_config_obj = Mock()
+        mock_config_obj.sensor_mapping = {"28-000006a": "SensorA"}
         mock_config.return_value = mock_config_obj
 
         mock_influx = Mock()
@@ -494,11 +538,15 @@ class TestWriteHumidityToInflux(unittest.TestCase):
         """Test that dry-run logs humidity data."""
         mock_config_obj = Mock()
         mock_config_obj.influxdb_bucket_temperatures = "temperatures_test"
+        mock_config_obj.sensor_mapping = {
+            "28-000006a": "SensorA",
+            "shellyht-AABB-180": "GarageSensor",
+        }
         mock_config.return_value = mock_config_obj
 
         temp_status = {
             "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
-            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
+            "shellyht-AABB-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
         }
 
         result = write_temperatures_to_influx(temp_status, dry_run=True)
