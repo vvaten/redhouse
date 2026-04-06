@@ -454,6 +454,7 @@ class TestAnalytics1HourAggregator:
         sample_spotprice,
         sample_weather,
         sample_temperatures,
+        sample_humidities,
         time_window,
     ):
         """Test the full aggregation pipeline."""
@@ -464,6 +465,7 @@ class TestAnalytics1HourAggregator:
         aggregator._fetch_spotprice_data = MagicMock(return_value=sample_spotprice)
         aggregator._fetch_weather_data = MagicMock(return_value=sample_weather)
         aggregator._fetch_temperatures_data = MagicMock(return_value=sample_temperatures)
+        aggregator._fetch_humidities_data = MagicMock(return_value=sample_humidities)
 
         # Mock the write to avoid config errors
         aggregator.write_results = MagicMock(return_value=True)

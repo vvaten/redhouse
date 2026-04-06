@@ -260,6 +260,7 @@ class TestAnalyticsAggregatorBase:
         aggregator._fetch_spotprice_data = MagicMock(return_value={"test": "spotprice"})
         aggregator._fetch_weather_data = MagicMock(return_value={"test": "weather"})
         aggregator._fetch_temperatures_data = MagicMock(return_value={"test": "temperatures"})
+        aggregator._fetch_humidities_data = MagicMock(return_value={"test": "humidities"})
 
         raw_data = aggregator.fetch_data(window_start, window_end)
 
@@ -267,11 +268,13 @@ class TestAnalyticsAggregatorBase:
         assert raw_data["spotprice"] == {"test": "spotprice"}
         assert raw_data["weather"] == {"test": "weather"}
         assert raw_data["temperatures"] == {"test": "temperatures"}
+        assert raw_data["humidities"] == {"test": "humidities"}
 
         aggregator._fetch_emeters_5min_data.assert_called_once_with(window_start, window_end)
         aggregator._fetch_spotprice_data.assert_called_once_with(window_end)
         aggregator._fetch_weather_data.assert_called_once_with(window_start, window_end)
         aggregator._fetch_temperatures_data.assert_called_once_with(window_start, window_end)
+        aggregator._fetch_humidities_data.assert_called_once_with(window_start, window_end)
 
     def test_validate_data_with_emeters(self, aggregator):
         """Test validation with emeters data."""
