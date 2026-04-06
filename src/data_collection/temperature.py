@@ -1,7 +1,8 @@
 #!/usr/bin/env python
-"""Temperature data collection from 1-wire DS18B20 sensors."""
+"""Temperature data collection from 1-wire DS18B20 and Shelly HT sensors."""
 
 import datetime
+import json
 import os
 import time
 from statistics import median
@@ -277,22 +278,61 @@ def convert_internal_id_to_influxid(internal_id: str) -> Optional[str]:
         return None
 
 
-def collect_temperatures() -> dict[str, dict[str, float]]:
-    """Collect temperatures from all available 1-wire sensors.
+# Shelly HT: max 24h stale (energy saving mode only updates on value change)
+SHELLY_HT_MAX_AGE_SECONDS = 86400
+# Path to Shelly HT status file (written by shelly_ht_to_fissio_rest_api.py)
+SHELLY_HT_STATUS_FILE = "/home/pi/wibatemp/temperature_status.json"
 
-    Returns:
-        Dictionary mapping sensor IDs to temperature data with format:
-        {
-            'sensor_id': {
-                'temp': temperature_celsius,
-                'updated': unix_timestamp
-            }
-        }
-    """
+
+def load_shelly_ht_data(status_file: str = SHELLY_HT_STATUS_FILE) -> dict[str, dict]:
+    """Load Shelly HT sensor data from temperature_status.json."""
+    if not os.path.exists(status_file):
+        logger.debug(f"Shelly HT status file not found: {status_file}")
+        return {}
+
+    try:
+        with open(status_file) as f:
+            all_data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to read Shelly HT status file: {e}")
+        return {}
+
+    now = time.time()
+    shelly_data = {}
+
+    for sensor_id, data in all_data.items():
+        # Skip 1-wire sensors (those are read directly)
+        if sensor_id.startswith("28-"):
+            continue
+
+        # Skip stale data
+        updated = data.get("updated", 0)
+        age = now - updated
+        if age > SHELLY_HT_MAX_AGE_SECONDS:
+            logger.warning(
+                f"Shelly HT sensor {sensor_id} stale for {age / 3600:.1f}h "
+                f"- check battery or reset device"
+            )
+            continue
+
+        if data.get("temp") is not None:
+            shelly_data[sensor_id] = data
+            logger.debug(
+                f"Loaded Shelly HT: {sensor_id} temp={data.get('temp')} hum={data.get('hum')}"
+            )
+
+    if shelly_data:
+        logger.info(f"Loaded {len(shelly_data)} Shelly HT sensors from {status_file}")
+
+    return shelly_data
+
+
+def collect_temperatures() -> dict[str, dict[str, float]]:
+    """Collect temperatures from 1-wire DS18B20 and Shelly HT sensors."""
     temperature_status = {}
     meter_ids = get_temperature_meter_ids()
 
-    logger.info(f"Found {len(meter_ids)} temperature sensors")
+    logger.info(f"Found {len(meter_ids)} 1-wire temperature sensors")
 
     for meter_id in meter_ids:
         # Skip faulty sensors
@@ -304,6 +344,10 @@ def collect_temperatures() -> dict[str, dict[str, float]]:
 
         if temp is not None:
             temperature_status[meter_id] = {"temp": temp, "updated": time.time()}
+
+    # Merge Shelly HT data (temp + humidity)
+    shelly_data = load_shelly_ht_data()
+    temperature_status.update(shelly_data)
 
     # Log raw data to JSON for backup (30 days retention for local sensor data)
     json_logger = JSONDataLogger("temperature")
@@ -318,27 +362,39 @@ def collect_temperatures() -> dict[str, dict[str, float]]:
     return temperature_status
 
 
+def _prepare_influx_fields(
+    temperature_status: dict[str, dict],
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Convert sensor data to InfluxDB field dicts.
+
+    Returns:
+        Tuple of (temp_fields, hum_fields) with human-readable sensor names as keys.
+    """
+    temp_fields = {}
+    hum_fields = {}
+    for temp_id, temp_data in temperature_status.items():
+        influx_id = convert_internal_id_to_influxid(temp_id)
+        if influx_id is None:
+            continue
+        if temp_data.get("temp") is not None:
+            temp_fields[influx_id] = float(temp_data["temp"])
+        if temp_data.get("hum") is not None:
+            hum_fields[influx_id] = float(temp_data["hum"])
+    return temp_fields, hum_fields
+
+
 def write_temperatures_to_influx(
     temperature_status: dict[str, dict[str, float]], dry_run: bool = False
 ) -> bool:
-    """Write temperature data to InfluxDB.
+    """Write temperature and humidity data to InfluxDB.
 
-    Args:
-        temperature_status: Temperature data from collect_temperatures()
-        dry_run: If True, only log what would be written without actually writing
-
-    Returns:
-        True if successful, False otherwise
+    Writes temperatures to 'temperatures' measurement and humidity
+    to 'humidities' measurement (same bucket), matching wibatemp format.
     """
     config = get_config()
 
     try:
-        # Prepare temperature fields
-        temp_fields = {}
-        for temp_id, temp_data in temperature_status.items():
-            influx_id = convert_internal_id_to_influxid(temp_id)
-            if influx_id is not None:
-                temp_fields[influx_id] = float(temp_data["temp"])
+        temp_fields, hum_fields = _prepare_influx_fields(temperature_status)
 
         if not temp_fields:
             logger.warning("No valid temperature fields to write")
@@ -347,23 +403,31 @@ def write_temperatures_to_influx(
         timestamp = datetime.datetime.utcnow()
 
         if dry_run:
-            logger.info(f"[DRY-RUN] Would write {len(temp_fields)} temperatures to InfluxDB:")
-            for field_name, value in temp_fields.items():
-                logger.info(f"[DRY-RUN]   {field_name}: {value} C")
-            logger.info(f"[DRY-RUN] Timestamp: {timestamp}")
+            logger.info(f"[DRY-RUN] Would write {len(temp_fields)} temperatures to InfluxDB")
+            if hum_fields:
+                logger.info(f"[DRY-RUN] Would write {len(hum_fields)} humidities to InfluxDB")
             logger.info(f"[DRY-RUN] Bucket: {config.influxdb_bucket_temperatures}")
             return True
 
-        # Write to InfluxDB
         influx = InfluxClient(config)
+
         success = influx.write_point(
             measurement="temperatures", fields=temp_fields, timestamp=timestamp
         )
-
         if success:
             logger.info(f"Wrote {len(temp_fields)} temperatures to InfluxDB at {timestamp}")
         else:
             logger.error("Failed to write temperatures to InfluxDB")
+            return False
+
+        if hum_fields:
+            hum_success = influx.write_point(
+                measurement="humidities", fields=hum_fields, timestamp=timestamp
+            )
+            if hum_success:
+                logger.info(f"Wrote {len(hum_fields)} humidities to InfluxDB")
+            else:
+                logger.warning("Failed to write humidities to InfluxDB")
 
         return success
 

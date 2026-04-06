@@ -1,14 +1,19 @@
 """Unit tests for temperature data collection."""
 
+import json
+import time
 import unittest
 from unittest.mock import Mock, mock_open, patch
 
 from src.data_collection.temperature import (
     SENSOR_NAMES,
+    SHELLY_HT_MAX_AGE_SECONDS,
+    _prepare_influx_fields,
     collect_temperatures,
     convert_internal_id_to_influxid,
     get_temperature,
     get_temperature_meter_ids,
+    load_shelly_ht_data,
     main,
     write_temperatures_to_influx,
 )
@@ -328,6 +333,199 @@ class TestWriteToInflux(unittest.TestCase):
         result = write_temperatures_to_influx(temp_status)
 
         self.assertFalse(result)
+
+
+class TestLoadShellyHtData(unittest.TestCase):
+    """Test Shelly HT data loading from temperature_status.json."""
+
+    def test_load_shelly_ht_data_success(self):
+        """Test loading valid Shelly HT data."""
+        now = time.time()
+        status_data = {
+            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": now - 60},
+            "MasterBedroom-190": {"temp": 19.3, "hum": 35.0, "updated": now - 120},
+            "28-00000de4d34a": {"temp": 20.75, "updated": now - 10},
+        }
+        json_str = json.dumps(status_data)
+
+        with patch("os.path.exists", return_value=True):
+            with patch("builtins.open", mock_open(read_data=json_str)):
+                result = load_shelly_ht_data("/fake/path.json")
+
+        self.assertEqual(len(result), 2)
+        self.assertIn("shellyht-02D824-180", result)
+        self.assertIn("MasterBedroom-190", result)
+        self.assertNotIn("28-00000de4d34a", result)
+        self.assertEqual(result["shellyht-02D824-180"]["hum"], 72.0)
+
+    def test_load_shelly_ht_data_skips_stale(self):
+        """Test that stale Shelly HT data is skipped."""
+        old_time = time.time() - SHELLY_HT_MAX_AGE_SECONDS - 100
+        status_data = {
+            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": old_time},
+        }
+        json_str = json.dumps(status_data)
+
+        with patch("os.path.exists", return_value=True):
+            with patch("builtins.open", mock_open(read_data=json_str)):
+                result = load_shelly_ht_data("/fake/path.json")
+
+        self.assertEqual(len(result), 0)
+
+    def test_load_shelly_ht_data_file_missing(self):
+        """Test graceful handling when status file doesn't exist."""
+        with patch("os.path.exists", return_value=False):
+            result = load_shelly_ht_data("/fake/path.json")
+
+        self.assertEqual(result, {})
+
+    def test_load_shelly_ht_data_invalid_json(self):
+        """Test graceful handling of corrupt JSON file."""
+        with patch("os.path.exists", return_value=True):
+            with patch("builtins.open", mock_open(read_data="not valid json{")):
+                result = load_shelly_ht_data("/fake/path.json")
+
+        self.assertEqual(result, {})
+
+    def test_load_shelly_ht_data_skips_no_temp(self):
+        """Test that entries without temp are skipped."""
+        now = time.time()
+        status_data = {
+            "shellyht-02D824-180": {"hum": 72.0, "updated": now - 60},
+        }
+        json_str = json.dumps(status_data)
+
+        with patch("os.path.exists", return_value=True):
+            with patch("builtins.open", mock_open(read_data=json_str)):
+                result = load_shelly_ht_data("/fake/path.json")
+
+        self.assertEqual(len(result), 0)
+
+
+class TestPrepareInfluxFields(unittest.TestCase):
+    """Test _prepare_influx_fields helper."""
+
+    def test_temps_and_humidity(self):
+        """Test extracting both temperature and humidity fields."""
+        status = {
+            "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
+            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
+        }
+        temp_fields, hum_fields = _prepare_influx_fields(status)
+
+        self.assertEqual(temp_fields["Savupiippu"], 21.5)
+        self.assertEqual(temp_fields["Autotalli"], 6.12)
+        self.assertEqual(hum_fields["Autotalli"], 72.0)
+        self.assertNotIn("Savupiippu", hum_fields)
+
+    def test_no_humidity(self):
+        """Test that 1-wire sensors produce no humidity fields."""
+        status = {
+            "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
+            "28-00003e": {"temp": 22.0, "updated": 1234567890.0},
+        }
+        temp_fields, hum_fields = _prepare_influx_fields(status)
+
+        self.assertEqual(len(temp_fields), 2)
+        self.assertEqual(len(hum_fields), 0)
+
+    def test_unknown_sensor_skipped(self):
+        """Test that unknown sensor IDs are skipped."""
+        status = {
+            "unknown-xyz": {"temp": 21.5, "hum": 50.0, "updated": 1234567890.0},
+        }
+        temp_fields, hum_fields = _prepare_influx_fields(status)
+
+        self.assertEqual(len(temp_fields), 0)
+        self.assertEqual(len(hum_fields), 0)
+
+
+class TestWriteHumidityToInflux(unittest.TestCase):
+    """Test humidity writing in write_temperatures_to_influx."""
+
+    @patch("src.data_collection.temperature.get_config")
+    @patch("src.data_collection.temperature.InfluxClient")
+    def test_writes_both_temps_and_humidity(self, mock_influx_cls, mock_config):
+        """Test that both temperatures and humidities are written."""
+        mock_config_obj = Mock()
+        mock_config_obj.influxdb_bucket_temperatures = "temperatures_test"
+        mock_config.return_value = mock_config_obj
+
+        mock_influx = Mock()
+        mock_influx.write_point.return_value = True
+        mock_influx_cls.return_value = mock_influx
+
+        temp_status = {
+            "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
+            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
+        }
+
+        result = write_temperatures_to_influx(temp_status)
+
+        self.assertTrue(result)
+        self.assertEqual(mock_influx.write_point.call_count, 2)
+        calls = mock_influx.write_point.call_args_list
+        self.assertEqual(calls[0][1]["measurement"], "temperatures")
+        self.assertEqual(calls[1][1]["measurement"], "humidities")
+        self.assertEqual(calls[1][1]["fields"]["Autotalli"], 72.0)
+
+    @patch("src.data_collection.temperature.get_config")
+    @patch("src.data_collection.temperature.InfluxClient")
+    def test_skips_humidity_when_none(self, mock_influx_cls, mock_config):
+        """Test that humidity write is skipped when no humidity data."""
+        mock_config_obj = Mock()
+        mock_config.return_value = mock_config_obj
+
+        mock_influx = Mock()
+        mock_influx.write_point.return_value = True
+        mock_influx_cls.return_value = mock_influx
+
+        temp_status = {
+            "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
+        }
+
+        result = write_temperatures_to_influx(temp_status)
+
+        self.assertTrue(result)
+        mock_influx.write_point.assert_called_once()
+
+    @patch("src.data_collection.temperature.get_config")
+    def test_dry_run_shows_humidity(self, mock_config):
+        """Test that dry-run logs humidity data."""
+        mock_config_obj = Mock()
+        mock_config_obj.influxdb_bucket_temperatures = "temperatures_test"
+        mock_config.return_value = mock_config_obj
+
+        temp_status = {
+            "28-000006a": {"temp": 21.5, "updated": 1234567890.0},
+            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
+        }
+
+        result = write_temperatures_to_influx(temp_status, dry_run=True)
+
+        self.assertTrue(result)
+
+
+class TestCollectTemperaturesWithShelly(unittest.TestCase):
+    """Test collect_temperatures merges Shelly HT data."""
+
+    @patch("src.data_collection.temperature.load_shelly_ht_data")
+    @patch("src.data_collection.temperature.get_temperature_meter_ids")
+    @patch("src.data_collection.temperature.get_temperature")
+    def test_merges_shelly_data(self, mock_get_temp, mock_get_ids, mock_shelly):
+        """Test that Shelly HT data is merged with 1-wire data."""
+        mock_get_ids.return_value = ["28-000006a"]
+        mock_get_temp.return_value = 21.5
+        mock_shelly.return_value = {
+            "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": 1234567890.0},
+        }
+
+        result = collect_temperatures()
+
+        self.assertEqual(len(result), 2)
+        self.assertIn("28-000006a", result)
+        self.assertIn("shellyht-02D824-180", result)
+        self.assertEqual(result["shellyht-02D824-180"]["hum"], 72.0)
 
 
 class TestMain(unittest.TestCase):
