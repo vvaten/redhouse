@@ -358,5 +358,81 @@ This mistake led to better tooling and procedures that will prevent future issue
 
 ---
 
-**Last Updated**: 2025-10-18
-**Document Version**: 1.0
+## Lesson 2: Sensor Name Compatibility (2026-04-06)
+
+### What Happened
+
+During the first production temperature collection test, redhouse wrote
+sensor names using ASCII (e.g., "Kayttovesi ylh", "PaaMH", "Keittio")
+while wibatemp uses Finnish umlauts (e.g., "Kayttovesi ylh", "PaaMH",
+"Keittio"). This created duplicate fields in InfluxDB - both the ASCII
+and umlaut versions existed side by side.
+
+### Why This Was a Problem
+
+- InfluxDB stores fields by name - different names = different time series
+- Grafana dashboard queries filtered by specific field names, missing some
+- InfluxDB delete API cannot delete by field name, only by measurement/tag
+- Cleaning up required deleting entire time windows of data
+
+### How We Fixed It
+
+1. Removed hardcoded SENSOR_NAMES constant from temperature.py
+2. Made sensors.yaml the single source of truth for sensor name mapping
+3. Updated sensors.yaml on Pi with exact wibatemp names (including umlauts)
+4. Updated both Grafana dashboard JSONs with umlaut names in queries
+5. Deleted the 15 minutes of ASCII-named data from InfluxDB
+
+### Prevention
+
+- **Single source of truth**: Configuration should exist in exactly one place
+- **Match existing data**: When taking over from another system, verify
+  field names match exactly (including character encoding)
+- **Check dashboards too**: When changing field names, grep both code AND
+  dashboard JSON files
+
+---
+
+## Lesson 3: Log Replay Timestamps (2026-04-06)
+
+### What Happened
+
+The JSON log replay tool (replay_json_logs.py) wrote replayed temperature
+data at wrong timestamps:
+
+1. First attempt: Used datetime.utcnow() instead of the log's original
+   timestamp. All 79 replayed points landed at the current time.
+
+2. Second attempt: Parsed the log timestamp but assumed it was UTC. Log
+   timestamps are actually local time (Europe/Helsinki, UTC+3). Data
+   landed 3 hours in the future.
+
+### Why This Was a Problem
+
+- 79 duplicate temperature points at wrong timestamps in production DB
+- Visible as spikes/artifacts in Grafana dashboards
+- Required manual InfluxDB deletion to clean up
+- InfluxDB cannot delete by field, so entire time windows had to go
+
+### How We Fixed It
+
+1. Added optional timestamp parameter to write_temperatures_to_influx()
+2. Replay handler now passes original log timestamp to write function
+3. Added timezone conversion: local time -> UTC (using pytz)
+4. Added --start and --stop time filters to replay tool
+5. Deleted the wrongly-timestamped data from InfluxDB
+6. Re-replayed with correct timezone handling
+
+### Prevention
+
+- **Always dry-run first**: replay_json_logs.py --dry-run shows what would
+  be written, including timestamps. Verify before writing.
+- **Be explicit about timezones**: Naive datetime objects are ambiguous.
+  Always know if a timestamp is local or UTC.
+- **Log timestamps should include timezone**: The JSON data logger should
+  save timezone-aware timestamps to avoid ambiguity.
+
+---
+
+**Last Updated**: 2026-04-06
+**Document Version**: 2.0
