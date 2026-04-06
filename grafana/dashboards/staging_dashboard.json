@@ -1606,7 +1606,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "Ulkolampo"
+                            "options": "Ulkolämpö"
                         },
                         "properties": [
                             {
@@ -2060,7 +2060,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "PaaMH2"
+                            "options": "PääMH2"
                         },
                         "properties": [
                             {
@@ -2075,7 +2075,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "PaaMH"
+                            "options": "PääMH"
                         },
                         "properties": [
                             {
@@ -2090,7 +2090,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "Tyohuone"
+                            "options": "Työhuone"
                         },
                         "properties": [
                             {
@@ -2105,7 +2105,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "Keittio"
+                            "options": "Keittiö"
                         },
                         "properties": [
                             {
@@ -2150,7 +2150,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "PaaMH3"
+                            "options": "PääMH3"
                         },
                         "properties": [
                             {
@@ -2165,7 +2165,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "YlakertaKH"
+                            "options": "YläkertaKH"
                         },
                         "properties": [
                             {
@@ -2237,7 +2237,7 @@
                         "type": "influxdb",
                         "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
                     },
-                    "query": "windowDuration = int(v: v.timeRangeStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"temperatures\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"temperatures\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Hilla\" or r[\"_field\"] == \"Niila\" or r[\"_field\"] == \"Savupiippu\" or\n    r[\"_field\"] == \"Valto\" or r[\"_field\"] == \"PaaMH\" or r[\"_field\"] == \"Pukuhuone\" or\n    r[\"_field\"] == \"Kirjasto\" or r[\"_field\"] == \"Eteinen\" or r[\"_field\"] == \"Keittio\" or\n    r[\"_field\"] == \"Tyohuone\" or r[\"_field\"] == \"Leffahuone\" or r[\"_field\"] == \"PaaMH2\" or\n    r[\"_field\"] == \"PaaMH3\" or r[\"_field\"] == \"YlakertaKH\" or r[\"_field\"] == \"KeskikerrosKH\" or\n    r[\"_field\"] == \"AlakertaKH\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min_staging\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Hilla\" or r[\"_field\"] == \"Niila\" or r[\"_field\"] == \"Savupiippu\" or\n    r[\"_field\"] == \"Valto\" or r[\"_field\"] == \"PaaMH\" or r[\"_field\"] == \"Pukuhuone\" or\n    r[\"_field\"] == \"Kirjasto\" or r[\"_field\"] == \"Eteinen\" or r[\"_field\"] == \"Keittio\" or\n    r[\"_field\"] == \"Tyohuone\" or r[\"_field\"] == \"Leffahuone\" or r[\"_field\"] == \"PaaMH2\" or\n    r[\"_field\"] == \"PaaMH3\" or r[\"_field\"] == \"YlakertaKH\" or r[\"_field\"] == \"KeskikerrosKH\" or\n    r[\"_field\"] == \"AlakertaKH\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt3 = from(bucket: \"analytics_1hour_staging\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Hilla\" or r[\"_field\"] == \"Niila\" or r[\"_field\"] == \"Savupiippu\" or\n    r[\"_field\"] == \"Valto\" or r[\"_field\"] == \"PaaMH\" or r[\"_field\"] == \"Pukuhuone\" or\n    r[\"_field\"] == \"Kirjasto\" or r[\"_field\"] == \"Eteinen\" or r[\"_field\"] == \"Keittio\" or\n    r[\"_field\"] == \"Tyohuone\" or r[\"_field\"] == \"Leffahuone\" or r[\"_field\"] == \"PaaMH2\" or\n    r[\"_field\"] == \"PaaMH3\" or r[\"_field\"] == \"YlakertaKH\" or r[\"_field\"] == \"KeskikerrosKH\" or\n    r[\"_field\"] == \"AlakertaKH\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
+                    "query": "windowDuration = int(v: v.timeRangeStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"temperatures\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"temperatures\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Hilla\" or r[\"_field\"] == \"Niila\" or r[\"_field\"] == \"Savupiippu\" or\n    r[\"_field\"] == \"Valto\" or r[\"_field\"] == \"PääMH\" or r[\"_field\"] == \"Pukuhuone\" or\n    r[\"_field\"] == \"Kirjasto\" or r[\"_field\"] == \"Eteinen\" or r[\"_field\"] == \"Keittiö\" or\n    r[\"_field\"] == \"Työhuone\" or r[\"_field\"] == \"Leffahuone\" or r[\"_field\"] == \"PääMH2\" or\n    r[\"_field\"] == \"PääMH3\" or r[\"_field\"] == \"YläkertaKH\" or r[\"_field\"] == \"KeskikerrosKH\" or\n    r[\"_field\"] == \"AlakertaKH\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min_staging\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Hilla\" or r[\"_field\"] == \"Niila\" or r[\"_field\"] == \"Savupiippu\" or\n    r[\"_field\"] == \"Valto\" or r[\"_field\"] == \"PääMH\" or r[\"_field\"] == \"Pukuhuone\" or\n    r[\"_field\"] == \"Kirjasto\" or r[\"_field\"] == \"Eteinen\" or r[\"_field\"] == \"Keittiö\" or\n    r[\"_field\"] == \"Työhuone\" or r[\"_field\"] == \"Leffahuone\" or r[\"_field\"] == \"PääMH2\" or\n    r[\"_field\"] == \"PääMH3\" or r[\"_field\"] == \"YläkertaKH\" or r[\"_field\"] == \"KeskikerrosKH\" or\n    r[\"_field\"] == \"AlakertaKH\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt3 = from(bucket: \"analytics_1hour_staging\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Hilla\" or r[\"_field\"] == \"Niila\" or r[\"_field\"] == \"Savupiippu\" or\n    r[\"_field\"] == \"Valto\" or r[\"_field\"] == \"PääMH\" or r[\"_field\"] == \"Pukuhuone\" or\n    r[\"_field\"] == \"Kirjasto\" or r[\"_field\"] == \"Eteinen\" or r[\"_field\"] == \"Keittiö\" or\n    r[\"_field\"] == \"Työhuone\" or r[\"_field\"] == \"Leffahuone\" or r[\"_field\"] == \"PääMH2\" or\n    r[\"_field\"] == \"PääMH3\" or r[\"_field\"] == \"YläkertaKH\" or r[\"_field\"] == \"KeskikerrosKH\" or\n    r[\"_field\"] == \"AlakertaKH\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
                     "refId": "A"
                 }
             ],
@@ -2481,7 +2481,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "Kayttovesi ylh"
+                            "options": "Käyttövesi ylh"
                         },
                         "properties": [
                             {
@@ -2500,7 +2500,7 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "Kayttovesi alh"
+                            "options": "Käyttövesi alh"
                         },
                         "properties": [
                             {

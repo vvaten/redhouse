@@ -11,6 +11,8 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
+import pytz
+
 from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
 
@@ -159,19 +161,21 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
     if data is None:
         return False
 
-    # Parse timestamp string to datetime for handlers that need it
+    # Parse timestamp string to datetime for handlers that need it.
+    # Log timestamps are naive local time. Convert to naive UTC to match
+    # how write_temperatures_to_influx normally writes (datetime.utcnow()).
     log_timestamp = None
     if timestamp:
-
         try:
+            local_tz = pytz.timezone("Europe/Helsinki")
             log_timestamp = datetime.datetime.fromisoformat(timestamp)
-            # Convert to UTC if naive
             if log_timestamp.tzinfo is None:
-                log_timestamp = log_timestamp.replace(tzinfo=datetime.timezone.utc)
-            else:
-                log_timestamp = log_timestamp.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-        except (ValueError, TypeError):
-            logger.warning(f"Could not parse timestamp: {timestamp}")
+                # Naive timestamp = local time on Pi
+                log_timestamp = local_tz.localize(log_timestamp)
+            # Convert to naive UTC (matching utcnow() format)
+            log_timestamp = log_timestamp.astimezone(pytz.utc).replace(tzinfo=None)
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Could not parse timestamp: {timestamp}: {e}")
 
     if dry_run:
         logger.info(f"[DRY-RUN] Would replay data from {log_file}")
