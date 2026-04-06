@@ -1,0 +1,625 @@
+# RedHouse Production Deployment Plan
+
+**Created:** 2026-04-06
+**Status:** In Progress
+**Goal:** Replace wibatemp with redhouse as the production system
+
+---
+
+## Overview
+
+Migrate from wibatemp (crontab-based) to redhouse (systemd-based) using a
+gradual feature-by-feature cutover. Both systems write to the same InfluxDB
+buckets in the same format, so there should be zero data gaps.
+
+## Infrastructure Layout
+
+```
+Raspberry Pi
+  /opt/redhouse/            -- Production (STAGING_MODE=false)
+    .env                    -- Production secrets + bucket names
+    config/config.yaml      -- Shared app config (from git)
+    config/sensors.yaml     -- Sensor mapping (PII, not in git)
+    venv/                   -- Python virtual environment
+    systemd timers          -- Enabled, running
+
+  /opt/redhouse-staging/    -- Staging (STAGING_MODE=true)
+    .env                    -- Staging secrets + *_staging bucket names
+    config/config.yaml      -- Same as production (from git)
+    config/sensors.yaml     -- Same as production (copy)
+    venv/                   -- Separate virtual environment
+    systemd timers          -- NOT enabled by default, run manually
+
+NAS (192.168.1.164)
+  InfluxDB                  -- Production + staging buckets
+  Grafana
+    Production dashboard    -- Queries production buckets
+    Staging dashboard       -- Queries *_staging buckets
+```
+
+---
+
+## Pre-requisites (before any migration steps)
+
+- [x] config.yaml mandatory, silent defaults removed
+- [x] EVU-OFF threshold bug fixed (0.40 EUR/kWh, matches wibatemp)
+- [x] sensors.yaml created on Pi with all 17 sensor IDs
+- [x] Staging running for several weeks, issues fixed
+- [ ] P0: Fix humidity gap -- redhouse temperature collector must write
+  humidity data (wibatemp writes both temperatures and humidities)
+- [ ] P0: Create production deploy script (deployment/deploy_production.sh)
+- [ ] P0: Create staging deploy script (deployment/deploy_staging.sh)
+- [ ] P0: Create staging data copy timer (daily production -> staging)
+- [ ] P0: Create production Grafana dashboard (from staging, with
+  production bucket names)
+- [ ] P0: Set up staging environment (/opt/redhouse-staging)
+- [ ] P0: Pump control test -- temporarily stop wibatemp, let redhouse
+  execute a test heating program with real I2C commands, verify pump
+  responds correctly, then restore wibatemp (see Pump Test section)
+- [ ] P1: Verify current deploy loaded config.yaml correctly on Pi
+
+---
+
+## Deployment Scripts
+
+### Production Deploy (deployment/deploy_production.sh)
+
+```
+Target:    /opt/redhouse
+Branch:    main (always)
+Run as:    sudo deployment/deploy_production.sh
+```
+
+Assumes code has already been tested in staging before production deploy.
+
+Steps (wait for safe window at :07, :22, :37, :52):
+  1. git pull origin main
+  2. pip install -r requirements.txt (if dependencies changed)
+  3. Validate .env and config/sensors.yaml exist
+  4. Install systemd service + timer files to /etc/systemd/system/
+  5. daemon-reload, enable and restart all production timers
+  6. Set up Grafana production alerts
+  7. Show timer status
+
+Does NOT:
+  - Touch /opt/redhouse-staging
+  - Modify .env (manual only)
+  - Deploy from non-main branches
+
+### Staging Deploy (deployment/deploy_staging.sh)
+
+```
+Target:    /opt/redhouse-staging
+Branch:    any (argument, defaults to main)
+Run as:    sudo deployment/deploy_staging.sh [branch-name]
+```
+
+Steps:
+  1. git fetch, git checkout <branch>
+  2. Create/update venv, pip install -r requirements.txt
+  3. Validate .env exists (staging bucket names)
+  4. Validate config/sensors.yaml exists
+  5. Run unit tests (abort on failure)
+  6. Copy latest production data to staging buckets (top-up)
+  7. Print instructions for manual testing
+
+Does NOT:
+  - Enable systemd timers by default (can be enabled manually when needed)
+  - Set up Grafana alerts
+  - Touch /opt/redhouse (production)
+  - Modify .env (manual only)
+
+### Staging Data Refresh
+
+Staging needs fresh production data to process. Two mechanisms:
+
+1. **Daily automatic copy** (cron/timer on Pi):
+   ```bash
+   # Copies last 2 days of production data to staging buckets
+   cd /opt/redhouse-staging
+   venv/bin/python deployment/copy_production_to_staging.py --days 2
+   ```
+   Runs daily (e.g., 04:00 after backups complete).
+
+2. **On-demand top-up** (staging deploy script does this automatically)
+
+### Usage
+
+```bash
+# Deploy latest main to production
+sudo /opt/redhouse/deployment/deploy_production.sh
+
+# Deploy a feature branch to staging for testing
+sudo /opt/redhouse/deployment/deploy_staging.sh feature/my-change
+
+# Deploy main to staging (e.g., to verify before production deploy)
+sudo /opt/redhouse/deployment/deploy_staging.sh
+
+# Test a specific collector in staging
+cd /opt/redhouse-staging
+source venv/bin/activate
+python collect_temperatures.py --dry-run --verbose
+
+# Test heating program generation against fresh production data
+python generate_heating_program_v2.py --dry-run
+```
+
+---
+
+## Grafana Dashboards
+
+- **Production**: "RedHouse Energy Monitor" -- queries production buckets
+- **Staging**: "RedHouse Energy Monitor (Staging)" -- queries *_staging buckets
+- Both dashboards have identical panels, only bucket names differ
+
+### Workflow for dashboard changes
+
+1. Edit the staging dashboard in Grafana (safe to experiment)
+2. Verify panels work with staging data
+3. Export staging dashboard JSON
+4. Replace bucket names (*_staging -> production) and promote:
+   - Save as production dashboard JSON
+   - Import to Grafana as production dashboard
+5. Commit both JSON files to git
+
+Scripts:
+- `deployment/clone_grafana_dashboard_to_staging.py` -- production -> staging
+- TODO: `deployment/promote_staging_dashboard.py` -- staging -> production
+
+---
+
+## Pump Control Test (pre-requisite)
+
+Redhouse has never controlled the real pump. Before the gradual migration,
+do a controlled test to verify I2C communication works.
+
+### Preparation
+
+1. Choose a safe time (daytime, mild weather, not during EVU-OFF)
+2. Note current pump state:
+   ```bash
+   cat /home/pi/wibatemp/mlp_status.txt
+   ```
+
+### Test procedure
+
+```bash
+# 1. Stop wibatemp heating control (keep other cron jobs running)
+crontab -e
+# Temporarily comment out:
+#   Line 34: execute_heating_program (*/15)
+#   Line 35: mlp_cycle_evu_off (*/2 :23)
+# Do NOT comment out line 33 (generate) - it only runs at 16:05
+
+# 2. On redhouse, temporarily disable staging mode
+cd /opt/redhouse
+sudo -u pi nano .env
+# Change: STAGING_MODE=false
+
+# 3. Test pump ON command
+source venv/bin/activate
+python control_pump.py ON --verbose
+# Verify: pump turns on, no errors
+
+# 4. Test pump ALE command (lower temperature mode)
+python control_pump.py ALE --verbose
+# Verify: pump switches mode
+
+# 5. Test pump ON again (restore normal heating)
+python control_pump.py ON --verbose
+
+# 6. Test EVU cycle
+python control_pump.py EVU --verbose
+# Wait 30 seconds
+python control_pump.py ON --verbose
+# Verify: pump goes to EVU-OFF and back
+
+# 7. Test execute_heating_program_v2 with real hardware
+python execute_heating_program_v2.py --verbose
+# Verify: reads today's schedule, executes current timeslot command
+
+# 8. Restore staging mode
+sudo -u pi nano .env
+# Change: STAGING_MODE=true
+
+# 9. Restore wibatemp heating control
+crontab -e
+# Uncomment lines 34 and 35
+
+# 10. Verify wibatemp resumes
+# Wait for next */15 minute mark
+journalctl -u cron --since "1 min ago"
+```
+
+### Expected results
+
+- Each pump command completes without I2C errors
+- Pump physically responds (listen for relay click or check pump display)
+- execute_heating_program_v2 reads schedule and sends correct command
+- No stale state issues after switching back to wibatemp
+
+### If test fails
+
+- Restore wibatemp immediately (step 9)
+- Check I2C bus: `i2cdetect -y 1` (should show device at 0x10)
+- Check redhouse logs for error details
+- Fix issue and re-test before proceeding with migration
+
+---
+
+## Temperature Collection Test (pre-requisite)
+
+Verify redhouse writes temperatures (and humidities) to production buckets
+in the same format as wibatemp. Run for one full day to catch any edge
+cases (sensor dropouts, Shelly reconnects, etc.).
+
+### Preparation
+
+1. Verify humidity gap is fixed first (pre-requisite P0)
+2. Choose a normal day (no planned maintenance)
+
+### Test procedure
+
+```bash
+# 1. Stop wibatemp temperature collection
+crontab -e
+# Comment out line 28: run_wibatemp.sh
+
+# 2. Point redhouse to production temperature bucket
+cd /opt/redhouse
+sudo -u pi nano .env
+# Change: INFLUXDB_BUCKET_TEMPERATURES=temperatures
+#   (was temperatures_staging)
+# Keep STAGING_MODE=true (only affects pump, not data collection)
+
+# 3. Restart redhouse temperature timer
+sudo systemctl restart redhouse-temperature.timer
+
+# 4. Verify first data point appears
+# Wait 1-2 minutes
+journalctl -u redhouse-temperature.service --since "2 min ago"
+# Check Grafana: production temperature data flowing
+
+# 5. Monitor throughout the day
+# Check for:
+#   - All sensors reporting (including intermittent ones like Eteinen)
+#   - Humidity data flowing (if gap is fixed)
+#   - No duplicate or missing data points
+#   - Shelly HT sensors included
+
+# 6. After 24 hours, verify in Grafana
+# - No gaps in temperature graphs
+# - All sensor names match wibatemp names
+# - Humidity data present
+```
+
+### If successful
+
+Leave redhouse temperature collection running. One feature migrated.
+Do NOT re-enable wibatemp temperature cron.
+
+### If problems found
+
+```bash
+# 1. Stop redhouse temperature timer
+sudo systemctl stop redhouse-temperature.timer
+
+# 2. Revert bucket name in .env
+sudo -u pi nano .env
+# Change: INFLUXDB_BUCKET_TEMPERATURES=temperatures_staging
+
+# 3. Restore wibatemp
+crontab -e
+# Uncomment line 28
+
+# 4. Fix issue and re-test
+```
+
+---
+
+## Staging Environment Setup (before migration starts)
+
+Must be done before Step 1 of the gradual migration so we have a working
+staging environment to test fixes if something goes wrong during cutover.
+
+### 1. Create staging directory
+
+```bash
+sudo mkdir -p /opt/redhouse-staging
+sudo chown pi:pi /opt/redhouse-staging
+cd /opt/redhouse-staging
+git clone https://github.com/<user>/redhouse.git .
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Create staging .env
+
+Copy from production and change bucket names:
+
+```bash
+cp /opt/redhouse/.env /opt/redhouse-staging/.env
+```
+
+Edit `/opt/redhouse-staging/.env`:
+- `STAGING_MODE=true`
+- All bucket names get `_staging` suffix:
+  - `INFLUXDB_BUCKET_TEMPERATURES=temperatures_staging`
+  - `INFLUXDB_BUCKET_WEATHER=weather_staging`
+  - `INFLUXDB_BUCKET_SPOTPRICE=spotprice_staging`
+  - `INFLUXDB_BUCKET_EMETERS=emeters_staging`
+  - `INFLUXDB_BUCKET_CHECKWATT=checkwatt_staging`
+  - `INFLUXDB_BUCKET_SHELLY_EM3_RAW=shelly_em3_emeters_raw_staging`
+  - `INFLUXDB_BUCKET_LOAD_CONTROL=load_control_staging`
+  - `INFLUXDB_BUCKET_EMETERS_5MIN=emeters_5min_staging`
+  - `INFLUXDB_BUCKET_ANALYTICS_15MIN=analytics_15min_staging`
+  - `INFLUXDB_BUCKET_ANALYTICS_1HOUR=analytics_1hour_staging`
+  - `INFLUXDB_BUCKET_WINDPOWER=windpower_staging`
+
+### 3. Copy sensors.yaml
+
+```bash
+cp /opt/redhouse/config/sensors.yaml /opt/redhouse-staging/config/sensors.yaml
+```
+
+### 4. Initial data copy
+
+```bash
+python deployment/copy_production_to_staging.py --days 30
+```
+
+### 6. Set up daily data copy timer
+
+Add to Pi crontab (or create a systemd timer):
+```bash
+0 4 * * * cd /opt/redhouse-staging && venv/bin/python deployment/copy_production_to_staging.py --days 2 >> /var/log/redhouse/staging-data-copy.log 2>&1
+```
+
+### 7. Verify staging works
+
+```bash
+cd /opt/redhouse-staging
+source venv/bin/activate
+python collect_temperatures.py --dry-run --verbose
+python generate_heating_program_v2.py --dry-run
+```
+
+---
+
+## Gradual Migration Steps
+
+### Switching /opt/redhouse from staging to production mode
+
+The current /opt/redhouse has STAGING_MODE=true and staging bucket names.
+Before starting the gradual migration:
+
+1. Stop all redhouse timers (they are writing to staging buckets):
+   ```bash
+   sudo systemctl stop redhouse-*.timer
+   ```
+
+2. Update .env -- change all bucket names from *_staging to production:
+   ```bash
+   sudo -u pi nano /opt/redhouse/.env
+   # INFLUXDB_BUCKET_TEMPERATURES=temperatures  (was temperatures_staging)
+   # INFLUXDB_BUCKET_WEATHER=weather             (was weather_staging)
+   # ... etc for all buckets
+   # Keep STAGING_MODE=true (flipped later at Step 4 for pump control)
+   ```
+
+3. Do NOT restart any timers yet -- they will be enabled one by one
+   in the gradual migration steps below.
+
+After this, /opt/redhouse is configured for production buckets but no
+timers are running. Each migration step enables specific timers.
+
+### Per-step procedure
+
+Each step: disable wibatemp cron line, enable redhouse systemd timer,
+verify in Grafana after 24h. Keep crontab backup before each change.
+
+### Step 0: Backup crontab
+
+```bash
+crontab -l > /home/pi/crontab_backup_$(date +%Y%m%d).txt
+```
+
+### Step 1: Read-only API collectors (lowest risk)
+
+These only fetch data from external APIs and write to InfluxDB.
+No hardware interaction. Safe to switch at any time.
+
+| Wibatemp cron | Redhouse timer | Verification |
+|---------------|----------------|--------------|
+| Line 46: get_weather.py (hourly :02) | redhouse-weather.timer | weather bucket has data |
+| Line 48: windpowergetter (hourly :04) | redhouse-windpower.timer | windpower bucket has data |
+| Line 31-32: spot_price_getter (13:29-15:59) | redhouse-spot-prices.timer | spotprice bucket has data |
+| Line 47: predict_solar_yield (hourly :03) | redhouse-solar-prediction.timer | emeters bucket has solar_yield |
+| Line 39: checkwatt_dataloader (every 5min) | redhouse-checkwatt.timer | checkwatt_full_data bucket |
+
+For each:
+```bash
+# 1. Comment out wibatemp cron line
+crontab -e
+
+# 2. Restart redhouse timer
+sudo systemctl restart redhouse-<service>.timer
+
+# 3. Verify after next scheduled run
+journalctl -u redhouse-<service>.service --since "5 min ago"
+```
+
+### Step 2: Hardware collectors (medium risk)
+
+These interact with hardware on the Pi. Only one writer per data source.
+
+**2a. Temperature collection**
+
+Pre-req: humidity gap must be fixed first.
+
+```bash
+# Disable wibatemp (line 28)
+crontab -e  # comment out line 28
+
+# Enable redhouse
+sudo systemctl restart redhouse-temperature.timer
+
+# Verify: temperatures AND humidities bucket still getting data
+```
+
+**2b. Shelly EM3 energy collection**
+
+Replaces both fissio SBFspot script and shelly_ht_to_fissio.
+
+```bash
+# Disable wibatemp (lines 38, 43, 45)
+crontab -e  # comment out lines 38, 43, 45
+
+# Enable redhouse
+sudo systemctl restart redhouse-shelly-em3.timer
+
+# Verify: shelly_em3_emeters_raw bucket has data
+```
+
+### Step 3: Aggregation pipeline (new, no wibatemp equivalent)
+
+Enable after temperature and shelly data are flowing from redhouse:
+
+```bash
+sudo systemctl restart redhouse-aggregate-emeters-5min.timer
+sudo systemctl restart redhouse-aggregate-analytics-15min.timer
+sudo systemctl restart redhouse-aggregate-analytics-1hour.timer
+```
+
+### Step 4: Heating control (critical -- atomic switch)
+
+This is the most critical step. Only one system can control the pump.
+
+**Preparation (do this 2-3 days before):**
+
+1. Compare heating programs daily:
+```bash
+# Generate with redhouse (dry-run, does not affect production)
+cd /opt/redhouse
+source venv/bin/activate
+python generate_heating_program_v2.py --dry-run --date-offset 0
+
+# Compare against wibatemp's output
+cat /home/pi/wibatemp/data/heating_program_*.json | python -m json.tool
+```
+
+2. Verify EVU-OFF periods look reasonable (threshold 0.40 EUR/kWh)
+3. Verify heating hours match expected curve (12h at -20C, 6h at 0C, 2h at 16C)
+
+**Cutover (do right after 16:05 when fresh program exists):**
+
+```bash
+# 1. Disable wibatemp heating control
+crontab -e
+# Comment out:
+#   Line 33: generate_heating_program (16:05)
+#   Line 34: execute_heating_program (*/15)
+#   Line 35: mlp_cycle_evu_off (*/2 :23)
+#   Line 27: @reboot mlp_control.sh restore
+
+# 2. Enable redhouse heating control
+sudo systemctl restart redhouse-generate-program.timer
+sudo systemctl restart redhouse-execute-program.timer
+
+# 3. Monitor closely
+journalctl -u redhouse-execute-program.service -f
+journalctl -u redhouse-generate-program.service -f
+```
+
+**Verify within first hour:**
+- Pump command executed at next :00/:15/:30/:45
+- No errors in journal
+- Grafana load_control bucket shows data
+
+**Fallback (if problems):**
+```bash
+# Stop redhouse heating control
+sudo systemctl stop redhouse-execute-program.timer
+sudo systemctl stop redhouse-generate-program.timer
+
+# Restore wibatemp
+crontab /home/pi/crontab_backup_YYYYMMDD.txt
+
+# Restore pump state
+sudo /home/pi/wibatemp/mlp_control.sh restore
+```
+
+### Step 5: Health monitoring and backup
+
+After all features migrated:
+
+```bash
+sudo systemctl restart redhouse-health-check.timer
+sudo systemctl restart redhouse-backup.timer
+```
+
+### Step 6: Cleanup
+
+After 1 week of stable production:
+
+- [ ] Remove all wibatemp cron entries (keep only pinglogger + i2c reboot)
+- [ ] Remove old .env values that moved to config.yaml (cosmetic)
+- [ ] Verify production Grafana dashboard
+- [ ] Document any operational differences from wibatemp
+
+---
+
+## Crontab Lines to Keep
+
+These wibatemp cron entries are NOT replaced by redhouse and must stay:
+
+| Line | Entry | Reason |
+|------|-------|--------|
+| 29 | pinglogger | Not ported yet (TODO in PLAN.md) |
+| 44 | @reboot set_i2c_wire_configuration.sh | Hardware setup, still needed |
+
+---
+
+## Data Compatibility Verification
+
+Both systems write identical formats to InfluxDB:
+
+| Bucket | Measurement | Wibatemp | Redhouse | Compatible? |
+|--------|-------------|----------|----------|-------------|
+| temperatures | temperatures | suffix-mapped names | same suffix mapping | YES |
+| temperatures | humidities | writes humidity | NOT YET -- needs fix | FIX NEEDED |
+| weather | weather | FMI field names | identical | YES |
+| spotprice | spot | field names | identical | YES |
+| checkwatt_full_data | checkwatt | 6 fields | identical 6 fields | YES |
+| emeters | various | Shelly/SBFspot | Shelly EM3 | YES |
+| load_control | load_control | N/A (JSON files) | new feature | N/A |
+
+---
+
+## Rollback Plan
+
+At any point, full rollback to wibatemp:
+
+```bash
+# Stop all redhouse services
+sudo systemctl stop redhouse-*.timer
+
+# Restore full wibatemp crontab
+crontab /home/pi/crontab_backup_YYYYMMDD.txt
+
+# Restore pump state
+sudo /home/pi/wibatemp/mlp_control.sh restore
+```
+
+---
+
+## Timeline (estimated)
+
+| Week | Phase | Steps |
+|------|-------|-------|
+| 0 | Pre-requisites | Fix humidity, deploy scripts, prod dashboard |
+| 1 | Read-only collectors | Steps 1 (weather, wind, spot, solar, checkwatt) |
+| 2 | Hardware collectors | Steps 2-3 (temperature, shelly, aggregation) |
+| 3 | Heating control | Step 4 (program gen + exec, pump control) |
+| 4 | Stabilize | Step 5-6 (health, backup, cleanup) |
