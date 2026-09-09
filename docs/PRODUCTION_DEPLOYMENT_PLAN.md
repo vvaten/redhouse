@@ -37,6 +37,76 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   /home/pi/wibatemp/temperature_status.json, written by
   shelly_ht_to_fissio_rest_api.py (cron lines 43 and 45). Those lines
   must stay until Shelly HT reading is ported to redhouse.
+- 2026-09-09: CheckWatt history copy into `checkwatt` started (about
+  4 hours). All staging timers were stopped for the copy to spare the
+  NAS. Restart after the copy and after redhouse-checkwatt.timer is up:
+  `sudo /opt/redhouse-staging/deployment/staging_timers.sh start`.
+
+## Stability Findings (2026-09-09)
+
+Measured from the Pi journal (only reaches back to 2026-08-28, 12 days)
+and from points-per-day counts in the staging buckets since 2026-04-06.
+
+Healthy: weather, spotprice and checkwatt staging buckets have data on
+every one of 156 days. Shelly EM3 collection succeeded in 17906 of
+17917 runs because it retries. Empty days in shelly, windpower,
+emeters_5min and analytics staging buckets are retention (7 and 30
+days), not outages. Staging heating programs look sane.
+
+Not healthy:
+
+1. Pi root disk 99% full (201 MB free). "No space left on device"
+   since 2026-08-29. Journal 1.6 GB, /opt/redhouse/data_logs 418 MB,
+   staging data_logs 255 MB, /var/log/redhouse 243 MB, wibatemp
+   pinglogger.log 131 MB. This threatens wibatemp too.
+2. InfluxDB on the NAS answers slowly and the client read timeout is
+   10 s. Production redhouse-temperature failed 735 of 17261 runs in
+   12 days (about 55 lost minutes per day), all write timeouts.
+   Staging failure rates, last 12 days:
+
+   | Unit | Runs | Failed | Cause |
+   |------|------|--------|-------|
+   | weather | 418 | 180 | write timeout |
+   | solar-prediction | 428 | 170 | query timeout |
+   | checkwatt | 3322 | 270 | write timeout |
+   | windpower | 547 | 51 | write timeout |
+   | generate-program | 10 | 3 | timeout, HTTP 500 |
+   | execute-program | 1006 | 192 | no program file (2 days) |
+   | analytics-15min | 1198 | 0 | 58-93 of 96 windows per day written |
+
+3. When generate-program fails at 16:05, the next day has no program
+   and execute-program does nothing all day. In production the pump
+   would get no commands. Blocks Step 4 until fixed.
+
+## Hardening Before The Next Migration Step
+
+Do these before any further cron line is disabled:
+
+- [ ] Free disk on the Pi: `sudo journalctl --vacuum-size=300M`, cap
+  journald in /etc/systemd/journald.conf (SystemMaxUse=500M), trim
+  data_logs retention, rotate the wibatemp logs
+- [ ] Raise the InfluxDB client timeout (10 s -> 60 s) and retry writes
+  in src/common/influx_client.py; apply to production temperature first
+- [ ] generate-program: retry at 16:20 and 16:35 on failure, and a
+  curve-only fallback program when spot prices or predictions are
+  missing; execute-program: fall back to the previous program file
+  when today's is missing, and alert
+- [ ] Check NAS InfluxDB load (CPU, disk, compactions). Consider
+  lowering staging query load.
+- [ ] Disable idle production timers (reboot hazard, Current State)
+- [ ] Re-measure staging for 7 days after the fixes. Gate: fewer than
+  1% failed runs per unit, generate-program 7 of 7
+
+Re-measure with:
+
+```bash
+journalctl --no-pager --since "7 days ago" _COMM=systemd \
+  | grep "redhouse-staging-.*Failed with result" \
+  | sed -E 's/.*(redhouse-staging-[a-z0-9-]+)\.service.*/\1/' | sort | uniq -c
+journalctl --no-pager --since "7 days ago" _COMM=systemd \
+  | grep -E "redhouse-staging-.*Succeeded" \
+  | sed -E 's/.*(redhouse-staging-[a-z0-9-]+)\.service.*/\1/' | sort | uniq -c
+```
 
 ## Infrastructure Layout
 
@@ -284,13 +354,15 @@ tail -5 /home/pi/wibatemp/execute_heating_program.log
 
 The migration happens in this order:
 
-1. Set up /opt/redhouse-staging (takes over staging role)
-2. Stop /opt/redhouse staging timers
-3. Start /opt/redhouse-staging timers (staging continues uninterrupted)
-4. Switch /opt/redhouse to production mode (all buckets + STAGING_MODE)
-5. Pump control test
-6. Temperature collection test (24h)
-7. Gradual migration of remaining features
+1. Set up /opt/redhouse-staging (takes over staging role) - done
+2. Stop /opt/redhouse staging timers - done
+3. Start /opt/redhouse-staging timers (staging continues uninterrupted) - done
+4. Switch /opt/redhouse to production mode (all buckets + STAGING_MODE) - done
+5. Pump control test - status not recorded
+6. Temperature collection test (24h) - done, in production since 2026-04-06
+7. CheckWatt bucket migration - started 2026-09-09
+8. Hardening (disk, InfluxDB timeouts, program generation fallback)
+9. Gradual migration of remaining features
 
 ---
 
@@ -730,10 +802,16 @@ sudo /home/pi/wibatemp/mlp_control.sh restore
 
 ## Timeline (estimated)
 
+Revised 2026-09-09. Weeks count from the hardening work, not from the
+original plan date.
+
 | Week | Phase | Steps |
 |------|-------|-------|
-| 0 | Pre-requisites | Fix humidity, deploy scripts, prod dashboard |
-| 1 | Read-only collectors | Steps 1 (weather, wind, spot, solar, checkwatt) |
-| 2 | Hardware collectors | Steps 2-3 (temperature, shelly, aggregation) |
-| 3 | Heating control | Step 4 (program gen + exec, pump control) |
-| 4 | Stabilize | Step 5-6 (health, backup, cleanup) |
+| done | Pre-requisites | Humidity, deploy scripts, prod dashboard, temperature in production |
+| 0 | CheckWatt | History copy, start redhouse-checkwatt.timer, restart staging |
+| 0-1 | Hardening | Disk, InfluxDB timeout and retry, program generation fallback |
+| 1-2 | Measure | 7 days of staging with fewer than 1% failed runs per unit |
+| 2 | Read-only collectors | Step 1 (weather, wind, spot, solar) |
+| 3 | Hardware collectors | Steps 2-3 (shelly, aggregation) |
+| 4 | Heating control | Step 4 (program gen + exec, pump control) |
+| 5 | Stabilize | Step 5-6 (health, backup, cleanup) |

@@ -28,6 +28,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
+import copy_production_to_staging  # noqa: E402
 from copy_production_to_staging import copy_bucket_data  # noqa: E402
 from create_aggregation_buckets import create_bucket_if_not_exists  # noqa: E402
 from influxdb_client import InfluxDBClient  # noqa: E402
@@ -37,6 +38,8 @@ from src.common.config import get_config  # noqa: E402
 DATE_FORMAT = "%Y-%m-%d"
 CLIENT_TIMEOUT_MS = 120_000
 MAX_ATTEMPTS = 3
+# Lower this if InfluxDB reports write timeouts on large batches
+DEFAULT_BATCH_SIZE = 5000
 
 
 def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
@@ -59,6 +62,12 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
         "--create-dest",
         action="store_true",
         help="Create the destination bucket with infinite retention if missing",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help=f"Points per write request (default {DEFAULT_BATCH_SIZE})",
     )
     return parser.parse_args(argv)
 
@@ -157,6 +166,7 @@ def main() -> int:
         print("ERROR: writes need --confirm (or use --dry-run)", file=sys.stderr)
         return 1
 
+    copy_production_to_staging.WRITE_BATCH_SIZE = args.batch_size
     mode = "DRY-RUN" if args.dry_run else "WRITE"
     print(f"{mode}: {args.source} -> {args.dest}")
     print(f"Range: {start_time} to {end_time} (UTC)")
