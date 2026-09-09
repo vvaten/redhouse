@@ -41,6 +41,24 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   4 hours). All staging timers were stopped for the copy to spare the
   NAS. Restart after the copy and after redhouse-checkwatt.timer is up:
   `sudo /opt/redhouse-staging/deployment/staging_timers.sh start`.
+- 2026-09-09: the 7 staging Grafana alerts are PAUSED. Stopping the
+  staging timers made every freshness rule fire and mail the contact
+  point. Resume together with the staging timers:
+  `python -u deployment/pause_grafana_alerts.py --env staging --resume`
+- No Production alert folder exists in Grafana. Only
+  RedHouse-Alerts-Staging (7 rules) and RedHouse-Alerts-Wibatemp (5
+  rules) are set up, so the alert step of deploy_production.sh has never
+  succeeded. Production has NO alerting. Fix before Step 4:
+  `python -u deployment/setup_grafana_alerts.py --env production`
+  There is also an empty legacy folder "RedHouse Alerts (Wibatemp)".
+- 2026-09-09: /home/pi/weather_data (14801 JSON files, 1.72 GiB, the FMI
+  forecast history) was copied to the PC at
+  E:/test_data/redhouse_weather_data for solar model development. File
+  count verified equal. It had no backup: the nightly Pi backup covers
+  only .env, pump state and systemd units.
+- Pi disk: apt cache cleaned on 2026-09-09, 88% used afterwards. No
+  other deletion done. Remaining candidates are listed in the hardening
+  section.
 
 ## Stability Findings (2026-09-09)
 
@@ -93,6 +111,28 @@ Do these before any further cron line is disabled:
   when today's is missing, and alert
 - [ ] Check NAS InfluxDB load (CPU, disk, compactions). Consider
   lowering staging query load.
+- [ ] Create the production Grafana alerts (folder does not exist)
+- [ ] Free more Pi disk. Candidates, none deleted yet, all authorized
+  by the operator individually:
+
+  | Item | Size | Method |
+  |------|------|--------|
+  | /home/pi/weather_data | 1.8 GB | already copied to PC, can be removed |
+  | journal user sessions | 1.0 GB | delete, keeps the service journal |
+  | /home/pi/windpower/windpower.log | 864 MB | truncate |
+  | snapd cache | 603 MB | delete |
+  | disabled snap revisions | 300 MB | snap remove --revision |
+  | rotated system logs | 300 MB | delete |
+  | /var/log/sbfspot.3 | 280 MB | stale since 2025-10, delete |
+  | stale redhouse data_logs | 253 MB | April test leftovers, delete |
+  | /var/log/redhouse/*.log.[0-9] | 191 MB | delete |
+  | /home/pi/.fissio/energy_to_fissio.log | 171 MB | truncate |
+  | /home/pi/.cache | 158 MB | delete |
+  | solar_prediction, total_energy | 158 MB | copy to PC, then gzip |
+
+  /var/log/lastlog looks like 170 MB but is sparse and uses 16 KB.
+  journald has no size cap, which is why it grew to 1.6 GB; set
+  SystemMaxUse=500M in /etc/systemd/journald.conf.
 - [ ] Disable idle production timers (reboot hazard, Current State)
 - [ ] Re-measure staging for 7 days after the fixes. Gate: fewer than
   1% failed runs per unit, generate-program 7 of 7
