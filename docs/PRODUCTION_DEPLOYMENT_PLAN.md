@@ -1,6 +1,7 @@
 # RedHouse Production Deployment Plan
 
 **Created:** 2026-04-06
+**Updated:** 2026-09-09
 **Status:** In Progress
 **Goal:** Replace wibatemp with redhouse as the production system
 
@@ -11,6 +12,31 @@
 Migrate from wibatemp (crontab-based) to redhouse (systemd-based) using a
 gradual feature-by-feature cutover. Both systems write to the same InfluxDB
 buckets in the same format, so there should be zero data gaps.
+
+## Current State (2026-09-09)
+
+Steps 1-3 and 5 below were done on 2026-04-06. Since then:
+
+- /opt/redhouse runs in production mode (STAGING_MODE=false, production
+  buckets). Only redhouse-temperature.timer is started. It has written
+  temperatures and humidities to production since 2026-04-06.
+- wibatemp root crontab still runs everything else. Only line 28
+  (run_wibatemp.sh) is commented out.
+- /opt/redhouse-staging runs all 13 staging timers.
+- The daily production -> staging data copy (Step 1f) was never set up.
+  Staging collectors fill their own buckets; only emeters_staging depends
+  on the copy.
+- Reboot hazard: all 14 production timers are `enabled` but only
+  temperature is started. A reboot would start every redhouse timer next
+  to the wibatemp cron, including pump control. Fix before any reboot:
+  `sudo systemctl disable` every redhouse-*.timer that is not yet
+  migrated, and make deploy_production.sh restart only active timers.
+- CheckWatt uses a NEW bucket `checkwatt` in redhouse (old system:
+  `checkwatt_full_data`). See "CheckWatt Bucket Migration" below.
+- redhouse-temperature reads Shelly HT values from
+  /home/pi/wibatemp/temperature_status.json, written by
+  shelly_ht_to_fissio_rest_api.py (cron lines 43 and 45). Those lines
+  must stay until Shelly HT reading is ported to redhouse.
 
 ## Infrastructure Layout
 
@@ -51,12 +77,14 @@ NAS (192.168.1.164)
 - [x] Create staging deploy script (deployment/deploy_staging.sh)
 - [x] Create production Grafana dashboard + deploy script
 - [x] Verify config.yaml loads correctly on Pi (curve, EVU, sensors)
-- [ ] Set up staging environment /opt/redhouse-staging (Step 1)
-- [ ] Hand off staging to /opt/redhouse-staging (Step 2)
-- [ ] Switch /opt/redhouse to production mode (Step 3)
-- [ ] Pump control test (Step 4)
-- [ ] Temperature collection test - 24h (Step 5)
+- [x] Set up staging environment /opt/redhouse-staging (Step 1, 2026-04-06)
+- [x] Hand off staging to /opt/redhouse-staging (Step 2, 2026-04-06)
+- [x] Switch /opt/redhouse to production mode (Step 3, 2026-04-06)
+- [ ] Pump control test (Step 4) - status not recorded, confirm
+- [x] Temperature collection test - 24h (Step 5, 2026-04-06, in production
+  since; see LESSONS_LEARNED.md lessons 2 and 3)
 - [ ] Create staging data copy timer (daily production -> staging)
+- [ ] Disable idle production timers (reboot hazard, see Current State)
 
 ---
 
@@ -358,7 +386,7 @@ sudo -u pi nano /opt/redhouse/.env
 #   INFLUXDB_BUCKET_WEATHER=weather
 #   INFLUXDB_BUCKET_SPOTPRICE=spotprice
 #   INFLUXDB_BUCKET_EMETERS=emeters
-#   INFLUXDB_BUCKET_CHECKWATT=checkwatt_full_data
+#   INFLUXDB_BUCKET_CHECKWATT=checkwatt   (NEW bucket, not checkwatt_full_data)
 #   INFLUXDB_BUCKET_SHELLY_EM3_RAW=shelly_em3_emeters_raw
 #   INFLUXDB_BUCKET_LOAD_CONTROL=load_control
 #   INFLUXDB_BUCKET_EMETERS_5MIN=emeters_5min
@@ -473,8 +501,17 @@ No hardware interaction. Safe to switch at any time.
 | Line 46: get_weather.py (hourly :02) | redhouse-weather.timer | weather bucket has data |
 | Line 48: windpowergetter (hourly :04) | redhouse-windpower.timer | windpower bucket has data |
 | Line 31-32: spot_price_getter (13:29-15:59) | redhouse-spot-prices.timer | spotprice bucket has data |
-| Line 47: predict_solar_yield (hourly :03) | redhouse-solar-prediction.timer | emeters bucket has solar_yield |
-| Line 39: checkwatt_dataloader (every 5min) | redhouse-checkwatt.timer | checkwatt_full_data bucket |
+| Line 47: predict_solar_yield (hourly :03) | redhouse-solar-prediction.timer | emeters bucket has solar_yield_avg_prediction |
+
+CheckWatt is NOT in this table. It goes to a new bucket and does not
+replace cron line 39. See "CheckWatt Bucket Migration" below.
+
+Solar prediction note: both predictors write the same field
+`solar_yield_avg_prediction` into `emeters`/`energy`. Never run both.
+Swap in one step: comment line 47, start the redhouse timer. The redhouse
+predictor reads `emeters`/`energy` netting, which cron line 39 produces,
+so line 39 must keep running until the predictor is repointed to
+`emeters_5min` (TODO) or the heating cutover retires wibatemp.
 
 For each:
 ```bash
@@ -487,6 +524,40 @@ sudo systemctl restart redhouse-<service>.timer
 # 3. Verify after next scheduled run
 journalctl -u redhouse-<service>.service --since "5 min ago"
 ```
+
+### CheckWatt Bucket Migration
+
+Decision: redhouse writes CheckWatt data to a NEW bucket `checkwatt`.
+wibatemp keeps writing `checkwatt_full_data`. Reasons:
+
+- Cron line 39 (checkwatt_dataloader) also computes the 5-min netted
+  `energy` measurement in `emeters`. wibatemp generate_heating_program,
+  wibatemp predict_solar_yield, redhouse predict_solar_yield and
+  redhouse heating_data_fetcher all read it. Line 39 must run until the
+  heating cutover (Step 4). Separate buckets let both loaders run in
+  parallel with no collision.
+- Both loaders write identical points (measurement `checkwatt`, same six
+  fields, timestamps from the CheckWatt API), so a copy is lossless.
+
+Procedure (done 2026-09-09):
+
+```bash
+cd /opt/redhouse && source venv/bin/activate
+# 1. Create bucket and copy full history (source starts 2025-02-27)
+python -u deployment/copy_bucket.py --source checkwatt_full_data     --dest checkwatt --days 1 --dry-run
+python -u deployment/copy_bucket.py --source checkwatt_full_data     --dest checkwatt --start 2025-02-27 --end <today> --create-dest --confirm
+# 2. Start the redhouse collector (fetches from previous hour, no gap)
+sudo systemctl start redhouse-checkwatt.timer
+journalctl -u redhouse-checkwatt.service --since "10 min ago"
+# 3. Do NOT touch cron line 39
+```
+
+Aligned to `checkwatt`: production .env, production dashboard,
+setup_grafana_alerts.py (wibatemp env still watches checkwatt_full_data),
+.env.example, copy_production_to_staging.py, DATABASE.md.
+
+After Step 4 (heating cutover) comment out line 39. `checkwatt_full_data`
+then becomes read-only history.
 
 ### Step 2: Hardware collectors (medium risk)
 
@@ -511,8 +582,10 @@ sudo systemctl restart redhouse-temperature.timer
 Replaces both fissio SBFspot script and shelly_ht_to_fissio.
 
 ```bash
-# Disable wibatemp (lines 38, 43, 45)
-crontab -e  # comment out lines 38, 43, 45
+# Disable wibatemp (line 38 only)
+crontab -e  # comment out line 38
+# Do NOT comment out lines 43 and 45 (shelly_ht_to_fissio_rest_api):
+# redhouse-temperature reads Shelly HT values from its status file.
 
 # Enable redhouse
 sudo systemctl restart redhouse-shelly-em3.timer
@@ -560,6 +633,7 @@ crontab -e
 #   Line 34: execute_heating_program (*/15)
 #   Line 35: mlp_cycle_evu_off (*/2 :23)
 #   Line 27: @reboot mlp_control.sh restore
+#   Line 39: checkwatt_dataloader (emeters netting no longer needed)
 
 # 2. Enable redhouse heating control
 sudo systemctl restart redhouse-generate-program.timer
@@ -616,6 +690,8 @@ These wibatemp cron entries are NOT replaced by redhouse and must stay:
 |------|-------|--------|
 | 29 | pinglogger | Not ported yet (TODO in PLAN.md) |
 | 44 | @reboot set_i2c_wire_configuration.sh | Hardware setup, still needed |
+| 39 | checkwatt_dataloader | Produces emeters/energy netting, keep until Step 4 |
+| 43, 45 | shelly_ht_to_fissio_rest_api | redhouse-temperature reads its status file |
 
 ---
 
@@ -629,7 +705,7 @@ Both systems write identical formats to InfluxDB:
 | temperatures | humidities | writes humidity | NOT YET -- needs fix | FIX NEEDED |
 | weather | weather | FMI field names | identical | YES |
 | spotprice | spot | field names | identical | YES |
-| checkwatt_full_data | checkwatt | 6 fields | identical 6 fields | YES |
+| checkwatt_full_data (old) / checkwatt (new) | checkwatt | 6 fields | identical, history copied 2026-09-09 | YES |
 | emeters | various | Shelly/SBFspot | Shelly EM3 | YES |
 | load_control | load_control | N/A (JSON files) | new feature | N/A |
 

@@ -146,11 +146,13 @@ Additional fields written back by `checkwatt_dataloader.py` (5-min merged data):
 
 ---
 
-### Bucket: `checkwatt_full_data` (same name in both systems)
+### Bucket: `checkwatt_full_data` (old system)
 
-Written by the old `wibatemp/checkwatt_dataloader.py` and the new
-`src/data_collection/checkwatt.py`. Schema is identical. See the New System
-section below.
+Written by `wibatemp/checkwatt_dataloader.py`. The new system writes the
+same schema to its own bucket `checkwatt`. History from 2025-02-27 onward
+was copied into `checkwatt` on 2026-09-09 with `deployment/copy_bucket.py`.
+`checkwatt_full_data` stays alive until the wibatemp heating control is
+retired, because the same cron job also produces the `emeters` netting.
 
 ---
 
@@ -285,15 +287,15 @@ stored.
 
 ---
 
-### Bucket: `checkwatt_full_data`
+### Bucket: `checkwatt`
 
-**Default name:** `checkwatt_full_data`
+**Default name:** `checkwatt`
 **Env var:** `INFLUXDB_BUCKET_CHECKWATT`
 
 Stores 1-minute resolution solar, battery, and grid power data from the
-CheckWatt API (EnergyInBalance platform). Schema is identical between old
-(`wibatemp/checkwatt_dataloader.py`) and new (`src/data_collection/checkwatt.py`)
-systems.
+CheckWatt API (EnergyInBalance platform). Schema is identical to the old
+system bucket `checkwatt_full_data` (`wibatemp/checkwatt_dataloader.py`),
+from which the history was copied.
 
 **Measurement: `checkwatt`**
 
@@ -662,10 +664,10 @@ FMI API                     -[hourly]-> weather bucket (measurement: weather)
 spot-hinta.fi API           -[daily]-> spotprice bucket (measurement: spot)
 Fingrid/FMI APIs            -[hourly]-> windpower bucket (measurement: windpower)
 
-CheckWatt API               -[1 min]-> checkwatt_full_data (measurement: checkwatt)
+CheckWatt API               -[1 min]-> checkwatt (measurement: checkwatt)
 Shelly EM3 HTTP API         -[1 min]-> shelly_em3_emeters_raw (measurement: shelly_em3)
 
-checkwatt_full_data
+checkwatt
   + shelly_em3_emeters_raw  -[5 min aggregation]-> emeters_5min (measurement: energy)
 
 emeters_5min + spotprice
@@ -685,7 +687,7 @@ HeatingProgramGenerator     -> load_control (measurements: load_control, load_co
 | `INFLUXDB_BUCKET_WEATHER` | `weather` | Both | FMI weather forecasts |
 | `INFLUXDB_BUCKET_SPOTPRICE` | `spotprice` | Both | Electricity spot prices |
 | `INFLUXDB_BUCKET_EMETERS` | `emeters` | Old only | Old system energy meter data |
-| `INFLUXDB_BUCKET_CHECKWATT` | `checkwatt_full_data` | Both | 1-min CheckWatt power data |
+| `INFLUXDB_BUCKET_CHECKWATT` | `checkwatt` | New only | 1-min CheckWatt power data (old: `checkwatt_full_data`) |
 | `INFLUXDB_BUCKET_SHELLY_EM3_RAW` | `shelly_em3_emeters_raw` | New only | 1-min Shelly EM3 raw data |
 | `INFLUXDB_BUCKET_EMETERS_5MIN` | `emeters_5min` | New only | 5-min aggregated energy |
 | `INFLUXDB_BUCKET_ANALYTICS_15MIN` | `analytics_15min` | New only | 15-min analytics |

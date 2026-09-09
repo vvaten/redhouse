@@ -59,8 +59,9 @@ ALERT_RULES = [
     },
     {
         "name": "CheckWatt data stale",
-        "bucket": "checkwatt_full_data",
+        "bucket": "checkwatt",
         "measurement": "checkwatt",
+        "wibatemp_bucket": "checkwatt_full_data",
         "max_age_minutes": 120,
         "eval_interval_seconds": 600,
     },
@@ -108,7 +109,7 @@ ALERT_RULES = [
 STAGING_BUCKET_MAP = {
     "temperatures": "temperatures_staging",
     "shelly_em3_emeters_raw": "shelly_em3_emeters_raw_staging",
-    "checkwatt_full_data": "checkwatt_staging",
+    "checkwatt": "checkwatt_staging",
     "weather": "weather_staging",
     "windpower": "windpower_staging",
     "emeters_5min": "emeters_5min_staging",
