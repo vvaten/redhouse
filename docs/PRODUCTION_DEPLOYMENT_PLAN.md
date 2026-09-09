@@ -51,14 +51,35 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   succeeded. Production has NO alerting. Fix before Step 4:
   `python -u deployment/setup_grafana_alerts.py --env production`
   There is also an empty legacy folder "RedHouse Alerts (Wibatemp)".
-- 2026-09-09: /home/pi/weather_data (14801 JSON files, 1.72 GiB, the FMI
-  forecast history) was copied to the PC at
-  E:/test_data/redhouse_weather_data for solar model development. File
-  count verified equal. It had no backup: the nightly Pi backup covers
-  only .env, pump state and systemd units.
-- Pi disk: apt cache cleaned on 2026-09-09, 88% used afterwards. No
-  other deletion done. Remaining candidates are listed in the hardening
-  section.
+- 2026-09-09: three unbacked wibatemp data archives were copied to the
+  PC at E:/test_data/redhouse_weather_data for solar model development.
+  The nightly Pi backup covers only .env, pump state and systemd units,
+  so none of this was backed up before.
+
+  | Archive | Files | Raw size |
+  |---------|-------|----------|
+  | weather_data (FMI forecast runs, 2025-01-01 onward) | 14801 | 1.72 GiB |
+  | solar_prediction (model params and predictions) | 13967 | 77 MB |
+  | total_energy (measured 5-min actuals) | 982 | 43 MB |
+
+  File counts verified equal after transfer. See the README in that
+  directory for formats, and for two CSV parsing hazards in total_energy.
+- 2026-09-09: weather_data on the Pi was trimmed to the last 30 days.
+  14057 older files deleted, 1.64 GiB freed, 744 files (90 MB) kept.
+  Verified before deleting: counts equal, every deleted filename present
+  in the PC copy, 12 files sampled across the range matched by md5.
+  The PC copy is now the ONLY full copy of 2025-01-01 to 2026-08-09.
+  Note get_weather.py never prunes, so this regrows at 3 MB/day
+  (1.1 GB/year) until redhouse takes over weather collection. Redhouse
+  prunes its own JSON logs after 7 days, so the problem ends then.
+- Pi disk: 70% used, 4.2 GB free, up from 201 MB. Freed by the apt cache
+  clean (1.2 GB) and the weather trim (1.7 GB). Nothing else deleted.
+  Remaining candidates are in the hardening section.
+- InfluxDB weather bucket is NOT affected by the Pi trim: retention
+  forever, 2023-05-05 onward, 19 fields, one value per 15-min valid
+  time. It holds 20 months that predate the JSON archive, but only the
+  latest forecast per valid time, so it cannot reconstruct forecast
+  vintage. Neither source is a superset of the other.
 
 ## Stability Findings (2026-09-09)
 
@@ -112,12 +133,15 @@ Do these before any further cron line is disabled:
 - [ ] Check NAS InfluxDB load (CPU, disk, compactions). Consider
   lowering staging query load.
 - [ ] Create the production Grafana alerts (folder does not exist)
+- [ ] Prune /home/pi/weather_data daily while get_weather.py still runs.
+  It has no retention and regrows at 3 MB/day. Proposed root cron line:
+  `30 4 * * * find /home/pi/weather_data -name "*.json" -mtime +30 -delete`
+  Not installed: a standing delete needs operator authorization.
 - [ ] Free more Pi disk. Candidates, none deleted yet, all authorized
   by the operator individually:
 
   | Item | Size | Method |
   |------|------|--------|
-  | /home/pi/weather_data | 1.8 GB | already copied to PC, can be removed |
   | journal user sessions | 1.0 GB | delete, keeps the service journal |
   | /home/pi/windpower/windpower.log | 864 MB | truncate |
   | snapd cache | 603 MB | delete |
@@ -128,7 +152,9 @@ Do these before any further cron line is disabled:
   | /var/log/redhouse/*.log.[0-9] | 191 MB | delete |
   | /home/pi/.fissio/energy_to_fissio.log | 171 MB | truncate |
   | /home/pi/.cache | 158 MB | delete |
-  | solar_prediction, total_energy | 158 MB | copy to PC, then gzip |
+  | solar_prediction, total_energy | 158 MB | copied to PC, can be trimmed |
+
+  Done: apt cache (1.2 GB) and weather_data older than 30 days (1.7 GB).
 
   /var/log/lastlog looks like 170 MB but is sparse and uses 16 KB.
   journald has no size cap, which is why it grew to 1.6 GB; set
