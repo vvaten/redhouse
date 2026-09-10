@@ -37,10 +37,27 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   /home/pi/wibatemp/temperature_status.json, written by
   shelly_ht_to_fissio_rest_api.py (cron lines 43 and 45). Those lines
   must stay until Shelly HT reading is ported to redhouse.
-- 2026-09-09: CheckWatt history copy into `checkwatt` started (about
-  4 hours). All staging timers were stopped for the copy to spare the
-  NAS. Restart after the copy and after redhouse-checkwatt.timer is up:
-  `sudo /opt/redhouse-staging/deployment/staging_timers.sh start`.
+- 2026-09-10: CheckWatt history copy into `checkwatt` COMPLETE and
+  verified. 560 of 560 days, 4821978 records, 4.5 hours, 62 write
+  retries all recovered. Both buckets now hold 803833 points over the
+  copied range with identical first and last timestamps, 0 days missing
+  and 0 days short. The copy survived a PC crash because it ran under
+  nohup on the Pi.
+  Verification: `deployment/copy_bucket.py` then a per-day count diff.
+  Note the final window read at 21:24 UTC could not include the rest of
+  that UTC day, so a tail top-up was needed. Any future copy that ends
+  at "today" needs the same top-up.
+- 2026-09-10: redhouse-checkwatt.timer STARTED. Parallel run: wibatemp
+  cron line 39 still writes checkwatt_full_data, redhouse writes
+  `checkwatt`. Both loaders write identical points from the same API,
+  so the two buckets can be diffed daily as a correctness check on the
+  redhouse collector. Retire line 39's raw writer only after the
+  collector proves out; see "Retiring wibatemp's CheckWatt loader".
+- Staging timers are still STOPPED (from the copy) and the 7 staging
+  alerts still PAUSED. Restart both together:
+  `sudo /opt/redhouse-staging/deployment/staging_timers.sh start` and
+  `python -u deployment/pause_grafana_alerts.py --env staging --resume`
+  The 7-day staging re-measurement cannot start until they are running.
 - 2026-09-09: the 7 staging Grafana alerts are PAUSED. Stopping the
   staging timers made every freshness rule fire and mail the contact
   point. Resume together with the staging timers:
@@ -694,8 +711,34 @@ Aligned to `checkwatt`: production .env, production dashboard,
 setup_grafana_alerts.py (wibatemp env still watches checkwatt_full_data),
 .env.example, copy_production_to_staging.py, DATABASE.md.
 
-After Step 4 (heating cutover) comment out line 39. `checkwatt_full_data`
-then becomes read-only history.
+### Retiring wibatemp's CheckWatt loader
+
+Cron line 39 runs `checkwatt_dataloader.py`, whose `main()` is exactly
+two calls: the raw writer (`update_checkwatt_data_in_influx`) then the
+netter (`checkwatt_energy_netter`). They are separable, which matters
+because only the raw writer is replaced by redhouse.
+
+The netter is NOT replaced. It produces `emeters`/`energy`, read by
+wibatemp generate_heating_program, both solar predictors, and redhouse
+heating_data_fetcher. Redhouse's aggregation writes `emeters_5min`
+instead, a different bucket. So commenting out the whole of line 39
+breaks four consumers.
+
+Two halves, retire separately:
+
+1. Raw writer. Can go once the redhouse collector is proven, by
+   commenting the `update_checkwatt_data_in_influx` call in `main()`
+   and pointing the netter's source query at `checkwatt`. Do NOT do
+   this early: it makes wibatemp's heating control depend on a redhouse
+   collector, inverting the fallback that makes this migration safe.
+   Condition: a week of parallel running with the buckets matching and
+   under 1% collector failures.
+2. Netter. Can keep running long after the raw writer is gone. Retire
+   it only once redhouse's solar predictor and heating_data_fetcher
+   read `emeters_5min` instead of `emeters`/`energy`.
+
+/home/pi/wibatemp is NOT a git repository and there is no backup of
+checkwatt_dataloader.py on the Pi. Copy the file before editing it.
 
 ### Step 2: Hardware collectors (medium risk)
 
