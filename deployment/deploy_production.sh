@@ -4,9 +4,14 @@
 # Deploys latest main branch to /opt/redhouse with smart deploy timing.
 # Assumes code has already been tested in staging.
 #
+# Only timers that are already running get restarted. During the gradual
+# migration the rest are deliberately stopped because wibatemp still owns
+# those jobs, so starting them all would put two systems on one job.
+#
 # Usage:
-#   sudo deployment/deploy_production.sh          # Wait for safe window
-#   sudo deployment/deploy_production.sh --now     # Deploy immediately
+#   sudo deployment/deploy_production.sh              # Wait for safe window
+#   sudo deployment/deploy_production.sh --now        # Deploy immediately
+#   sudo deployment/deploy_production.sh --start-all  # Start every timer
 
 set -e
 
@@ -109,9 +114,22 @@ wait_for_window() {
 # --- Parse arguments ---
 
 DEPLOY_NOW=false
-if [ "${1}" = "--now" ]; then
-    DEPLOY_NOW=true
-fi
+START_ALL=false
+for arg in "$@"; do
+    case "$arg" in
+        --now)
+            DEPLOY_NOW=true
+            ;;
+        --start-all)
+            START_ALL=true
+            ;;
+        *)
+            echo "ERROR: unknown option '$arg'"
+            echo "Usage: $0 [--now] [--start-all]"
+            exit 1
+            ;;
+    esac
+done
 
 # --- Initial setup or update ---
 
@@ -229,11 +247,31 @@ TIMERS=(
     "redhouse-backup"
 )
 
+# Restart only what is already running, and converge the enabled state
+# onto the active state so a reboot reproduces exactly what runs now.
+# Starting every timer here would hand redhouse the heat pump while
+# wibatemp still drives it from cron lines 33, 34 and 35.
+RUNNING=0
+STOPPED=0
 for timer in "${TIMERS[@]}"; do
-    systemctl enable "$timer.timer" 2>/dev/null
-    systemctl restart "$timer.timer"
-    echo "  [OK] $timer.timer"
+    if [ "$START_ALL" = true ] || systemctl is-active --quiet "$timer.timer"; then
+        systemctl enable "$timer.timer" 2>/dev/null
+        systemctl restart "$timer.timer"
+        echo "  [OK] $timer.timer"
+        RUNNING=$((RUNNING + 1))
+    else
+        systemctl disable "$timer.timer" 2>/dev/null
+        echo "  [SKIP] $timer.timer (not migrated, left stopped and disabled)"
+        STOPPED=$((STOPPED + 1))
+    fi
 done
+
+echo ""
+echo "Timers running: $RUNNING    left stopped: $STOPPED"
+if [ "$STOPPED" -gt 0 ]; then
+    echo "Migrate one with: sudo systemctl enable --now redhouse-<name>.timer"
+    echo "Disable its wibatemp cron line in the same step."
+fi
 
 # --- Set up Grafana alerts ---
 
