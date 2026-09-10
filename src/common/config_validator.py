@@ -13,14 +13,23 @@ class ConfigValidationError(Exception):
 class ConfigValidator:
     """Validates configuration to prevent production accidents."""
 
-    # Buckets that should NEVER be written to during testing
+    # Buckets that should NEVER be written to during testing.
+    # Keep in step with the INFLUXDB_BUCKET_* values in .env.example: a
+    # bucket missing here is classified UNKNOWN, so neither the production
+    # write warning nor the test-field guard applies to it.
     PRODUCTION_BUCKETS = {
         "temperatures",
         "weather",
         "spotprice",
         "emeters",
+        "checkwatt",
         "checkwatt_full_data",
+        "shelly_em3_emeters_raw",
+        "windpower",
         "load_control",
+        "emeters_5min",
+        "analytics_15min",
+        "analytics_1hour",
     }
 
     # Test bucket patterns

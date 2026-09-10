@@ -13,7 +13,10 @@ from .logger import setup_logger
 
 logger = setup_logger(__name__)
 
-QUERY_TIMEOUT_MS = 15_000
+# Governs writes as well as queries: it is the HTTP timeout of the whole
+# client. Writes to the NAS routinely exceeded the old 15 s under load and
+# failed, because only queries retry (see query_with_retry).
+CLIENT_TIMEOUT_MS = 60_000
 QUERY_MAX_RETRIES = 3
 QUERY_RETRY_DELAY_S = 3
 
@@ -21,13 +24,13 @@ QUERY_RETRY_DELAY_S = 3
 class InfluxClient:
     """Wrapper for InfluxDB client with common operations"""
 
-    def __init__(self, config: Optional[Any] = None, timeout_ms: int = QUERY_TIMEOUT_MS):
+    def __init__(self, config: Optional[Any] = None, timeout_ms: int = CLIENT_TIMEOUT_MS):
         """
         Initialize InfluxDB client
 
         Args:
             config: Configuration object (uses global config if None)
-            timeout_ms: Query timeout in milliseconds (default: 15s)
+            timeout_ms: HTTP timeout for queries and writes in milliseconds
         """
         if config is None:
             config = get_config()

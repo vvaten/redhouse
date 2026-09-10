@@ -1,6 +1,7 @@
 """Unit tests for configuration validation."""
 
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 from src.common.config_validator import ConfigValidationError, ConfigValidator
@@ -15,6 +16,22 @@ class TestConfigValidator(unittest.TestCase):
         self.assertTrue(ConfigValidator.is_production_bucket("weather"))
         self.assertFalse(ConfigValidator.is_production_bucket("temperatures_test"))
         self.assertFalse(ConfigValidator.is_production_bucket("custom_bucket"))
+
+    def test_every_env_production_bucket_is_classified(self):
+        """Every INFLUXDB_BUCKET_* default in .env.example must be known.
+
+        A bucket missing from PRODUCTION_BUCKETS is reported UNKNOWN, so
+        the production write warning and the test-field guard skip it.
+        """
+        env_example = Path(__file__).parents[2] / ".env.example"
+        names = [
+            line.split("=", 1)[1].strip()
+            for line in env_example.read_text(encoding="utf-8").splitlines()
+            if line.startswith("INFLUXDB_BUCKET_") and "=" in line
+        ]
+        self.assertTrue(names, "no INFLUXDB_BUCKET_ entries found in .env.example")
+        unclassified = [n for n in names if not ConfigValidator.is_production_bucket(n)]
+        self.assertEqual(unclassified, [], f"unclassified production buckets: {unclassified}")
 
     def test_is_test_bucket(self):
         """Test test bucket detection."""
