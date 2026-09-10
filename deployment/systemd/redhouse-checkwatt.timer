@@ -4,8 +4,12 @@ Requires=redhouse-checkwatt.service
 
 [Timer]
 OnBootSec=3min
-# Run every 5 minutes at :01, :06, :11, :16, :21, :26, :31, :36, :41, :46, :51, :56
-OnCalendar=*:01,06,11,16,21,26,31,36,41,46,51,56:00
+# Every 5 minutes at :02:30, :07:30, ... Offset 90 s from wibatemp cron
+# line 39 (:01, :06, ...) so the two loaders do not write to the NAS at
+# the same instant while both run. Must stay AHEAD of
+# redhouse-aggregate-emeters-5min (:03, :08, ...), which reads the window
+# ending at :00 and would otherwise aggregate data not yet written.
+OnCalendar=*:02,07,12,17,22,27,32,37,42,47,52,57:30
 AccuracySec=1s
 
 [Install]
