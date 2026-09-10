@@ -26,11 +26,11 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
 - The daily production -> staging data copy (Step 1f) was never set up.
   Staging collectors fill their own buckets; only emeters_staging depends
   on the copy.
-- Reboot hazard: all 14 production timers are `enabled` but only
-  temperature is started. A reboot would start every redhouse timer next
-  to the wibatemp cron, including pump control. Fix before any reboot:
-  `sudo systemctl disable` every redhouse-*.timer that is not yet
-  migrated, and make deploy_production.sh restart only active timers.
+- Reboot hazard: 12 production timers are still `enabled` while stopped,
+  so a reboot would start them next to the wibatemp cron, including pump
+  control. deploy_production.sh now disables them on its next run, but
+  until it runs the hazard is live. To close it now:
+  `sudo systemctl disable redhouse-<name>.timer` for each stopped timer.
 - CheckWatt uses a NEW bucket `checkwatt` in redhouse (old system:
   `checkwatt_full_data`). See "CheckWatt Bucket Migration" below.
 - redhouse-temperature reads Shelly HT values from
@@ -53,11 +53,23 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   so the two buckets can be diffed daily as a correctness check on the
   redhouse collector. Retire line 39's raw writer only after the
   collector proves out; see "Retiring wibatemp's CheckWatt loader".
-- Staging timers are still STOPPED (from the copy) and the 7 staging
-  alerts still PAUSED. Restart both together:
-  `sudo /opt/redhouse-staging/deployment/staging_timers.sh start` and
-  `python -u deployment/pause_grafana_alerts.py --env staging --resume`
-  The 7-day staging re-measurement cannot start until they are running.
+- 2026-09-10: staging RESTARTED, all 14 timers, and the 7 staging alerts
+  RESUMED. Order matters: start the timers, wait for data to come back
+  inside each alert threshold, then resume. The rules use
+  noDataState=Alerting over a window of 2x max_age, so resuming against
+  stale data mails the contact point. Staging caught up within about
+  12 minutes. The 7-day staging measurement window starts 2026-09-10.
+- 2026-09-10: deploy_production.sh FIXED. It used to enable and restart
+  all 14 timers, which would have started redhouse pump control while
+  wibatemp still drives the pump. It now restarts only already-active
+  timers and disables the rest. --start-all restores the old behaviour
+  for a fresh install. Production can now be deployed safely.
+- Production /opt/redhouse is 8 commits behind origin/main with 3 files
+  hand-patched on 2026-09-10 (influx_client, config_validator and its
+  test). Their content matches origin/main exactly, but the install is a
+  mixture that was never tested as a whole. Bring it to main with
+  `sudo deployment/deploy_production.sh`, which will stash the 3 files
+  and fast-forward. Deploy the fixed script itself first.
 - 2026-09-09: the 7 staging Grafana alerts are PAUSED. Stopping the
   staging timers made every freshness rule fire and mail the contact
   point. Resume together with the staging timers:
@@ -141,8 +153,13 @@ Do these before any further cron line is disabled:
 - [ ] Free disk on the Pi: `sudo journalctl --vacuum-size=300M`, cap
   journald in /etc/systemd/journald.conf (SystemMaxUse=500M), trim
   data_logs retention, rotate the wibatemp logs
-- [ ] Raise the InfluxDB client timeout (10 s -> 60 s) and retry writes
-  in src/common/influx_client.py; apply to production temperature first
+- [x] Raise the InfluxDB client timeout. Done 2026-09-10: 15 s -> 60 s
+  in src/common/influx_client.py. The constant was called
+  QUERY_TIMEOUT_MS but governs writes too, which hid the effect. The
+  CheckWatt collector went from failing on it to 5 of 5 runs clean.
+- [ ] Retry writes as well as queries. query_with_retry covers reads
+  only; the 5 wrapper write methods and 6 direct write_api.write call
+  sites in src/ have no retry at all.
 - [ ] generate-program: retry at 16:20 and 16:35 on failure, and a
   curve-only fallback program when spot prices or predictions are
   missing; execute-program: fall back to the previous program file
@@ -176,7 +193,11 @@ Do these before any further cron line is disabled:
   /var/log/lastlog looks like 170 MB but is sparse and uses 16 KB.
   journald has no size cap, which is why it grew to 1.6 GB; set
   SystemMaxUse=500M in /etc/systemd/journald.conf.
-- [ ] Disable idle production timers (reboot hazard, Current State)
+- [x] Make deploy_production.sh restart only active timers. Done
+  2026-09-10.
+- [ ] Disable the 12 idle production timers now, rather than waiting for
+  the next deploy to do it (reboot hazard, Current State)
+- [ ] Bring production to origin/main and retire the hand-patched files
 - [ ] Re-measure staging for 7 days after the fixes. Gate: fewer than
   1% failed runs per unit, generate-program 7 of 7
 
