@@ -131,6 +131,25 @@ for arg in "$@"; do
     esac
 done
 
+# --- Stop the running timers for the duration ---
+# The safe window cannot protect redhouse-temperature, which fires every
+# minute, and pip can outlast the window anyway. A short known gap beats
+# a run that imports half-updated code. Restored on any exit.
+RUNNING_TIMERS=$(systemctl list-units --state=active --plain --no-legend \
+    'redhouse-*.timer' 2>/dev/null | awk '{print $1}' | grep -v staging || true)
+
+restore_timers() {
+    if [ -z "$RUNNING_TIMERS" ]; then
+        return
+    fi
+    echo ""
+    echo "Restarting the timers that were running before the deploy..."
+    for timer in $RUNNING_TIMERS; do
+        systemctl start "$timer" && echo "  [OK] $timer"
+    done
+}
+trap restore_timers EXIT
+
 # --- Initial setup or update ---
 
 if [ -d "$DEPLOY_DIR/.git" ]; then
@@ -166,6 +185,16 @@ if [ "$DEPLOY_NOW" = true ]; then
     echo "[WARN] Deploying immediately (--now flag, skipping window check)"
 else
     wait_for_window
+fi
+
+# --- Quiesce the running timers before the files change ---
+
+if [ -n "$RUNNING_TIMERS" ]; then
+    echo ""
+    echo "Stopping running timers for the update..."
+    for timer in $RUNNING_TIMERS; do
+        systemctl stop "$timer" && echo "  [OK] stopped $timer"
+    done
 fi
 
 # --- Apply code update (fast-forward only) ---
@@ -247,14 +276,21 @@ TIMERS=(
     "redhouse-backup"
 )
 
-# Restart only what is already running, and converge the enabled state
-# onto the active state so a reboot reproduces exactly what runs now.
-# Starting every timer here would hand redhouse the heat pump while
-# wibatemp still drives it from cron lines 33, 34 and 35.
+# Restart only what was running before the deploy, and converge the
+# enabled state onto it so a reboot reproduces exactly that. Starting
+# every timer here would hand redhouse the heat pump while wibatemp
+# still drives it from cron lines 33, 34 and 35.
+was_running() {
+    case " $RUNNING_TIMERS " in
+        *" $1 "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 RUNNING=0
 STOPPED=0
 for timer in "${TIMERS[@]}"; do
-    if [ "$START_ALL" = true ] || systemctl is-active --quiet "$timer.timer"; then
+    if [ "$START_ALL" = true ] || was_running "$timer.timer"; then
         systemctl enable "$timer.timer" 2>/dev/null
         systemctl restart "$timer.timer"
         echo "  [OK] $timer.timer"

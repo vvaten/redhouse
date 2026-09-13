@@ -29,6 +29,32 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# --- Stop any running staging timers for the duration ---
+# A timer firing during git reset imports half-updated code. Restore
+# on any exit, so a failed test run does not leave staging stopped.
+RUNNING_TIMERS=$(systemctl list-units --state=active --plain --no-legend \
+    'redhouse-staging-*.timer' 2>/dev/null | awk '{print $1}')
+
+restore_timers() {
+    if [ -z "$RUNNING_TIMERS" ]; then
+        return
+    fi
+    echo ""
+    echo "Restarting the staging timers that were running..."
+    for timer in $RUNNING_TIMERS; do
+        systemctl start "$timer" && echo "  [OK] $timer"
+    done
+}
+trap restore_timers EXIT
+
+if [ -n "$RUNNING_TIMERS" ]; then
+    echo "Stopping running staging timers for the update..."
+    for timer in $RUNNING_TIMERS; do
+        systemctl stop "$timer" && echo "  [OK] stopped $timer"
+    done
+    echo ""
+fi
+
 # --- Initial setup or update ---
 
 if [ -d "$DEPLOY_DIR/.git" ]; then
