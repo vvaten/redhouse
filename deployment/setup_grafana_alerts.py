@@ -24,9 +24,15 @@ Requires:
 import argparse
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from alert_rules import ALERT_RULES, STAGING_BUCKET_MAP  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -38,85 +44,6 @@ except ImportError:
 # Data freshness alert definitions:
 # Each entry defines a production bucket, measurement, and max allowed staleness.
 # Staging bucket names are derived by appending "_staging" suffix.
-ALERT_RULES = [
-    {
-        "name": "Temperature data stale",
-        "bucket": "temperatures",
-        "measurement": "temperatures",
-        "max_age_minutes": 10,
-        "eval_interval_seconds": 300,
-        "skip_envs": ["staging"],
-    },
-    {
-        "name": "Energy meter data stale",
-        "bucket": "shelly_em3_emeters_raw",
-        "measurement": "shelly_em3",
-        "wibatemp_bucket": "emeters",
-        "wibatemp_measurement": "energy",
-        "wibatemp_max_age_minutes": 30,
-        "max_age_minutes": 5,
-        "eval_interval_seconds": 120,
-    },
-    {
-        "name": "CheckWatt data stale",
-        "bucket": "checkwatt",
-        "measurement": "checkwatt",
-        "wibatemp_bucket": "checkwatt_full_data",
-        "max_age_minutes": 120,
-        "eval_interval_seconds": 600,
-    },
-    {
-        "name": "Weather data stale",
-        "bucket": "weather",
-        "measurement": "weather",
-        "max_age_minutes": 720,
-        "eval_interval_seconds": 1800,
-    },
-    {
-        "name": "Wind power data stale",
-        "bucket": "windpower",
-        "measurement": "windpower",
-        "max_age_minutes": 480,
-        "eval_interval_seconds": 1800,
-    },
-    {
-        "name": "5min aggregation stale",
-        "bucket": "emeters_5min",
-        "measurement": "energy",
-        "max_age_minutes": 15,
-        "eval_interval_seconds": 300,
-        "skip_envs": ["wibatemp"],
-    },
-    {
-        "name": "15min aggregation stale",
-        "bucket": "analytics_15min",
-        "measurement": "analytics",
-        "max_age_minutes": 45,
-        "eval_interval_seconds": 600,
-        "skip_envs": ["wibatemp"],
-    },
-    {
-        "name": "1hour aggregation stale",
-        "bucket": "analytics_1hour",
-        "measurement": "analytics",
-        "max_age_minutes": 180,
-        "eval_interval_seconds": 1800,
-        "skip_envs": ["wibatemp"],
-    },
-]
-
-# Bucket name mapping from production to staging
-STAGING_BUCKET_MAP = {
-    "temperatures": "temperatures_staging",
-    "shelly_em3_emeters_raw": "shelly_em3_emeters_raw_staging",
-    "checkwatt": "checkwatt_staging",
-    "weather": "weather_staging",
-    "windpower": "windpower_staging",
-    "emeters_5min": "emeters_5min_staging",
-    "analytics_15min": "analytics_15min_staging",
-    "analytics_1hour": "analytics_1hour_staging",
-}
-
 CONTACT_POINT_NAME_ENV = "GRAFANA_CONTACT_POINT_NAME"
 
 
@@ -347,11 +274,79 @@ def parse_args():
         action="store_true",
         help="Print alert rules without creating them",
     )
+    parser.add_argument(
+        "--all-rules",
+        action="store_true",
+        help="Create production rules even for collectors that are not running",
+    )
     return parser.parse_args()
 
 
-def setup_environment_alerts(base_url, api_key, env_name, datasource_uid):
-    """Create alert rules for a single environment."""
+def active_production_timers():
+    """Names of running redhouse production timers, or None if unreadable."""
+    try:
+        result = subprocess.run(
+            [
+                "systemctl",
+                "list-units",
+                "--state=active",
+                "--plain",
+                "--no-legend",
+                "redhouse-*.timer",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+
+    names = set()
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        unit = parts[0]
+        if unit.endswith(".timer") and "staging" not in unit:
+            names.add(unit[: -len(".timer")])
+    return names
+
+
+def rule_is_wanted(rule_def, env_name, running):
+    """Should this rule exist in this environment right now?
+
+    A production rule whose collector is not running would fire at once,
+    because the rules treat no data as an alert.
+    """
+    if env_name in rule_def.get("skip_envs", []):
+        return False, "not applicable for %s" % env_name
+    if running is None:
+        return True, ""
+    timer = rule_def.get("timer")
+    if timer and timer not in running:
+        return False, "%s.timer not running" % timer
+    return True, ""
+
+
+def setup_environment_alerts(base_url, api_key, env_name, datasource_uid, all_rules=False):
+    """Create alert rules for a single environment.
+
+    Production rules follow the migration: only collectors that are
+    actually running get a rule.
+    """
+    running = None
+    if env_name == "production" and not all_rules:
+        running = active_production_timers()
+        if running is None:
+            raise RuntimeError(
+                "Cannot read systemd timer state. Production rules would be "
+                "created for collectors that are not running, and those fire "
+                "immediately. Run this on the Pi, or pass --all-rules."
+            )
+        print(f"Matching rules to {len(running)} running timer(s)")
+
     folder_title = f"RedHouse-Alerts-{env_name.capitalize()}"
     group_name = f"Data-Freshness-{env_name.capitalize()}"
 
@@ -372,8 +367,9 @@ def setup_environment_alerts(base_url, api_key, env_name, datasource_uid):
     rule_group = {"title": group_name, "folderUid": folder_uid, "interval": 300, "rules": []}
 
     for rule_def in ALERT_RULES:
-        if env_name in rule_def.get("skip_envs", []):
-            print(f"  Skipped: {rule_def['name']} (not applicable for {env_name})")
+        wanted, reason = rule_is_wanted(rule_def, env_name, running)
+        if not wanted:
+            print(f"  Skipped: {rule_def['name']} ({reason})")
             continue
         alert_rule = build_alert_rule(rule_def, datasource_uid, folder_uid, env_name, group_name)
         rule_group["rules"].append(alert_rule)
@@ -413,9 +409,16 @@ def main():
     if args.dry_run:
         for env_name in environments:
             print(f"\n{env_name.upper()} - would create these alert rules:")
+            running = None
+            if env_name == "production" and not args.all_rules:
+                running = active_production_timers()
+                if running is None:
+                    print("  Cannot read timer state; would refuse.")
+                    continue
             for rule_def in ALERT_RULES:
-                if env_name in rule_def.get("skip_envs", []):
-                    print(f"  - {rule_def['name']}: SKIPPED (not applicable)")
+                wanted, reason = rule_is_wanted(rule_def, env_name, running)
+                if not wanted:
+                    print(f"  - {rule_def['name']}: SKIPPED ({reason})")
                     continue
                 bucket = rule_def["bucket"]
                 measurement = rule_def["measurement"]
@@ -436,7 +439,7 @@ def main():
 
     for env_name in environments:
         print(f"\n--- Setting up {env_name.upper()} alerts ---")
-        setup_environment_alerts(base_url, args.api_key, env_name, datasource_uid)
+        setup_environment_alerts(base_url, args.api_key, env_name, datasource_uid, args.all_rules)
 
     setup_notification_policy(base_url, args.api_key, args.contact_point)
     print("\nDone! Check Grafana -> Alerting -> Alert rules to verify.")
