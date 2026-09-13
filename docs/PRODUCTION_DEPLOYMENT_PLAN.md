@@ -259,6 +259,20 @@ side effect of a dry-run.
   inputs: Fingrid hourly wind 71 h, FMI wind 60 h, FMI weather 49 h.
   Spot prices publish about 30 h, which is the gap to fill: day 1
   exact, days 2 and 3 predicted, day 3 wind-only.
+- Forecast buckets need a forward-coverage alert, not a staleness one.
+  weather, windpower and spotprice hold points ahead of now: 50 h,
+  72 h and 29 h measured on 2026-09-13. The existing rules ask how old
+  the newest point at or before now is, which stays fresh as time
+  advances into already-written data. So a dead collector is invisible
+  until its forward coverage runs out: weather's 12 h threshold would
+  not fire for about 2.5 days, windpower's 8 h not for 3 days.
+  spotprice has no rule at all, and matters most: coverage runs 29 h,
+  so a failed afternoon fetch still lets tomorrow's 16:05 program
+  succeed on already-written prices, and only the day after runs
+  blind. With OL3 out for 50 days the cost of that is real.
+  The fix is a different query shape: alert when coverage does not
+  extend at least N hours past now. 12 h for spotprice would catch a
+  failed fetch the same afternoon. Worth doing before Phase 2.
 - KeskikerrosKH (Shelly id 192) has never reported: low battery.
   PaaMH2 (id 181) is a stale id, the sensor was replaced. Hilla and
   Ulkolampo were unplugged over a year ago. sensors.yaml still maps all
