@@ -208,16 +208,57 @@ getting data, and the physical pump responding.
 
 Retire cron line 9 (checkwatt_dataloader and its netting) once nothing
 reads `emeters`/`energy`. Start health-check and backup timers. Keep
-line 2 (pinglogger, not ported) and line 11 (i2c setup).
+line 11 (i2c setup).
+
+Then port pinglogger (cron line 2). Deferred deliberately until the
+heating program runs from redhouse. It is the largest bucket in the
+instance at 230 MB, over half of all storage, and still runs from
+wibatemp with hardcoded credentials.
+
+### Pump control test: DONE
+
+2026-04-06 and 2026-04-08, against the real hardware, all commands
+successful: ON, ALE, EVU, ON. Recorded in /var/log/redhouse/
+pump_control.log. Earlier text saying "status not recorded" was wrong.
+
+### Program comparison, 2026-09-13
+
+The first production comparison of the two generators, for 2026-09-14:
+both chose 2.75 heating hours, ON from 00:00 and ALE at 02:45, and 0
+EVU-OFF intervals. Correct, since the day's peak of 0.3663 EUR/kWh is
+under the 0.40 threshold, against a spread of 0.0601 to 0.3663. Run
+this comparison daily through Phase 1; volatile days are the ones
+where disagreement would cost money.
+
+Generate with:
+`venv/bin/python -u generate_heating_program_v2.py --dry-run --date-offset 1`
+It writes ./2026-MM/heating_program_schedule_*.json under the install
+directory, which is separate from wibatemp's copy, but note that is a
+side effect of a dry-run.
 
 ### Outstanding, not blocking any phase
 
 - Writes have no retry. query_with_retry covers reads only; the 5
   wrapper write methods and 6 direct write_api.write call sites do not.
 - InfluxDB hygiene: nine production buckets use forever retention with
-  7-day shard groups, growing 469 shards/year. Shortening retention on
-  the raw buckets and widening shard groups to 90 days would make the
-  instance stable. analytics_1hour is the intended long tail.
+  7-day shard groups, growing 469 shards/year. Widen the shard groups
+  to 90 days: that cuts growth 13x and discards no history.
+  Do NOT shorten retention to save disk. The whole instance is 0.45 GB.
+  weather is 11 MB for 3.4 years, spotprice 1.8 MB for 4.8 years,
+  windpower 1.5 MB. Shards are the cost, not bytes, and shard count
+  does not track data volume. Earlier advice here was wrong.
+- Two weather records, both wanted. The bucket keeps the last forecast
+  per valid time, so it is effectively observed weather, 3.4 years for
+  11 MB. The JSON archive keeps every forecast run with its vintage,
+  which is the only thing that can train a forecast-to-price model.
+- Phase 1 must raise weather's JSON retention in the same change.
+  wibatemp's get_weather.py maintains a 30-day archive at
+  /home/pi/weather_data; when that stops, redhouse's 7-day default
+  replaces it and the vintage window shrinks.
+- Price prediction horizon caps at about 3 days, not 4. Furthest
+  inputs: Fingrid hourly wind 71 h, FMI wind 60 h, FMI weather 49 h.
+  Spot prices publish about 30 h, which is the gap to fill: day 1
+  exact, days 2 and 3 predicted, day 3 wind-only.
 - KeskikerrosKH (Shelly id 192) has never reported: low battery.
   PaaMH2 (id 181) is a stale id, the sensor was replaced. Hilla and
   Ulkolampo were unplugged over a year ago. sensors.yaml still maps all
