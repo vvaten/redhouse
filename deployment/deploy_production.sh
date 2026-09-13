@@ -135,8 +135,9 @@ done
 # The safe window cannot protect redhouse-temperature, which fires every
 # minute, and pip can outlast the window anyway. A short known gap beats
 # a run that imports half-updated code. Restored on any exit.
+# Space separated, not newline: was_running matches on surrounding spaces.
 RUNNING_TIMERS=$(systemctl list-units --state=active --plain --no-legend \
-    'redhouse-*.timer' 2>/dev/null | awk '{print $1}' | grep -v staging || true)
+    'redhouse-*.timer' 2>/dev/null | awk '{print $1}' | grep -v staging | tr '\n' ' ' || true)
 
 restore_timers() {
     if [ -z "$RUNNING_TIMERS" ]; then
