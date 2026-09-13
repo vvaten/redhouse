@@ -1,19 +1,28 @@
 """Detect InfluxDB performance degradation before queries start failing.
 
-Thresholds come from two measured states of this instance on
-2026-09-13, degraded after 162 days of uptime and healthy after a
-restart:
+Thresholds come from measured states of this instance, all on
+2026-09-13: degraded after 162 days of uptime, healthy just after a
+restart, and healthy again 4 h later.
 
-                    degraded   healthy
-  query latency       1.98 s    0.03 s
-  GC pause p50       0.257 s  0.00016 s
-  sys_bytes          2.62 GB   1.63 GB
-  shards               2936      1729
-  goroutines          18696     18510
+                    degraded   healthy    4 h in
+  query latency       1.98 s    0.03 s    0.10 s
+  GC pause p50       0.257 s  0.00016 s  0.00016 s
+  resident           2.62 GB   1.63 GB   1.54 GB
+  sys_bytes          2.62 GB   1.63 GB   2.21 GB
+  shards               2936      1729      1729
+  goroutines          18696     18510     18513
 
 Goroutines barely moved, so they are not the signal despite looking
 alarming. Shards drive memory, memory drives GC pauses, and GC pauses
 are what time out a write.
+
+Memory here means resident, not sys_bytes. sys_bytes counts address
+space reserved from the OS including pages Go has already given back,
+so it climbs with uptime on an instance that is behaving. The 4 h
+column is that case: sys_bytes reached 2.21 GB with 0.67 GB of it
+already released, while every other signal stayed healthy. The
+degraded reading did not capture heap_released_bytes, so its resident
+figure is its sys_bytes and may be an overestimate.
 """
 
 import re
@@ -30,7 +39,7 @@ logger = setup_logger(__name__, "influx_health.log")
 # is still headroom rather than once queries already fail.
 QUERY_LATENCY_WARN_SECONDS = 1.0
 GC_PAUSE_WARN_SECONDS = 0.05
-SYS_BYTES_WARN = 2_000_000_000
+RESIDENT_BYTES_WARN = 2_000_000_000
 SHARD_COUNT_WARN = 2200
 
 METRICS_TIMEOUT_SECONDS = 30
@@ -63,6 +72,21 @@ def _gc_pause_median(text: str) -> Optional[float]:
 
 def _shard_count(text: str) -> int:
     return len(re.findall(r"^storage_tsm_files_total\{", text, re.M))
+
+
+def _resident_bytes(text: str) -> Optional[float]:
+    """Reserved address space minus the pages Go gave back to the OS.
+
+    Released pages stay in sys_bytes but cost nothing, so counting them
+    warns on uptime rather than on memory pressure.
+    """
+    sys_bytes = _gauge(text, "go_memstats_sys_bytes")
+    if sys_bytes is None:
+        return None
+    released = _gauge(text, "go_memstats_heap_released_bytes")
+    if released is None:
+        released = 0.0
+    return sys_bytes - released
 
 
 def probe_query_seconds(influx: Any) -> Optional[float]:
@@ -108,12 +132,12 @@ def check_influxdb_performance(influx: Any, url: str, token: str) -> tuple[list[
 def metric_warnings(text: str) -> list[str]:
     """Warnings from the metrics text, logging the numbers for trend."""
     gc_pause = _gc_pause_median(text)
-    sys_bytes = _gauge(text, "go_memstats_sys_bytes")
+    resident = _resident_bytes(text)
     shards = _shard_count(text)
     logger.info(
-        "InfluxDB gc_p50=%s sys_bytes=%s shards=%d",
+        "InfluxDB gc_p50=%s resident=%s shards=%d",
         f"{gc_pause:.3f}s" if gc_pause is not None else "?",
-        f"{sys_bytes / 1e9:.2f}GB" if sys_bytes is not None else "?",
+        f"{resident / 1e9:.2f}GB" if resident is not None else "?",
         shards,
     )
 
@@ -123,10 +147,10 @@ def metric_warnings(text: str) -> list[str]:
             f"InfluxDB GC pauses at {gc_pause:.2f}s median "
             f"(warn above {GC_PAUSE_WARN_SECONDS}s); this is what times out writes"
         )
-    if sys_bytes is not None and sys_bytes > SYS_BYTES_WARN:
+    if resident is not None and resident > RESIDENT_BYTES_WARN:
         out.append(
-            f"InfluxDB reserving {sys_bytes / 1e9:.2f} GB "
-            f"(warn above {SYS_BYTES_WARN / 1e9:.1f} GB); a restart reclaims it"
+            f"InfluxDB using {resident / 1e9:.2f} GB resident "
+            f"(warn above {RESIDENT_BYTES_WARN / 1e9:.1f} GB); a restart reclaims it"
         )
     if shards > SHARD_COUNT_WARN:
         out.append(

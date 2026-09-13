@@ -1,8 +1,10 @@
 """Tests for InfluxDB degradation detection.
 
-Fixtures reproduce the two measured states of the real instance on
-2026-09-13: degraded after 162 days of uptime, and healthy after a
-restart.
+Fixtures reproduce three measured states of the real instance on
+2026-09-13: degraded after 162 days of uptime, healthy just after a
+restart, and healthy again 4 h later with memory released back to the
+OS. Neither measured healthy state captured heap_released_bytes, so
+only the 4 h fixture carries that line.
 """
 
 from unittest.mock import MagicMock, patch
@@ -28,6 +30,19 @@ go_memstats_sys_bytes 1.63e+09
     'storage_tsm_files_total{bucket="a",id="%d"} 1\n' % i for i in range(1, 1730)
 )
 
+# Healthy, 4 h after the restart. sys_bytes has climbed past the 2 GB
+# threshold but 0.67 GB of it is already released, so resident is
+# below even the just-restarted reading.
+RELEASED = """\
+go_gc_duration_seconds{quantile="0.5"} 0.000162168
+go_gc_duration_seconds{quantile="1"} 0.506775308
+go_goroutines 18513
+go_memstats_heap_released_bytes 6.66427392e+08
+go_memstats_sys_bytes 2.209569544e+09
+""" + "".join(
+    'storage_tsm_files_total{bucket="a",id="%d"} 1\n' % i for i in range(1, 1730)
+)
+
 
 class TestMetricParsing:
     def test_reads_gauge(self):
@@ -45,6 +60,15 @@ class TestMetricParsing:
         assert ih._shard_count(DEGRADED) == 2936
         assert ih._shard_count(HEALTHY) == 1729
 
+    def test_resident_subtracts_released_pages(self):
+        assert ih._resident_bytes(RELEASED) == 2209569544.0 - 666427392.0
+
+    def test_resident_without_released_line_is_sys_bytes(self):
+        assert ih._resident_bytes(DEGRADED) == 2618152024.0
+
+    def test_resident_is_none_when_sys_bytes_absent(self):
+        assert ih._resident_bytes("# nothing useful here\n") is None
+
 
 class TestMetricWarnings:
     def test_degraded_state_warns_on_all_three(self):
@@ -52,11 +76,16 @@ class TestMetricWarnings:
         assert len(out) == 3
         joined = " ".join(out)
         assert "GC pauses" in joined
-        assert "reserving" in joined
+        assert "resident" in joined
         assert "shards" in joined
 
     def test_healthy_state_is_silent(self):
         assert ih.metric_warnings(HEALTHY) == []
+
+    def test_released_memory_is_not_memory_pressure(self):
+        """sys_bytes above the threshold must not warn on its own."""
+        assert ih._gauge(RELEASED, "go_memstats_sys_bytes") > ih.RESIDENT_BYTES_WARN
+        assert ih.metric_warnings(RELEASED) == []
 
     def test_goroutines_are_not_a_signal(self):
         """They barely moved across the restart, so must not warn."""
@@ -128,8 +157,8 @@ class TestThresholdsSitBetweenTheMeasuredStates:
     def test_gc_pause(self):
         assert 0.00016 < ih.GC_PAUSE_WARN_SECONDS < 0.257
 
-    def test_sys_bytes(self):
-        assert 1.63e9 < ih.SYS_BYTES_WARN < 2.618e9
+    def test_resident(self):
+        assert 1.63e9 < ih.RESIDENT_BYTES_WARN < 2.618e9
 
     def test_shards(self):
         assert 1729 < ih.SHARD_COUNT_WARN < 2936
