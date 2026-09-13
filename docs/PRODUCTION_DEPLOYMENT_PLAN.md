@@ -128,6 +128,35 @@ names its checkpoint: the thing to verify before starting the next.
   created only when its collector runs.
 - InfluxDB restarted. Latency down 60x, shards 2936 -> 1729.
 
+### Week timeline, from 2026-09-13
+
+Dates, not durations, because almost every checkpoint lands at 16:05
+when the heating program runs. Reference cron lines by content, not
+number: the numbering shifts each time a line is commented.
+
+| Date | Action | Checkpoint |
+|------|--------|-----------|
+| Sun 13 | Phase 1 done. All three collectors live. | first runs all exit 0 |
+| Mon 14 | Watch only. Start the generate-program fallback. | 16:05 program runs on redhouse-written weather and prices |
+| Tue 15 | Phase 2 solar prediction. Then Phase 3 Shelly EM3. Then Phase 4 aggregation once Shelly writes. | Shelly at 1/min within the hour; tiers start filling |
+| Wed 16 | Phase 4 soak. Fallback code to staging. | tiers at 288 / 96 / 24 per day |
+| Thu 17 | Phase 4 checkpoint at 48 h. Phase 5 repoint the emeters readers. Fallback to production. | both readers on emeters_5min give the same figures |
+| Fri 18 | Soak. Do NOT cut over heating before a weekend. | 15-min tier holding 96/day, no window loss |
+| Mon 21 | Phase 6 heating cutover, right after 16:05 when a fresh program exists. | pump command at the next quarter hour, load_control filling, pump responds |
+| Tue 22 on | Watch, then Phase 7 cleanup. | |
+
+Why Monday 21 and not Friday 18 for the cutover: it is the one step
+that can leave the house unheated or heating at peak price, and a
+Friday start means two unattended days before anyone looks. Monday
+gives a full working week. The cost of waiting is one weekend of
+wibatemp control, which works.
+
+The critical path is not the phases, it is the generate-program
+fallback. Without it a failed 16:05 leaves the pump with no program
+for a day, and staging saw that fail 3 times in 10 before the
+database was fixed. Write it Mon to Wed, in parallel with the Phase 4
+soak, so it is not the thing holding up Monday 21.
+
 ### Phase 1: weather, windpower, spot prices (ready)
 
 Clean swaps. Each reads its own external API live, writes only its own
