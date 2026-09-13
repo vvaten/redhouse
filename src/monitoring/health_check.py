@@ -1,6 +1,8 @@
 """Pi-side health check: disk, services, NAS reachability, backup freshness."""
 
+import hashlib
 import json
+import os
 import platform
 import shutil
 import socket
@@ -8,7 +10,8 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from src.common.config import get_config
@@ -34,6 +37,79 @@ REDHOUSE_SERVICES = [
     "redhouse-generate-program",
     "redhouse-execute-program",
 ]
+
+# A repeating problem must not mail on every run. 96 runs a day once
+# exhausted the Resend daily quota and buried the real alerts.
+ALERT_STATE_FILE = Path("data/health_check_state.json")
+ALERT_REPEAT_HOURS = 6
+
+
+def _is_staging() -> bool:
+    """True when this install runs as staging."""
+    return os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
+
+
+def _timer_unit(service: str) -> str:
+    """Timer unit name for this install. Staging units carry a prefix."""
+    if _is_staging():
+        service = service.replace("redhouse-", "redhouse-staging-", 1)
+    return f"{service}.timer"
+
+
+def _systemctl(verb: str, unit: str) -> str:
+    """Return systemctl's one-word answer, or 'unknown' if it cannot run."""
+    try:
+        result = subprocess.run(
+            ["systemctl", verb, unit], capture_output=True, text=True, timeout=10
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        logger.warning("Cannot run systemctl %s %s: %s", verb, unit, e)
+        return "unknown"
+    return result.stdout.strip() or "unknown"
+
+
+def alert_fingerprint(failures: list[str], warnings: list[str]) -> str:
+    """Stable id for a set of problems, so repeats can be recognised.
+
+    Severity is part of the id, so a problem that moves between failure
+    and warning still counts as a change and gets mailed.
+    """
+    labelled = [f"F:{item}" for item in sorted(failures)]
+    labelled += [f"W:{item}" for item in sorted(warnings)]
+    return hashlib.sha256("\n".join(labelled).encode("utf-8")).hexdigest()
+
+
+def should_send_alert(
+    fingerprint: str,
+    state_file: Path = ALERT_STATE_FILE,
+    repeat_after: timedelta = timedelta(hours=ALERT_REPEAT_HOURS),
+    now: Optional[datetime] = None,
+) -> bool:
+    """True when this problem set is new, or was last mailed long ago."""
+    now = now or datetime.now(timezone.utc)
+    try:
+        state = json.loads(state_file.read_text())
+        last_sent = datetime.fromisoformat(state["sent_at"])
+        if state["fingerprint"] != fingerprint:
+            return True
+        return now - last_sent >= repeat_after
+    except (OSError, ValueError, KeyError, TypeError):
+        return True
+
+
+def record_alert_sent(
+    fingerprint: str,
+    state_file: Path = ALERT_STATE_FILE,
+    now: Optional[datetime] = None,
+) -> None:
+    """Remember this problem set so the next run can suppress a repeat."""
+    now = now or datetime.now(timezone.utc)
+    payload = {"fingerprint": fingerprint, "sent_at": now.isoformat()}
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps(payload))
+    except OSError as e:
+        logger.warning("Cannot write alert state to %s: %s", state_file, e)
 
 
 def check_disk_space() -> tuple[list[str], list[str]]:
@@ -67,7 +143,10 @@ def check_disk_space() -> tuple[list[str], list[str]]:
 
 
 def check_systemd_services() -> tuple[list[str], list[str]]:
-    """Check that all redhouse systemd timers are active.
+    """Check that every enabled redhouse timer is running.
+
+    A disabled timer is a deployment choice, not a fault: most stay off
+    until the migration reaches them, and wibatemp still owns those jobs.
 
     Returns:
         Tuple of (failures, warnings)
@@ -79,25 +158,24 @@ def check_systemd_services() -> tuple[list[str], list[str]]:
         logger.info("Skipping systemd check on non-Linux platform")
         return failures, warnings
 
+    checked = 0
     for service in REDHOUSE_SERVICES:
-        timer_name = f"{service}.timer"
-        try:
-            result = subprocess.run(
-                ["systemctl", "is-active", timer_name],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            status = result.stdout.strip()
-            if status != "active":
-                failures.append(f"Timer {timer_name} is {status}")
-            else:
-                logger.debug("Timer %s is active", timer_name)
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            warnings.append(f"Cannot check timer {timer_name}: {e}")
+        timer_name = _timer_unit(service)
+        enabled = _systemctl("is-enabled", timer_name)
+        if enabled == "unknown":
+            warnings.append(f"Cannot read enabled state of {timer_name}")
+            continue
+        if enabled != "enabled":
+            logger.debug("Timer %s is %s, not expected to run", timer_name, enabled)
+            continue
+
+        checked += 1
+        active = _systemctl("is-active", timer_name)
+        if active != "active":
+            failures.append(f"Timer {timer_name} is enabled but {active}")
 
     if not failures:
-        logger.info("All %d systemd timers are active", len(REDHOUSE_SERVICES))
+        logger.info("All %d enabled systemd timers are active", checked)
 
     return failures, warnings
 
@@ -271,6 +349,50 @@ def check_backup_freshness() -> tuple[list[str], list[str]]:
     return failures, warnings
 
 
+def dispatch_alert(
+    config: object,
+    hostname: str,
+    failures: list[str],
+    warnings: list[str],
+) -> bool:
+    """Mail the problems unless the same set was mailed recently.
+
+    Returns:
+        True if an email was sent
+    """
+    api_key = config.get("RESEND_API_KEY")  # type: ignore[attr-defined]
+    to_email = config.get("ALERT_EMAIL_TO")  # type: ignore[attr-defined]
+    from_email = config.get(  # type: ignore[attr-defined]
+        "ALERT_EMAIL_FROM", "RedHouse <alerts@resend.dev>"
+    )
+
+    if not api_key:
+        logger.error("RESEND_API_KEY not configured, cannot send alert")
+        return False
+    if not to_email:
+        logger.error("ALERT_EMAIL_TO not configured, cannot send alert")
+        return False
+
+    fingerprint = alert_fingerprint(failures, warnings)
+    if not should_send_alert(fingerprint):
+        logger.info("Same problems already mailed within %dh, not repeating", ALERT_REPEAT_HOURS)
+        return False
+
+    severity = "FAILURE" if failures else "WARNING"
+    sent = send_alert_email(
+        api_key=api_key,
+        to_email=to_email,
+        subject=f"[RedHouse {severity}] {hostname}: health check alert",
+        body=format_alert_body(hostname, failures, warnings),
+        from_email=from_email,
+    )
+    if sent:
+        record_alert_sent(fingerprint)
+    else:
+        logger.error("Failed to send alert email to %s", to_email)
+    return sent
+
+
 def run_health_check() -> int:
     """Run all health checks and send alert email if problems found.
 
@@ -306,32 +428,7 @@ def run_health_check() -> int:
             len(all_failures),
             len(all_warnings),
         )
-
-        resend_api_key = config.get("RESEND_API_KEY")
-        alert_email_to = config.get("ALERT_EMAIL_TO")
-        alert_email_from = config.get("ALERT_EMAIL_FROM", "RedHouse <alerts@resend.dev>")
-
-        if not resend_api_key:
-            logger.error("RESEND_API_KEY not configured, cannot send alert")
-            return 1 if all_failures else 2
-
-        if not alert_email_to:
-            logger.error("ALERT_EMAIL_TO not configured, cannot send alert")
-            return 1 if all_failures else 2
-
-        severity = "FAILURE" if all_failures else "WARNING"
-        subject = f"[RedHouse {severity}] {hostname}: health check alert"
-        body = format_alert_body(hostname, all_failures, all_warnings)
-
-        email_sent = send_alert_email(
-            api_key=resend_api_key,
-            to_email=alert_email_to,
-            subject=subject,
-            body=body,
-            from_email=alert_email_from,
-        )
-        if not email_sent:
-            logger.error("Failed to send alert email to %s", alert_email_to)
+        dispatch_alert(config, hostname, all_failures, all_warnings)
     else:
         logger.info("All health checks passed")
 
