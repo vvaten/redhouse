@@ -15,6 +15,7 @@ SRC = Path(__file__).parents[2] / "src" / "data_collection"
 # collector, expected retention_days. None means the 7-day default is fine
 # because the data carries no forecast vintage worth keeping.
 EXPECTED = {
+    "weather.py": 30,
     "windpower.py": 30,
     "temperature.py": 30,
 }
@@ -43,9 +44,20 @@ def test_windpower_keeps_more_than_the_default():
     assert override_in(SRC / "windpower.py") > 7
 
 
-def test_override_precedes_log_data():
+@pytest.mark.parametrize("filename", sorted(EXPECTED))
+def test_override_precedes_log_data(filename):
     """Setting it after log_data would not affect the cleanup."""
-    text = (SRC / "windpower.py").read_text(encoding="utf-8")
+    text = (SRC / filename).read_text(encoding="utf-8")
     assign = text.index("json_logger.retention_days")
     call = text.index("json_logger.log_data")
     assert assign < call
+
+
+def test_forecast_collectors_beat_the_default():
+    """Weather and wind vintage exists nowhere else once wibatemp stops.
+
+    get_weather.py maintains a 30-day archive today. When Phase 1 moves
+    weather to redhouse, a 7-day default would shrink that window.
+    """
+    for filename in ("weather.py", "windpower.py"):
+        assert override_in(SRC / filename) >= 30, filename

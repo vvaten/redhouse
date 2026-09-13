@@ -39,6 +39,9 @@ class TestRsyncDataLogArchive:
         cmd = run.call_args[0][0]
         assert "--delete" not in cmd
         assert "--ignore-existing" in cmd
+        # rsync 3.2.3 on the Pi supports this, so the NAS directory does
+        # not have to be created by hand first.
+        assert "--mkpath" in cmd
         assert cmd[-1] == f"{NAS[1]}@{NAS[0]}:{ARCHIVE}/"
 
     def test_destination_is_not_the_dated_snapshot(self, tmp_path):

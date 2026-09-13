@@ -210,8 +210,11 @@ def collect_weather() -> dict[datetime.datetime, dict[str, float]]:
         logger.error("No weather data collected")
         return {}
 
-    # Log raw data to JSON for backup (with 1 week retention)
+    # Each run is the only record of what was forecast when, which price
+    # prediction needs; the bucket overwrites per valid time. 30 days
+    # matches the archive wibatemp kept, and buffers the NAS mirror.
     json_logger = JSONDataLogger("weather")
+    json_logger.retention_days = 30
     # Convert datetime keys to strings for JSON serialization
     weather_data_serializable = {
         timestamp.isoformat(): fields for timestamp, fields in weather_data.items()

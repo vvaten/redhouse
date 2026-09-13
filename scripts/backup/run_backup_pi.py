@@ -133,6 +133,7 @@ def _rsync_data_log_archive(
         "-az",
         "--timeout=300",
         "--ignore-existing",
+        "--mkpath",
         "-e",
         f"ssh -i {nas_ssh_key} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15",
         f"{data_logs_dir}/",
