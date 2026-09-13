@@ -79,3 +79,6 @@ htmlcov/
 
 # Logs
 *.log.txt
+
+# pytest log output (LOG_DIR in pytest.ini)
+tests/.logs/

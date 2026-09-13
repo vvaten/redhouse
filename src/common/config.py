@@ -250,7 +250,8 @@ class Config:
 
     @property
     def log_dir(self) -> str:
-        return str(self._get_yaml("logging.dir") or "/var/log/redhouse")
+        # LOG_DIR first so tests do not write into the operational logs.
+        return str(os.getenv("LOG_DIR") or self._get_yaml("logging.dir") or "/var/log/redhouse")
 
     @property
     def log_max_bytes(self) -> int:

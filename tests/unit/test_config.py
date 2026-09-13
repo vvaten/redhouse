@@ -211,17 +211,24 @@ data_collection:
             os.unlink(yaml_path)
 
     def test_config_logging_from_yaml(self):
-        """Test logging config comes from config.yaml with sensible defaults."""
+        """Test logging config comes from config.yaml with sensible defaults.
+
+        LOG_DIR is cleared because pytest.ini sets it, and it outranks
+        the YAML value by design.
+        """
         yaml_content = MINIMAL_CONFIG_YAML.replace("level: INFO", "level: DEBUG").replace(
             "dir: /var/log/redhouse", "dir: /tmp/test-logs"
         )
         yaml_path = _make_temp_config(yaml_content)
         try:
-            config = Config(config_path=yaml_path)
-            self.assertEqual(config.log_level, "DEBUG")
-            self.assertEqual(config.log_dir, "/tmp/test-logs")
-            self.assertEqual(config.log_max_bytes, 10485760)
-            self.assertEqual(config.log_backup_count, 5)
+            # Empty, not absent: Config calls load_dotenv, which would
+            # restore LOG_DIR from .env if the key were missing.
+            with patch.dict(os.environ, {"LOG_DIR": ""}):
+                config = Config(config_path=yaml_path)
+                self.assertEqual(config.log_level, "DEBUG")
+                self.assertEqual(config.log_dir, "/tmp/test-logs")
+                self.assertEqual(config.log_max_bytes, 10485760)
+                self.assertEqual(config.log_backup_count, 5)
         finally:
             os.unlink(yaml_path)
 
@@ -251,11 +258,24 @@ data_collection:
 """
         yaml_path = _make_temp_config(yaml_content)
         try:
-            config = Config(config_path=yaml_path)
-            self.assertEqual(config.log_level, "INFO")
-            self.assertEqual(config.log_dir, "/var/log/redhouse")
-            self.assertEqual(config.log_max_bytes, 10485760)
-            self.assertEqual(config.log_backup_count, 5)
+            # Empty, not absent: Config calls load_dotenv, which would
+            # restore LOG_DIR from .env if the key were missing.
+            with patch.dict(os.environ, {"LOG_DIR": ""}):
+                config = Config(config_path=yaml_path)
+                self.assertEqual(config.log_level, "INFO")
+                self.assertEqual(config.log_dir, "/var/log/redhouse")
+                self.assertEqual(config.log_max_bytes, 10485760)
+                self.assertEqual(config.log_backup_count, 5)
+        finally:
+            os.unlink(yaml_path)
+
+    def test_log_dir_env_var_wins(self):
+        """LOG_DIR outranks YAML so tests cannot write operational logs."""
+        yaml_path = _make_temp_config()
+        try:
+            with patch.dict(os.environ, {"LOG_DIR": "/tmp/env-logs"}):
+                config = Config(config_path=yaml_path)
+                self.assertEqual(config.log_dir, "/tmp/env-logs")
         finally:
             os.unlink(yaml_path)
 
