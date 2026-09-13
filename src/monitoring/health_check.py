@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -69,14 +70,23 @@ def _systemctl(verb: str, unit: str) -> str:
     return result.stdout.strip() or "unknown"
 
 
+def _problem_shape(message: str) -> str:
+    """The message with its measured values removed.
+
+    A message carries a live reading, so hashing it whole makes every
+    drift in that reading a new problem and defeats the repeat window.
+    """
+    return re.sub(r"\d+(?:\.\d+)?", "#", message)
+
+
 def alert_fingerprint(failures: list[str], warnings: list[str]) -> str:
     """Stable id for a set of problems, so repeats can be recognised.
 
     Severity is part of the id, so a problem that moves between failure
     and warning still counts as a change and gets mailed.
     """
-    labelled = [f"F:{item}" for item in sorted(failures)]
-    labelled += [f"W:{item}" for item in sorted(warnings)]
+    labelled = [f"F:{_problem_shape(item)}" for item in sorted(failures)]
+    labelled += [f"W:{_problem_shape(item)}" for item in sorted(warnings)]
     return hashlib.sha256("\n".join(labelled).encode("utf-8")).hexdigest()
 
 

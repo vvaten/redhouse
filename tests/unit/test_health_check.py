@@ -208,6 +208,17 @@ class TestAlertFingerprint:
         b = health_check.alert_fingerprint([], ["x"])
         assert a != b
 
+    def test_drifting_measurement_is_the_same_problem(self):
+        """Otherwise each reading mails again and the window never holds."""
+        a = health_check.alert_fingerprint([], ["InfluxDB using 2.21 GB resident"])
+        b = health_check.alert_fingerprint([], ["InfluxDB using 2.34 GB resident"])
+        assert a == b
+
+    def test_different_subjects_still_differ_without_numbers(self):
+        a = health_check.alert_fingerprint(["redhouse-weather.timer is inactive"], [])
+        b = health_check.alert_fingerprint(["redhouse-checkwatt.timer is inactive"], [])
+        assert a != b
+
 
 class TestShouldSendAlert:
     @pytest.fixture
