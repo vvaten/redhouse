@@ -118,12 +118,19 @@ class TestTemperatureCollection(unittest.TestCase):
         # Should reject 85C on first reading
         self.assertIsNone(result)
 
+    @patch("src.data_collection.temperature.JSONDataLogger")
+    @patch("src.data_collection.temperature.load_shelly_ht_data")
     @patch("src.data_collection.temperature.get_temperature_meter_ids")
     @patch("src.data_collection.temperature.get_temperature")
-    def test_collect_temperatures(self, mock_get_temp, mock_get_ids):
-        """Test collecting temperatures from multiple sensors."""
+    def test_collect_temperatures(self, mock_get_temp, mock_get_ids, mock_shelly, mock_logger):
+        """Test collecting temperatures from multiple sensors.
+
+        Shelly HT and the JSON logger are mocked because their real
+        versions read and write the host filesystem.
+        """
         mock_get_ids.return_value = ["28-000006a", "28-00003e", "28-000e9"]
         mock_get_temp.side_effect = [21.5, 22.0, None]  # Third sensor fails
+        mock_shelly.return_value = {}
 
         result = collect_temperatures()
 
@@ -132,6 +139,24 @@ class TestTemperatureCollection(unittest.TestCase):
         self.assertIn("28-000006a", result)
         self.assertIn("28-00003e", result)
         self.assertNotIn("28-000e9", result)  # Should be skipped
+        self.assertEqual(result["28-000006a"]["temp"], 21.5)
+
+    @patch("src.data_collection.temperature.JSONDataLogger")
+    @patch("src.data_collection.temperature.load_shelly_ht_data")
+    @patch("src.data_collection.temperature.get_temperature_meter_ids")
+    @patch("src.data_collection.temperature.get_temperature")
+    def test_collect_temperatures_merges_shelly(
+        self, mock_get_temp, mock_get_ids, mock_shelly, mock_logger
+    ):
+        """Shelly HT readings join the 1-wire ones and keep humidity."""
+        mock_get_ids.return_value = ["28-000006a"]
+        mock_get_temp.side_effect = [21.5]
+        mock_shelly.return_value = {"shellyht-02D824-180": {"temp": 18.5, "hum": 44.0}}
+
+        result = collect_temperatures()
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result["shellyht-02D824-180"]["hum"], 44.0)
         self.assertEqual(result["28-000006a"]["temp"], 21.5)
 
     @patch("os.path.isfile")
