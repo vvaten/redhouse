@@ -17,6 +17,7 @@ from typing import Optional
 from src.common.config import get_config
 from src.common.logger import setup_logger
 from src.monitoring.email_sender import format_alert_body, send_alert_email
+from src.monitoring.influx_health import check_influxdb_performance
 
 logger = setup_logger(__name__, "health_check.log")
 
@@ -393,6 +394,24 @@ def dispatch_alert(
     return sent
 
 
+def check_influxdb() -> tuple[list[str], list[str]]:
+    """Warn when InfluxDB is degrading towards write timeouts."""
+    from src.common.influx_client import InfluxClient
+
+    config = get_config()
+    try:
+        influx = InfluxClient(config)
+    except Exception as e:
+        return [f"Cannot open InfluxDB client: {e}"], []
+    try:
+        return check_influxdb_performance(influx, config.influxdb_url, config.influxdb_token)
+    finally:
+        try:
+            influx.client.close()
+        except Exception:
+            pass
+
+
 def run_health_check() -> int:
     """Run all health checks and send alert email if problems found.
 
@@ -410,6 +429,7 @@ def run_health_check() -> int:
         ("systemd services", check_systemd_services),
         ("NAS reachability", check_nas_reachability),
         ("backup freshness", check_backup_freshness),
+        ("InfluxDB performance", check_influxdb),
     ]
 
     for check_name, check_fn in checks:
