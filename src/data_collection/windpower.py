@@ -358,8 +358,11 @@ async def collect_windpower_data(
         logger.error("Failed to fetch wind power data from any source")
         return 1
 
-    # Log raw data to JSON for backup
+    # These runs are the only record of what wind was forecast when,
+    # which price prediction needs; the bucket overwrites per valid time.
+    # 30 days is a buffer against the nightly NAS mirror failing.
     json_logger = JSONDataLogger("windpower")
+    json_logger.retention_days = 30
     json_logger.log_data(
         windpower_raw,
         metadata={

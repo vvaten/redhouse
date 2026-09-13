@@ -107,6 +107,54 @@ def _rsync_to_nas(
         return False, "rsync command not found"
 
 
+def _rsync_data_log_archive(
+    data_logs_dir: Path,
+    nas_host: str,
+    nas_user: str,
+    nas_ssh_key: str,
+    archive_path: str,
+) -> tuple[bool, str]:
+    """Mirror the JSON data logs to an append-only archive on the NAS.
+
+    Deliberately not part of the dated snapshot: these files are large,
+    immutable and uniquely named, so one accumulating copy is right and
+    30 rotating copies would not be. No --delete, so the NAS keeps what
+    the Pi's retention drops.
+
+    Returns:
+        Tuple of (success, error_message)
+    """
+    if not data_logs_dir.is_dir():
+        return True, ""
+
+    dest = f"{nas_user}@{nas_host}:{archive_path}/"
+    cmd = [
+        "rsync",
+        "-az",
+        "--timeout=300",
+        "--ignore-existing",
+        "-e",
+        f"ssh -i {nas_ssh_key} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15",
+        f"{data_logs_dir}/",
+        dest,
+    ]
+
+    logger.info("Mirroring data logs to %s", dest)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    except subprocess.TimeoutExpired:
+        return False, "data log archive rsync timed out after 30 minutes"
+    except FileNotFoundError:
+        return False, "rsync command not found"
+    if result.returncode != 0:
+        return (
+            False,
+            f"data log archive rsync failed (exit {result.returncode}): {result.stderr.strip()}",
+        )
+    logger.info("Data log archive complete")
+    return True, ""
+
+
 def _update_latest_symlink(
     nas_host: str,
     nas_user: str,
@@ -202,9 +250,7 @@ def _run_remote_cleanup(
                     f"{nas_user}@{nas_host}",
                     f"rm -rf {nas_path}/{path.name}",
                 ]
-                rm_result = subprocess.run(
-                    rm_cmd, capture_output=True, text=True, timeout=30
-                )
+                rm_result = subprocess.run(rm_cmd, capture_output=True, text=True, timeout=30)
                 if rm_result.returncode == 0:
                     logger.info("Cleaned up old snapshot: %s", path.name)
                 else:
@@ -347,13 +393,31 @@ def main() -> int:
             print(f"  Synced to {nas_host}:{nas_path}/{timestamp}/")
 
             # Step 5: Update latest symlink
-            if not _update_latest_symlink(
-                nas_host, nas_user, nas_ssh_key, nas_path, timestamp
-            ):
+            if not _update_latest_symlink(nas_host, nas_user, nas_ssh_key, nas_path, timestamp):
                 failures.append("Failed to update latest symlink on NAS")
 
             # Step 6: Clean up old snapshots on NAS
             _run_remote_cleanup(nas_host, nas_user, nas_ssh_key, nas_path)
+
+            # Step 7: Mirror the JSON data logs to the append-only archive.
+            # The Pi keeps a short window; the NAS keeps the history that
+            # forecast-vintage training data needs.
+            archive_path = config.get("BACKUP_NAS_ARCHIVE_PATH")
+            if archive_path:
+                archive_ok, archive_err = _rsync_data_log_archive(
+                    project_root / "data_logs",
+                    nas_host,
+                    nas_user,
+                    nas_ssh_key,
+                    archive_path,
+                )
+                if not archive_ok:
+                    failures.append(archive_err)
+                    print(f"  ERROR: {archive_err}")
+                else:
+                    print(f"  Data logs mirrored to {nas_host}:{archive_path}/")
+            else:
+                logger.info("BACKUP_NAS_ARCHIVE_PATH not set, skipping data log archive")
 
         # Report result
         if failures:
