@@ -116,13 +116,28 @@ class TestAnalyticsAggregatorBase:
         assert data == []
 
     def test_fetch_emeters_5min_data_exception(self, aggregator, time_window):
-        """Test fetch of emeters_5min data with exception."""
+        """A failed read must raise, not look like an empty window.
+
+        emeters_5min is the required input. Returning [] here made
+        validate_data reject the window as invalid, so a transient read
+        error turned into permanently missing analytics.
+        """
         window_start, window_end = time_window
         aggregator.influx.query_with_retry.side_effect = Exception("Database error")
 
-        data = aggregator._fetch_emeters_5min_data(window_start, window_end)
+        with pytest.raises(Exception, match="Database error"):
+            aggregator._fetch_emeters_5min_data(window_start, window_end)
 
-        assert data == []
+    def test_empty_window_and_failed_read_are_distinguishable(self, aggregator, time_window):
+        """The two cases must not produce the same result."""
+        window_start, window_end = time_window
+
+        aggregator.influx.query_with_retry.return_value = []
+        assert aggregator._fetch_emeters_5min_data(window_start, window_end) == []
+
+        aggregator.influx.query_with_retry.side_effect = Exception("Read timed out")
+        with pytest.raises(Exception, match="Read timed out"):
+            aggregator._fetch_emeters_5min_data(window_start, window_end)
 
     def test_fetch_spotprice_data_success(self, aggregator, time_window):
         """Test successful fetch of spot price data."""

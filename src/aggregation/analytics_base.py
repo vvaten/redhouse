@@ -76,8 +76,11 @@ from(bucket: "{bucket}")
             logger.info(f"Fetched {len(data)} data points from {bucket}")
             return data
         except Exception as e:
+            # emeters_5min is the required input. Returning [] here made a
+            # failed read indistinguishable from an empty window, so the
+            # window was dropped as invalid instead of retried.
             logger.error(f"Error fetching data from {bucket}: {e}")
-            return []
+            raise
 
     def _fetch_spotprice_data(self, window_time: datetime.datetime) -> Optional[dict]:
         """Fetch spot price for the given time (hourly prices)."""
