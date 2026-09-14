@@ -8,7 +8,7 @@ import influxdb_client
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from .config import get_config
-from .config_validator import ConfigValidationError, ConfigValidator
+from .config_validator import ConfigValidationError, ConfigValidator, message_is_anomaly
 from .logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -48,7 +48,7 @@ class InfluxClient:
         # Log environment configuration on initialization
         env_messages = ConfigValidator.check_environment(config)
         for msg in env_messages:
-            if ConfigValidator.message_is_anomaly(msg):
+            if message_is_anomaly(msg):
                 logger.warning(msg)
             else:
                 logger.info(msg)

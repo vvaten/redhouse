@@ -226,15 +226,6 @@ class ConfigValidator:
         return messages
 
     @classmethod
-    def message_is_anomaly(cls, message: str) -> bool:
-        """Whether a check_environment message needs a reader.
-
-        Production being production is the normal state, so only a
-        mixed environment or an unclassified bucket qualifies.
-        """
-        return message.startswith("WARNING") or "(UNKNOWN)" in message
-
-    @classmethod
     def get_strict_mode(cls) -> bool:
         """
         Check if strict mode is enabled via environment variable.
@@ -276,3 +267,14 @@ class ConfigValidator:
                 f"{', '.join(prod_buckets)}. "
                 f"Please use .env.test configuration for testing."
             )
+
+
+def message_is_anomaly(message: str) -> bool:
+    """Whether a check_environment message needs a reader.
+
+    Production being production is the normal state, so only a mixed
+    environment or an unclassified bucket qualifies. Deliberately a
+    plain function: callers mock ConfigValidator wholesale, and a
+    mocked classmethod returns a truthy Mock that warns on everything.
+    """
+    return message.startswith("WARNING") or "(UNKNOWN)" in message
