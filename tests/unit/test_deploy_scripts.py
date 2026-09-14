@@ -82,3 +82,47 @@ class TestHealthCheckUnit:
         for line in text.splitlines():
             if line.startswith("SuccessExitStatus="):
                 assert line.split("=", 1)[1].split() == ["2"]
+
+
+class TestStagingScheduleDoesNotCollide:
+    """Staging must not fire its health check with production's."""
+
+    GENERATOR = REPO / "deployment" / "generate_staging_systemd.sh"
+    PROD_TIMER = REPO / "deployment" / "systemd" / "redhouse-health-check.timer"
+
+    def test_production_still_on_the_quarter_hour(self):
+        """The generator rewrites this exact string, so pin it."""
+        assert "OnCalendar=*:00/15" in self.PROD_TIMER.read_text(encoding="utf-8")
+
+    def test_generator_offsets_the_staging_health_check(self):
+        text = self.GENERATOR.read_text(encoding="utf-8")
+        assert "OnCalendar=*:10/15" in text
+
+    def test_offset_avoids_the_deploy_windows(self):
+        """A staging run inside a deploy window would race the deploy."""
+        deploy = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+        match = re.search(r"OPTIMAL_WINDOWS=\(([0-9 ]+)\)", deploy)
+        assert match, "OPTIMAL_WINDOWS not found"
+        windows = [int(x) for x in match.group(1).split()]
+        staging_minutes = [10, 25, 40, 55]
+        for start in windows:
+            for minute in staging_minutes:
+                assert not start <= minute <= start + 2, f"{minute} is inside window {start}"
+
+
+class TestStagingTimersScript:
+    SCRIPT = REPO / "deployment" / "staging_timers.sh"
+
+    def test_temperature_is_not_auto_started(self):
+        """Collection is disabled in code, so the timer only burns CPU."""
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        match = re.search(r"NO_AUTO_START=\((.*?)\)", text, re.S)
+        assert match, "NO_AUTO_START not found"
+        assert "temperature" in match.group(1)
+
+    def test_temperature_is_still_startable_by_name(self):
+        """Skipping it from start-all must not make the name invalid."""
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        match = re.search(r"^TIMERS=\((.*?)^\)", text, re.S | re.M)
+        assert match, "TIMERS not found"
+        assert '"temperature"' in match.group(1)

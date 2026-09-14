@@ -36,6 +36,23 @@ TIMERS=(
     "backup"
 )
 
+# Left out of "start" with no argument, but still startable by name.
+# Staging temperature collection is disabled in code to avoid sensor
+# contention, so the timer starts Python every minute and does nothing.
+NO_AUTO_START=(
+    "temperature"
+)
+
+skips_auto_start() {
+    local name="$1"
+    for timer in "${NO_AUTO_START[@]}"; do
+        if [ "$timer" = "$name" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 validate_timer_name() {
     local name="$1"
     for timer in "${TIMERS[@]}"; do
@@ -60,6 +77,10 @@ case "$ACTION" in
             echo "[OK] Started redhouse-staging-${SPECIFIC}.timer"
         else
             for timer in "${TIMERS[@]}"; do
+                if skips_auto_start "$timer"; then
+                    echo "  [SKIP] redhouse-staging-${timer}.timer (does nothing in staging)"
+                    continue
+                fi
                 systemctl start "redhouse-staging-${timer}.timer" 2>/dev/null \
                     && echo "  [OK] redhouse-staging-${timer}.timer" \
                     || echo "  [SKIP] redhouse-staging-${timer}.timer (not installed)"
