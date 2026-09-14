@@ -13,6 +13,14 @@ from src.common.logger import setup_logger
 logger = setup_logger(__name__)
 
 
+class HeatingDataUnavailable(Exception):
+    """A required heating input could not be fetched.
+
+    Returning empty instead let the run report success and fail later in
+    the optimizer as a KeyError naming pandas internals, not the fetch.
+    """
+
+
 class HeatingDataFetcher:
     """
     Fetch weather forecasts, electricity prices, and solar predictions from InfluxDB.
@@ -97,22 +105,23 @@ class HeatingDataFetcher:
         """
 
         try:
-            result = self.influx.query_api.query(org=self.config.influxdb_org, query=query)
-
-            data: dict[Any, Any] = {}
-            for table in result:
-                for record in table.records:
-                    timestamp = record.get_time()
-                    if timestamp not in data:
-                        data[timestamp] = {}
-                    data[timestamp]["solar_yield_avg_prediction"] = record.get_value()
-
-            logger.debug(f"Fetched {len(data)} solar prediction records")
-            return data
-
+            result = self.influx.query_with_retry(query)
         except Exception as e:
-            logger.error(f"Failed to fetch solar predictions: {e}")
+            # Optional input. The optimizer assumes no solar without it,
+            # which costs accuracy but still yields a usable program.
+            logger.warning(f"Failed to fetch solar predictions, assuming none: {e}")
             return {}
+
+        data: dict[Any, Any] = {}
+        for table in result:
+            for record in table.records:
+                timestamp = record.get_time()
+                if timestamp not in data:
+                    data[timestamp] = {}
+                data[timestamp]["solar_yield_avg_prediction"] = record.get_value()
+
+        logger.debug(f"Fetched {len(data)} solar prediction records")
+        return data
 
     def _fetch_spot_prices(
         self, start_offset: int, stop_offset: int
@@ -136,23 +145,27 @@ class HeatingDataFetcher:
         """
 
         try:
-            result = self.influx.query_api.query(org=self.config.influxdb_org, query=query)
-
-            data: dict[Any, Any] = {}
-            for table in result:
-                for record in table.records:
-                    timestamp = record.get_time()
-                    field = record.get_field()
-                    if timestamp not in data:
-                        data[timestamp] = {}
-                    data[timestamp][field] = record.get_value()
-
-            logger.debug(f"Fetched {len(data)} spot price records")
-            return data
-
+            result = self.influx.query_with_retry(query)
         except Exception as e:
-            logger.error(f"Failed to fetch spot prices: {e}")
-            return {}
+            raise HeatingDataUnavailable(f"spot prices could not be fetched: {e}") from e
+
+        data: dict[Any, Any] = {}
+        for table in result:
+            for record in table.records:
+                timestamp = record.get_time()
+                field = record.get_field()
+                if timestamp not in data:
+                    data[timestamp] = {}
+                data[timestamp][field] = record.get_value()
+
+        if not data:
+            raise HeatingDataUnavailable(
+                f"spot prices empty in bucket '{self.config.influxdb_bucket_spotprice}' "
+                f"for offsets {start_offset}d to {stop_offset}d"
+            )
+
+        logger.debug(f"Fetched {len(data)} spot price records")
+        return data
 
     def _fetch_weather_forecast(
         self, start_offset: int, stop_offset: int
@@ -177,22 +190,27 @@ class HeatingDataFetcher:
         """
 
         try:
-            result = self.influx.query_api.query(org=self.config.influxdb_org, query=query)
-
-            data: dict[Any, Any] = {}
-            for table in result:
-                for record in table.records:
-                    timestamp = record.get_time()
-                    if timestamp not in data:
-                        data[timestamp] = {}
-                    data[timestamp]["Air temperature"] = record.get_value()
-
-            logger.debug(f"Fetched {len(data)} weather forecast records")
-            return data
-
+            result = self.influx.query_with_retry(query)
         except Exception as e:
-            logger.error(f"Failed to fetch weather forecast: {e}")
-            return {}
+            raise HeatingDataUnavailable(f"weather forecast could not be fetched: {e}") from e
+
+        data: dict[Any, Any] = {}
+        for table in result:
+            for record in table.records:
+                timestamp = record.get_time()
+                if timestamp not in data:
+                    data[timestamp] = {}
+                data[timestamp]["Air temperature"] = record.get_value()
+
+        if not data:
+            raise HeatingDataUnavailable(
+                f"weather forecast empty in bucket "
+                f"'{self.config.influxdb_bucket_weather}' "
+                f"for offsets {start_offset}d to {stop_offset}d"
+            )
+
+        logger.debug(f"Fetched {len(data)} weather forecast records")
+        return data
 
     def _merge_data(
         self,

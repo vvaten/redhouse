@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import pandas as pd
 
-from src.control.heating_data_fetcher import HeatingDataFetcher
+from src.control.heating_data_fetcher import HeatingDataFetcher, HeatingDataUnavailable
 
 
 class TestHeatingDataFetcher(unittest.TestCase):
@@ -59,7 +59,7 @@ class TestHeatingDataFetcher(unittest.TestCase):
 
         mock_table = Mock()
         mock_table.records = [mock_record1, mock_record2]
-        mock_query_api.query.return_value = [mock_table]
+        self.mock_influx.query_with_retry.return_value = [mock_table]
 
         mock_influx_class.return_value = self.mock_influx
 
@@ -84,7 +84,7 @@ class TestHeatingDataFetcher(unittest.TestCase):
         mock_config.return_value = self.mock_config
         mock_query_api = Mock()
         self.mock_influx.query_api = mock_query_api
-        mock_query_api.query.return_value = []
+        self.mock_influx.query_with_retry.return_value = []
         mock_influx_class.return_value = self.mock_influx
 
         fetcher = HeatingDataFetcher()
@@ -99,7 +99,7 @@ class TestHeatingDataFetcher(unittest.TestCase):
         mock_config.return_value = self.mock_config
         mock_query_api = Mock()
         self.mock_influx.query_api = mock_query_api
-        mock_query_api.query.side_effect = Exception("InfluxDB error")
+        self.mock_influx.query_with_retry.side_effect = Exception("InfluxDB error")
         mock_influx_class.return_value = self.mock_influx
 
         fetcher = HeatingDataFetcher()
@@ -133,7 +133,7 @@ class TestHeatingDataFetcher(unittest.TestCase):
 
         mock_table = Mock()
         mock_table.records = [mock_record1, mock_record2]
-        mock_query_api.query.return_value = [mock_table]
+        self.mock_influx.query_with_retry.return_value = [mock_table]
 
         mock_influx_class.return_value = self.mock_influx
 
@@ -154,13 +154,13 @@ class TestHeatingDataFetcher(unittest.TestCase):
         mock_config.return_value = self.mock_config
         mock_query_api = Mock()
         self.mock_influx.query_api = mock_query_api
-        mock_query_api.query.return_value = []
+        self.mock_influx.query_with_retry.return_value = []
         mock_influx_class.return_value = self.mock_influx
 
         fetcher = HeatingDataFetcher()
-        result = fetcher._fetch_spot_prices(start_offset=0, stop_offset=1)
-
-        self.assertEqual(result, {})
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            fetcher._fetch_spot_prices(start_offset=0, stop_offset=1)
+        self.assertIn("spot prices", str(ctx.exception))
 
     @patch("src.control.heating_data_fetcher.InfluxClient")
     @patch("src.control.heating_data_fetcher.get_config")
@@ -169,13 +169,13 @@ class TestHeatingDataFetcher(unittest.TestCase):
         mock_config.return_value = self.mock_config
         mock_query_api = Mock()
         self.mock_influx.query_api = mock_query_api
-        mock_query_api.query.side_effect = Exception("InfluxDB error")
+        self.mock_influx.query_with_retry.side_effect = Exception("InfluxDB error")
         mock_influx_class.return_value = self.mock_influx
 
         fetcher = HeatingDataFetcher()
-        result = fetcher._fetch_spot_prices(start_offset=0, stop_offset=1)
-
-        self.assertEqual(result, {})
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            fetcher._fetch_spot_prices(start_offset=0, stop_offset=1)
+        self.assertIn("spot prices", str(ctx.exception))
 
     @patch("src.control.heating_data_fetcher.InfluxClient")
     @patch("src.control.heating_data_fetcher.get_config")
@@ -200,7 +200,7 @@ class TestHeatingDataFetcher(unittest.TestCase):
 
         mock_table = Mock()
         mock_table.records = [mock_record1, mock_record2]
-        mock_query_api.query.return_value = [mock_table]
+        self.mock_influx.query_with_retry.return_value = [mock_table]
 
         mock_influx_class.return_value = self.mock_influx
 
@@ -220,13 +220,13 @@ class TestHeatingDataFetcher(unittest.TestCase):
         mock_config.return_value = self.mock_config
         mock_query_api = Mock()
         self.mock_influx.query_api = mock_query_api
-        mock_query_api.query.return_value = []
+        self.mock_influx.query_with_retry.return_value = []
         mock_influx_class.return_value = self.mock_influx
 
         fetcher = HeatingDataFetcher()
-        result = fetcher._fetch_weather_forecast(start_offset=0, stop_offset=1)
-
-        self.assertEqual(result, {})
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            fetcher._fetch_weather_forecast(start_offset=0, stop_offset=1)
+        self.assertIn("weather forecast", str(ctx.exception))
 
     @patch("src.control.heating_data_fetcher.InfluxClient")
     @patch("src.control.heating_data_fetcher.get_config")
@@ -235,13 +235,13 @@ class TestHeatingDataFetcher(unittest.TestCase):
         mock_config.return_value = self.mock_config
         mock_query_api = Mock()
         self.mock_influx.query_api = mock_query_api
-        mock_query_api.query.side_effect = Exception("InfluxDB error")
+        self.mock_influx.query_with_retry.side_effect = Exception("InfluxDB error")
         mock_influx_class.return_value = self.mock_influx
 
         fetcher = HeatingDataFetcher()
-        result = fetcher._fetch_weather_forecast(start_offset=0, stop_offset=1)
-
-        self.assertEqual(result, {})
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            fetcher._fetch_weather_forecast(start_offset=0, stop_offset=1)
+        self.assertIn("weather forecast", str(ctx.exception))
 
     @patch("src.control.heating_data_fetcher.InfluxClient")
     @patch("src.control.heating_data_fetcher.get_config")
@@ -539,3 +539,72 @@ class TestHeatingDataFetcher(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRequiredInputsFailLoudly(unittest.TestCase):
+    """Reproduces the 2026-09-02 and 09-05 program failures.
+
+    A 15 s read timeout on spot prices returned {}, the run logged
+    "Fetched 200 rows" as success, and the optimizer then raised
+    KeyError: Columns not found: 'price_sell', 'price_total'.
+    """
+
+    def _fetcher(self, mock_influx_class, mock_config):
+        config = Mock()
+        config.influxdb_org = "test_org"
+        config.influxdb_bucket_emeters = "emeters_test"
+        config.influxdb_bucket_spotprice = "spotprice_test"
+        config.influxdb_bucket_weather = "weather_test"
+        mock_config.return_value = config
+        influx = Mock()
+        mock_influx_class.return_value = influx
+        return HeatingDataFetcher(), influx
+
+    @patch("src.control.heating_data_fetcher.InfluxClient")
+    @patch("src.control.heating_data_fetcher.get_config")
+    def test_price_timeout_stops_the_run(self, mock_config, mock_influx_class):
+        """It must not reach the optimizer with no price columns."""
+        fetcher, influx = self._fetcher(mock_influx_class, mock_config)
+        influx.query_with_retry.side_effect = Exception("Read timed out. (read timeout=15)")
+
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            fetcher.fetch_heating_data()
+        self.assertIn("spot prices", str(ctx.exception))
+        self.assertIn("Read timed out", str(ctx.exception))
+
+    @patch("src.control.heating_data_fetcher.InfluxClient")
+    @patch("src.control.heating_data_fetcher.get_config")
+    def test_required_fetches_go_through_retry(self, mock_config, mock_influx_class):
+        """A single blip killed a whole day because these did not retry."""
+        fetcher, influx = self._fetcher(mock_influx_class, mock_config)
+        influx.query_with_retry.side_effect = Exception("boom")
+
+        with self.assertRaises(HeatingDataUnavailable):
+            fetcher.fetch_heating_data()
+        influx.query_api.query.assert_not_called()
+        self.assertTrue(influx.query_with_retry.called)
+
+    @patch("src.control.heating_data_fetcher.InfluxClient")
+    @patch("src.control.heating_data_fetcher.get_config")
+    def test_solar_alone_still_degrades(self, mock_config, mock_influx_class):
+        """Solar is optional, so its absence must not stop the program."""
+        fetcher, influx = self._fetcher(mock_influx_class, mock_config)
+
+        record = Mock()
+        record.get_time.return_value = datetime.datetime(
+            2026, 9, 2, 12, 0, tzinfo=datetime.timezone.utc
+        )
+        record.get_value.return_value = 0.05
+        record.get_field.return_value = "price_total"
+        table = Mock()
+        table.records = [record]
+
+        def by_bucket(query):
+            if "emeters_test" in query:
+                raise Exception("Read timed out. (read timeout=15)")
+            return [table]
+
+        influx.query_with_retry.side_effect = by_bucket
+
+        df = fetcher.fetch_heating_data()
+        self.assertFalse(df.empty)
