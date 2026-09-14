@@ -113,12 +113,13 @@ class TestStagingScheduleDoesNotCollide:
 class TestStagingTimersScript:
     SCRIPT = REPO / "deployment" / "staging_timers.sh"
 
-    def test_temperature_is_not_auto_started(self):
-        """Collection is disabled in code, so the timer only burns CPU."""
+    @pytest.mark.parametrize("timer", ["temperature", "health-check"])
+    def test_is_not_auto_started(self, timer):
+        """Both do nothing useful in staging, one of them by email."""
         text = self.SCRIPT.read_text(encoding="utf-8")
-        match = re.search(r"NO_AUTO_START=\((.*?)\)", text, re.S)
+        match = re.search(r"NO_AUTO_START=\((.*?)^\)", text, re.S | re.M)
         assert match, "NO_AUTO_START not found"
-        assert "temperature" in match.group(1)
+        assert f'"{timer}"' in match.group(1)
 
     def test_temperature_is_still_startable_by_name(self):
         """Skipping it from start-all must not make the name invalid."""

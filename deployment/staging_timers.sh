@@ -37,10 +37,12 @@ TIMERS=(
 )
 
 # Left out of "start" with no argument, but still startable by name.
-# Staging temperature collection is disabled in code to avoid sensor
-# contention, so the timer starts Python every minute and does nothing.
 NO_AUTO_START=(
+    # Collection is disabled in code, so every run does nothing.
     "temperature"
+    # Every check duplicates production's, and the staging-specific one
+    # reports "All 0 enabled timers". It sent 303 emails in 30 days.
+    "health-check"
 )
 
 skips_auto_start() {
