@@ -256,3 +256,26 @@ class TestConfigValidator(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMessageIsAnomaly:
+    """Production logged six warning lines per run, every run."""
+
+    def test_mixed_environment_warns(self):
+        assert ConfigValidator.message_is_anomaly(
+            "WARNING: Mixed production and test/staging buckets! "
+            "This is unusual and may indicate configuration error."
+        )
+
+    def test_unclassified_bucket_warns(self):
+        assert ConfigValidator.message_is_anomaly("  weather: some_odd_name (UNKNOWN)")
+
+    def test_production_banner_does_not_warn(self):
+        assert not ConfigValidator.message_is_anomaly("PRODUCTION environment detected")
+
+    def test_production_bucket_line_does_not_warn(self):
+        assert not ConfigValidator.message_is_anomaly("  temperatures: temperatures (PRODUCTION)")
+
+    def test_staging_lines_do_not_warn(self):
+        assert not ConfigValidator.message_is_anomaly("STAGING environment detected")
+        assert not ConfigValidator.message_is_anomaly("  weather: weather_staging (STAGING)")

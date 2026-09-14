@@ -48,7 +48,7 @@ class InfluxClient:
         # Log environment configuration on initialization
         env_messages = ConfigValidator.check_environment(config)
         for msg in env_messages:
-            if "WARNING" in msg or "PRODUCTION" in msg:
+            if ConfigValidator.message_is_anomaly(msg):
                 logger.warning(msg)
             else:
                 logger.info(msg)

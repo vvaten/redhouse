@@ -226,6 +226,15 @@ class ConfigValidator:
         return messages
 
     @classmethod
+    def message_is_anomaly(cls, message: str) -> bool:
+        """Whether a check_environment message needs a reader.
+
+        Production being production is the normal state, so only a
+        mixed environment or an unclassified bucket qualifies.
+        """
+        return message.startswith("WARNING") or "(UNKNOWN)" in message
+
+    @classmethod
     def get_strict_mode(cls) -> bool:
         """
         Check if strict mode is enabled via environment variable.
