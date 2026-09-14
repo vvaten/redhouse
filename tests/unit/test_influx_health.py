@@ -109,13 +109,14 @@ class TestProbeQuery:
 
 
 class TestCheckInfluxdbPerformance:
-    def test_slow_probe_warns(self):
+    def test_slow_probe_does_not_warn(self):
+        """A healthy host produced 20.47 s, so latency cannot be a trigger."""
         influx = MagicMock()
-        with patch.object(ih, "probe_query_seconds", return_value=2.5):
+        with patch.object(ih, "probe_query_seconds", return_value=20.467):
             with patch.object(ih, "_fetch_metrics", return_value=HEALTHY):
                 failures, warnings = ih.check_influxdb_performance(influx, "http://x", "t")
         assert failures == []
-        assert any("slow" in w for w in warnings)
+        assert warnings == []
 
     def test_failed_probe_is_a_failure_not_a_warning(self):
         influx = MagicMock()
@@ -137,7 +138,7 @@ class TestCheckInfluxdbPerformance:
             with patch.object(ih, "_fetch_metrics", return_value=DEGRADED):
                 failures, warnings = ih.check_influxdb_performance(influx, "http://x", "t")
         assert failures == []
-        assert len(warnings) == 4
+        assert len(warnings) == 3
 
     def test_unreachable_metrics_warns_and_stops(self):
         influx = MagicMock()
@@ -149,10 +150,13 @@ class TestCheckInfluxdbPerformance:
 
 
 class TestThresholdsSitBetweenTheMeasuredStates:
-    """A threshold outside the range would never warn, or always warn."""
+    """A threshold outside the range would never warn, or always warn.
 
-    def test_latency(self):
-        assert 0.03 < ih.QUERY_LATENCY_WARN_SECONDS < 1.98
+    Both anchors are single samples, so this only catches a gross
+    error. It passed a latency threshold that warned on 42% of healthy
+    runs. The three left separate the states by orders of magnitude,
+    which is what makes single samples good enough for them.
+    """
 
     def test_gc_pause(self):
         assert 0.00016 < ih.GC_PAUSE_WARN_SECONDS < 0.257

@@ -60,3 +60,25 @@ class TestBothScriptsRestoreOnExit:
     def test_trap_on_exit_present(self, script):
         text = script.read_text(encoding="utf-8")
         assert "trap restore_timers EXIT" in text
+
+
+class TestHealthCheckUnit:
+    """Warnings must not put the unit into failed state."""
+
+    UNIT = REPO / "deployment" / "systemd" / "redhouse-health-check.service"
+
+    def test_warning_exit_code_counts_as_success(self):
+        """run_health_check returns 2 for warnings, which are mailed already.
+
+        Without this the unit flaps failed on every warning and
+        systemctl --failed stops meaning anything for it.
+        """
+        text = self.UNIT.read_text(encoding="utf-8")
+        assert "SuccessExitStatus=2" in text
+
+    def test_failures_still_fail_the_unit(self):
+        """Exit 1 is a real failure and must not be whitelisted too."""
+        text = self.UNIT.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if line.startswith("SuccessExitStatus="):
+                assert line.split("=", 1)[1].split() == ["2"]

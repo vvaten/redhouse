@@ -5,7 +5,6 @@ Thresholds come from measured states of this instance, all on
 restart, and healthy again 4 h later.
 
                     degraded   healthy    4 h in
-  query latency       1.98 s    0.03 s    0.10 s
   GC pause p50       0.257 s  0.00016 s  0.00016 s
   resident           2.62 GB   1.63 GB   1.54 GB
   sys_bytes          2.62 GB   1.63 GB   2.21 GB
@@ -15,6 +14,15 @@ restart, and healthy again 4 h later.
 Goroutines barely moved, so they are not the signal despite looking
 alarming. Shards drive memory, memory drives GC pauses, and GC pauses
 are what time out a write.
+
+Query latency is logged but never warns. Over 75 runs on 2026-09-14
+it ran min 0.08 s, median 0.82 s, p90 2.77 s, max 20.47 s while GC
+pause, resident and shard count all held steady, and curl on the same
+host answered the identical query in 31 ms throughout. It tracks host
+timing rather than the database, and the 1.98 s once read on the
+degraded instance falls inside that healthy spread, so it never
+separated the two states. A probe that fails outright is still a
+failure.
 
 Memory here means resident, not sys_bytes. sys_bytes counts address
 space reserved from the OS including pages Go has already given back,
@@ -37,7 +45,6 @@ logger = setup_logger(__name__, "influx_health.log")
 
 # Each sits between the two measured states, so this warns while there
 # is still headroom rather than once queries already fail.
-QUERY_LATENCY_WARN_SECONDS = 1.0
 GC_PAUSE_WARN_SECONDS = 0.05
 RESIDENT_BYTES_WARN = 2_000_000_000
 SHARD_COUNT_WARN = 2200
@@ -90,7 +97,11 @@ def _resident_bytes(text: str) -> Optional[float]:
 
 
 def probe_query_seconds(influx: Any) -> Optional[float]:
-    """Time a query that scans no data, so this measures overhead only."""
+    """Run a query that scans no data, to prove the instance answers.
+
+    The elapsed time is logged for trend only. See the module docstring
+    for why it is too noisy on this host to warn on.
+    """
     started = time.perf_counter()
     try:
         influx.query_api.query(PROBE_QUERY)
@@ -114,11 +125,6 @@ def check_influxdb_performance(influx: Any, url: str, token: str) -> tuple[list[
         failures.append("InfluxDB probe query failed")
     else:
         logger.info("InfluxDB probe query: %.3f s", elapsed)
-        if elapsed > QUERY_LATENCY_WARN_SECONDS:
-            warnings.append(
-                f"InfluxDB slow: probe query took {elapsed:.2f}s "
-                f"(warn above {QUERY_LATENCY_WARN_SECONDS}s, healthy is under 0.1s)"
-            )
 
     text = _fetch_metrics(url, token)
     if text is None:

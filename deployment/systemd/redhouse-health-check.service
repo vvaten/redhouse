@@ -6,6 +6,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=pi
+# Exit 2 means warnings only, which the alert email already reports.
+# Without this the unit flaps into failed state and systemctl --failed
+# stops meaning anything for it.
+SuccessExitStatus=2
 WorkingDirectory=/opt/redhouse
 ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/run_health_check.py
 StandardOutput=journal
