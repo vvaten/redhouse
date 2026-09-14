@@ -4,6 +4,7 @@
 import datetime
 import json
 import os
+import re
 import time
 from statistics import median
 from typing import Optional
@@ -20,6 +21,23 @@ logger = setup_logger(__name__, "temperature.log")
 # Global state for previous temperature readings
 _previous_temps: dict[str, float] = {}
 
+# A 1-Wire device is <2 hex family>-<12 hex serial>. The directory also
+# lists w1_bus_master*, and family 00 is a bus read error rather than a
+# device, with a serial that changes between runs.
+SENSOR_ID_PATTERN = re.compile(r"^[0-9a-f]{2}-[0-9a-f]{12}$")
+INVALID_FAMILY = "00"
+
+
+def is_sensor_id(name: str) -> bool:
+    """Whether a /sys/bus/w1/devices entry is a real sensor.
+
+    Everything else has no w1_slave file, so reading it only produced a
+    warning: nine bus masters and the phantoms gave 17000 a day.
+    """
+    if not SENSOR_ID_PATTERN.match(name):
+        return False
+    return not name.startswith(f"{INVALID_FAMILY}-")
+
 
 def get_temperature_meter_ids() -> list[str]:
     """Get list of available 1-wire temperature sensor IDs.
@@ -29,7 +47,7 @@ def get_temperature_meter_ids() -> list[str]:
     """
     try:
         result = os.popen("ls /sys/bus/w1/devices 2> /dev/null").read()
-        return result.split()
+        return [name for name in result.split() if is_sensor_id(name)]
     except Exception as e:
         logger.error(f"Failed to get temperature meter IDs: {e}")
         return []

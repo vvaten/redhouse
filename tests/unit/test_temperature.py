@@ -12,6 +12,7 @@ from src.data_collection.temperature import (
     convert_internal_id_to_influxid,
     get_temperature,
     get_temperature_meter_ids,
+    is_sensor_id,
     load_shelly_ht_data,
     main,
     write_temperatures_to_influx,
@@ -25,12 +26,14 @@ class TestTemperatureCollection(unittest.TestCase):
     def test_get_temperature_meter_ids(self, mock_popen):
         """Test getting temperature meter IDs."""
         mock_result = Mock()
-        mock_result.read.return_value = "28-000006a\n28-00003e\nw1_bus_master1\n"
+        mock_result.read.return_value = (
+            "00-62d8b0000000\n28-00000de4d34a\n28-00000de6133e\nw1_bus_master1\n"
+        )
         mock_popen.return_value = mock_result
 
         result = get_temperature_meter_ids()
 
-        self.assertEqual(result, ["28-000006a", "28-00003e", "w1_bus_master1"])
+        self.assertEqual(result, ["28-00000de4d34a", "28-00000de6133e"])
         mock_popen.assert_called_once_with("ls /sys/bus/w1/devices 2> /dev/null")
 
     @patch("os.popen")
@@ -694,3 +697,55 @@ class TestMain(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSensorIdFilter:
+    """The device directory lists things that are not sensors.
+
+    Entries are the real listing from the Pi on 2026-09-14, where nine
+    bus masters and three phantoms produced about 17000 warnings a day.
+    """
+
+    REAL_LISTING = [
+        "00-12d8b0000000",
+        "00-62d8b0000000",
+        "00-e2d8b0000000",
+        "28-00000de4d34a",
+        "28-00000de570c2",
+        "28-00000de584f0",
+        "28-00000de596c9",
+        "28-00000de5d5a0",
+        "28-00000de6133e",
+        "28-00000e1ebbc1",
+        "28-00000eab286a",
+        "28-00000eab2ee6",
+        "28-00000eab31aa",
+        "28-00000eab3566",
+        "28-00000eab3744",
+        "w1_bus_master1",
+        "w1_bus_master2",
+        "w1_bus_master9",
+    ]
+
+    def test_keeps_every_real_sensor(self):
+        kept = [n for n in self.REAL_LISTING if is_sensor_id(n)]
+        assert len(kept) == 12
+        assert all(n.startswith("28-") for n in kept)
+
+    def test_drops_bus_masters(self):
+        assert not is_sensor_id("w1_bus_master1")
+        assert not is_sensor_id("w1_bus_master9")
+
+    def test_drops_family_00_phantoms(self):
+        """Their serial changes between runs, so they are not devices."""
+        assert not is_sensor_id("00-12d8b0000000")
+        assert not is_sensor_id("00-42d8b0000000")
+
+    def test_keeps_other_temperature_families(self):
+        """DS18S20 and DS1822 must still work if one is ever fitted."""
+        assert is_sensor_id("10-00000de4d34a")
+        assert is_sensor_id("22-00000de4d34a")
+
+    def test_drops_malformed_names(self):
+        for name in ["", "28-", "28-00000de4d34", "28_00000de4d34a", "zz-00000de4d34a"]:
+            assert not is_sensor_id(name), name
