@@ -127,3 +127,42 @@ class TestStagingTimersScript:
         match = re.search(r"^TIMERS=\((.*?)^\)", text, re.S | re.M)
         assert match, "TIMERS not found"
         assert '"temperature"' in match.group(1)
+
+
+class TestHeatingControlUnits:
+    """The two units that will eventually drive the heat pump."""
+
+    EXECUTE = REPO / "deployment" / "systemd" / "redhouse-execute-program.service"
+    GENERATE = REPO / "deployment" / "systemd" / "redhouse-generate-program.timer"
+
+    def test_executor_is_dry_run_until_cutover(self):
+        """Removing --dry-run hands pump control to redhouse.
+
+        This test is meant to fail at the Phase 6 cutover, so that the
+        removal is deliberate and lands in the same commit as its
+        justification. Do not delete it to make a deploy pass.
+        """
+        text = self.EXECUTE.read_text(encoding="utf-8")
+        exec_start = [ln for ln in text.splitlines() if ln.startswith("ExecStart=")]
+        assert len(exec_start) == 1, exec_start
+        assert "--dry-run" in exec_start[0]
+
+    def test_generate_does_not_collide_with_wibatemp(self):
+        """wibatemp generates the controlling program at 16:05."""
+        text = self.GENERATE.read_text(encoding="utf-8")
+        match = re.search(r"^OnCalendar=\S+ (\d{2}):(\d{2}):(\d{2})$", text, re.M)
+        assert match, "OnCalendar not found"
+        hour, minute = int(match.group(1)), int(match.group(2))
+        assert (hour, minute) != (16, 5), "must not run with wibatemp's generator"
+
+    def test_generate_avoids_the_deploy_windows(self):
+        """A run inside a deploy window would race the deploy."""
+        text = self.GENERATE.read_text(encoding="utf-8")
+        match = re.search(r"^OnCalendar=\S+ \d{2}:(\d{2}):\d{2}$", text, re.M)
+        assert match, "OnCalendar not found"
+        minute = int(match.group(1))
+        deploy = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+        win = re.search(r"OPTIMAL_WINDOWS=\(([0-9 ]+)\)", deploy)
+        assert win, "OPTIMAL_WINDOWS not found"
+        for start in (int(x) for x in win.group(1).split()):
+            assert not start <= minute <= start + 2, f"{minute} is inside window {start}"

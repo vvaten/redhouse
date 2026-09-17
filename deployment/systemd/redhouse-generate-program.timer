@@ -4,7 +4,10 @@ Requires=redhouse-generate-program.service
 
 [Timer]
 OnBootSec=5min
-OnCalendar=*-*-* 16:05:00
+# 16:06, not 16:05: wibatemp generates the program that actually
+# controls the house at 16:05, and this one is a shadow until Phase 6.
+# :07 to :09 is a deploy window, so it cannot go there either.
+OnCalendar=*-*-* 16:06:00
 AccuracySec=1s
 
 [Install]
