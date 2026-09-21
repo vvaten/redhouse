@@ -360,7 +360,7 @@ class HeatingProgramGenerator:
 
         try:
             bucket_name = self._get_bucket_name("influxdb_bucket_load_control", "load_control")
-            self.influx.write_api.write(bucket=bucket_name, record=points)
+            self.influx.write_with_retry(bucket=bucket_name, record=points)
             logger.info(f"Saved {len(points)} points to InfluxDB bucket '{bucket_name}'")
         except Exception as e:
             logger.error(f"Failed to save program to InfluxDB: {e}")

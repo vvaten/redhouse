@@ -309,7 +309,7 @@ async def write_windpower_to_influx(
             return None
 
         # Write to InfluxDB
-        influx.write_api.write(
+        influx.write_with_retry(
             bucket=config.influxdb_bucket_windpower, org=config.influxdb_org, record=points
         )
 

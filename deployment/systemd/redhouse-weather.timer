@@ -4,7 +4,6 @@ Requires=redhouse-weather.service
 
 [Timer]
 OnBootSec=2min
-OnCalendar=hourly
 OnCalendar=*:02:00
 AccuracySec=1s
 

@@ -166,3 +166,29 @@ class TestHeatingControlUnits:
         assert win, "OPTIMAL_WINDOWS not found"
         for start in (int(x) for x in win.group(1).split()):
             assert not start <= minute <= start + 2, f"{minute} is inside window {start}"
+
+
+class TestTimerSchedulesAreNotUnioned:
+    """systemd unions OnCalendar lines, it does not replace them.
+
+    Three collectors carried OnCalendar=hourly next to an offset entry,
+    so each ran twice an hour and all three converged on :00.
+    """
+
+    SHORTHAND = {"minutely", "hourly", "daily", "weekly", "monthly", "yearly", "annually"}
+    UNITS = sorted((REPO / "deployment" / "systemd").glob("*.timer"))
+
+    def test_units_exist(self):
+        assert self.UNITS, "no timer units found"
+
+    def test_no_shorthand_beside_an_explicit_schedule(self):
+        offenders = []
+        for unit in self.UNITS:
+            lines = [
+                ln.split("=", 1)[1].strip()
+                for ln in unit.read_text(encoding="utf-8").splitlines()
+                if ln.startswith("OnCalendar=")
+            ]
+            if len(lines) > 1 and any(v.lower() in self.SHORTHAND for v in lines):
+                offenders.append(f"{unit.name}: {lines}")
+        assert not offenders, "shorthand unions with explicit times: " + "; ".join(offenders)

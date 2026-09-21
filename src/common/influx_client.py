@@ -14,11 +14,26 @@ from .logger import setup_logger
 logger = setup_logger(__name__)
 
 # Governs writes as well as queries: it is the HTTP timeout of the whole
-# client. Writes to the NAS routinely exceeded the old 15 s under load and
-# failed, because only queries retry (see query_with_retry).
+# client.
 CLIENT_TIMEOUT_MS = 60_000
 QUERY_MAX_RETRIES = 3
 QUERY_RETRY_DELAY_S = 3
+
+# A stalled write returns a 500 after 26 to 33 s saying "writing points to
+# database: timeout", and the next attempt succeeds in 1 to 2 s. The stall
+# is the backoff, so the delay stays short.
+WRITE_MAX_RETRIES = 3
+WRITE_RETRY_DELAY_S = 2
+
+
+def is_timeout_error(error: Exception) -> bool:
+    """Whether an InfluxDB error is a timeout worth retrying.
+
+    Both spellings occur: the client raises "timed out" on its own HTTP
+    timeout, and the server returns a 500 body containing "timeout".
+    """
+    text = str(error).lower()
+    return "timeout" in text or "timed out" in text
 
 
 class InfluxClient:
@@ -71,9 +86,7 @@ class InfluxClient:
                 return self.query_api.query(query, org=self.config.influxdb_org)
             except Exception as e:
                 last_error = e
-                error_str = str(e)
-                is_timeout = "timed out" in error_str or "timeout" in error_str.lower()
-                if is_timeout and attempt < QUERY_MAX_RETRIES:
+                if is_timeout_error(e) and attempt < QUERY_MAX_RETRIES:
                     logger.warning(
                         f"Query timeout (attempt {attempt}/{QUERY_MAX_RETRIES}),"
                         f" retrying in {QUERY_RETRY_DELAY_S}s..."
@@ -82,6 +95,26 @@ class InfluxClient:
                 else:
                     raise
         raise last_error
+
+    def write_with_retry(self, **kwargs: Any) -> None:
+        """Write to InfluxDB, retrying on timeout.
+
+        Raises:
+            Last exception if all attempts fail
+        """
+        for attempt in range(1, WRITE_MAX_RETRIES + 1):
+            try:
+                self.write_api.write(**kwargs)
+                return
+            except Exception as e:
+                if is_timeout_error(e) and attempt < WRITE_MAX_RETRIES:
+                    logger.warning(
+                        f"Write timeout (attempt {attempt}/{WRITE_MAX_RETRIES}),"
+                        f" retrying in {WRITE_RETRY_DELAY_S}s..."
+                    )
+                    time.sleep(WRITE_RETRY_DELAY_S)
+                else:
+                    raise
 
     def write_point(
         self,
@@ -137,7 +170,7 @@ class InfluxClient:
 
             point = point.time(timestamp)
 
-            self.write_api.write(bucket=bucket, org=self.config.influxdb_org, record=point)
+            self.write_with_retry(bucket=bucket, org=self.config.influxdb_org, record=point)
 
             logger.debug(f"Written {measurement} data at {timestamp}")
             return True
@@ -176,7 +209,7 @@ class InfluxClient:
 
             point = point.time(timestamp)
 
-            self.write_api.write(
+            self.write_with_retry(
                 bucket=self.config.influxdb_bucket_temperatures,
                 org=self.config.influxdb_org,
                 record=point,
@@ -218,7 +251,7 @@ class InfluxClient:
 
             point = point.time(timestamp)
 
-            self.write_api.write(
+            self.write_with_retry(
                 bucket=self.config.influxdb_bucket_temperatures,
                 org=self.config.influxdb_org,
                 record=point,
@@ -254,7 +287,7 @@ class InfluxClient:
                 point = point.time(timestamp)
                 points.append(point)
 
-            self.write_api.write(
+            self.write_with_retry(
                 bucket=self.config.influxdb_bucket_weather,
                 org=self.config.influxdb_org,
                 record=points,
@@ -296,7 +329,7 @@ class InfluxClient:
                 )
                 points.append(point)
 
-            self.write_api.write(
+            self.write_with_retry(
                 bucket=self.config.influxdb_bucket_spotprice,
                 org=self.config.influxdb_org,
                 record=points,

@@ -505,11 +505,11 @@ class TestInfluxDBSaving(unittest.TestCase):
 
         self.generator.save_program_influxdb(program, data_type="plan")
 
-        # Verify write_api.write was called
-        self.mock_influx.write_api.write.assert_called_once()
+        # Verify write_with_retry was called
+        self.mock_influx.write_with_retry.assert_called_once()
 
         # Get the points that were written
-        call_args = self.mock_influx.write_api.write.call_args
+        call_args = self.mock_influx.write_with_retry.call_args
         points = call_args[1]["record"]
 
         # Should have 2 points (1 schedule + 1 summary)
@@ -548,9 +548,9 @@ class TestInfluxDBSaving(unittest.TestCase):
 
         # Test with different data types
         for data_type in ["plan", "actual", "simulation"]:
-            self.mock_influx.write_api.write.reset_mock()
+            self.mock_influx.write_with_retry.reset_mock()
             self.generator.save_program_influxdb(program, data_type=data_type)
-            self.mock_influx.write_api.write.assert_called_once()
+            self.mock_influx.write_with_retry.assert_called_once()
 
     def test_save_program_influxdb_error_handling(self):
         """Test error handling when InfluxDB write fails."""
@@ -584,7 +584,7 @@ class TestInfluxDBSaving(unittest.TestCase):
         }
 
         # Make write raise an exception
-        self.mock_influx.write_api.write.side_effect = Exception("Connection failed")
+        self.mock_influx.write_with_retry.side_effect = Exception("Connection failed")
 
         # Should raise the exception
         with self.assertRaises(Exception) as context:

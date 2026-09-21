@@ -29,7 +29,7 @@ def mock_influx_client():
     with patch("src.control.program_executor.InfluxClient") as mock:
         mock_instance = Mock()
         mock_instance.write_api = Mock()
-        mock_instance.write_api.write = Mock()
+        mock_instance.write_with_retry = Mock()
         mock.return_value = mock_instance
         yield mock
 
@@ -423,7 +423,7 @@ class TestWriteExecutionToInflux:
 
                 executor._write_execution_to_influx("2024-01-15", "pump", entry, result)
 
-                assert mock_influx_client.return_value.write_api.write.called
+                assert mock_influx_client.return_value.write_with_retry.called
 
     def test_write_execution_to_influx_dry_run(
         self, mock_config, mock_influx_client, mock_load_controller
@@ -441,7 +441,7 @@ class TestWriteExecutionToInflux:
 
         executor._write_execution_to_influx("2024-01-15", "pump", entry, result)
 
-        assert not mock_influx_client.return_value.write_api.write.called
+        assert not mock_influx_client.return_value.write_with_retry.called
 
 
 class TestHandleDayTransition:

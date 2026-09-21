@@ -4,7 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.common.influx_client import QUERY_MAX_RETRIES, InfluxClient
+from src.common.influx_client import (
+    QUERY_MAX_RETRIES,
+    WRITE_MAX_RETRIES,
+    InfluxClient,
+    is_timeout_error,
+)
 
 
 def _make_client():
@@ -99,3 +104,61 @@ class TestQueryWithRetry:
         client.query_with_retry("test query")
 
         client.query_api.query.assert_called_once_with("test query", org="area51")
+
+
+SERVER_TIMEOUT = (
+    "(500) Internal Server Error: "
+    '{"code":"internal error","message":"unexpected error writing points to database: timeout"}'
+)
+
+
+class TestIsTimeoutError:
+    """Both spellings occur and both must retry."""
+
+    def test_server_500_body(self):
+        assert is_timeout_error(Exception(SERVER_TIMEOUT))
+
+    def test_client_read_timeout(self):
+        assert is_timeout_error(Exception("HTTPConnectionPool: Read timed out. (read timeout=15)"))
+
+    def test_unrelated_error_does_not_retry(self):
+        assert not is_timeout_error(Exception("(404) bucket not found"))
+
+
+class TestWriteWithRetry:
+    """Writes had no retry, so one stall lost a whole collection run."""
+
+    def test_calls_the_real_write_api_not_itself(self):
+        """Guards a recursion: the helper must call write_api.write."""
+        client = _make_client()
+        client.write_with_retry(bucket="b", org="o", record="p")
+        client.write_api.write.assert_called_once_with(bucket="b", org="o", record="p")
+
+    def test_retries_on_server_timeout_then_succeeds(self):
+        client = _make_client()
+        client.write_api.write.side_effect = [Exception(SERVER_TIMEOUT), None]
+
+        with patch("src.common.influx_client.time.sleep"):
+            client.write_with_retry(bucket="b", record="p")
+
+        assert client.write_api.write.call_count == 2
+
+    def test_gives_up_after_max_retries(self):
+        client = _make_client()
+        client.write_api.write.side_effect = Exception(SERVER_TIMEOUT)
+
+        with patch("src.common.influx_client.time.sleep"):
+            with pytest.raises(Exception, match="timeout"):
+                client.write_with_retry(bucket="b", record="p")
+
+        assert client.write_api.write.call_count == WRITE_MAX_RETRIES
+
+    def test_does_not_retry_a_non_timeout(self):
+        """Retrying a bad payload just fails three times as slowly."""
+        client = _make_client()
+        client.write_api.write.side_effect = Exception("(400) invalid field type")
+
+        with pytest.raises(Exception, match="invalid field type"):
+            client.write_with_retry(bucket="b", record="p")
+
+        assert client.write_api.write.call_count == 1

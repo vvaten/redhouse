@@ -160,7 +160,7 @@ class TestWriteCheckwattToInflux:
 
                 mock_influx = Mock()
                 mock_influx.write_api = Mock()
-                mock_influx.write_api.write = Mock()
+                mock_influx.write_with_retry = Mock()
                 mock_influx_class.return_value = mock_influx
 
                 with patch("influxdb_client.Point") as mock_point_class:
@@ -172,7 +172,7 @@ class TestWriteCheckwattToInflux:
                     result = await write_checkwatt_to_influx(sample_checkwatt_data, dry_run=False)
 
                     assert result is True
-                    mock_influx.write_api.write.assert_called_once()
+                    mock_influx.write_with_retry.assert_called_once()
                     # 3 points should be written
                     assert mock_point_class.call_count == 3
 

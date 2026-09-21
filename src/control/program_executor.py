@@ -431,7 +431,7 @@ class HeatingProgramExecutor:
                 )
                 raise ValueError("Missing required configuration: INFLUXDB_BUCKET_LOAD_CONTROL")
 
-            self.influx.write_api.write(bucket=bucket_name, record=point)
+            self.influx.write_with_retry(bucket=bucket_name, record=point)
 
             logger.debug(f"Wrote execution to InfluxDB: {load_id} {command}")
 

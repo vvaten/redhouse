@@ -250,7 +250,7 @@ async def write_checkwatt_to_influx(data_points: list[dict], dry_run: bool = Fal
             records.append(p)
 
         # Write using influx client directly (not using wrapper for this one)
-        influx.write_api.write(
+        influx.write_with_retry(
             bucket=config.influxdb_bucket_checkwatt, org=config.influxdb_org, record=records
         )
 

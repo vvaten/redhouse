@@ -386,7 +386,7 @@ class TestWriteWindpowerToInflux:
 
                 mock_influx = Mock()
                 mock_influx.write_api = Mock()
-                mock_influx.write_api.write = Mock()
+                mock_influx.write_with_retry = Mock()
                 mock_influx_class.return_value = mock_influx
 
                 with patch("influxdb_client.Point") as mock_point:
@@ -399,7 +399,7 @@ class TestWriteWindpowerToInflux:
                     result = await write_windpower_to_influx(processed_data, dry_run=False)
 
                     assert result is not None
-                    assert mock_influx.write_api.write.called
+                    assert mock_influx.write_with_retry.called
 
     @pytest.mark.asyncio
     async def test_write_to_influx_dry_run(self):

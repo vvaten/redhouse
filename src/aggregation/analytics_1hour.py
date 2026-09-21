@@ -140,7 +140,7 @@ class Analytics1HourAggregator(AnalyticsAggregatorBase):
                     point.field(field_name, value)
             point.time(timestamp)
 
-            self.influx.write_api.write(
+            self.influx.write_with_retry(
                 bucket=bucket,
                 org=self.config.influxdb_org,
                 record=point,
