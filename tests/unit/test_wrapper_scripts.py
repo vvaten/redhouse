@@ -30,6 +30,7 @@ def _load_wrapper(filename: str):
         "aggregate_emeters_5min.py",
         "aggregate_analytics_15min.py",
         "aggregate_analytics_1hour.py",
+        "check_program.py",
     ],
 )
 def test_wrapper_imports_main(wrapper: str) -> None:

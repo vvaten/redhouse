@@ -1,0 +1,13 @@
+[Unit]
+Description=RedHouse Heating Program Presence Check Timer
+Requires=redhouse-program-check.service
+
+[Timer]
+# Local time, so this stays correct across DST. Generation runs at
+# 16:06, leaving nearly two hours of slack before it complains and six
+# before the executor falls back at midnight.
+OnCalendar=*-*-* 18:00:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

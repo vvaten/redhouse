@@ -33,6 +33,7 @@ TIMERS=(
     "generate-program"
     "execute-program"
     "health-check"
+    "program-check"
     "backup"
 )
 
@@ -43,6 +44,8 @@ NO_AUTO_START=(
     # Every check duplicates production's, and the staging-specific one
     # reports "All 0 enabled timers". It sent 303 emails in 30 days.
     "health-check"
+    # Would mail about staging programs, which nobody acts on.
+    "program-check"
 )
 
 skips_auto_start() {
