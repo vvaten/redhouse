@@ -123,6 +123,7 @@ TIMERS=(
     "redhouse-generate-program"
     "redhouse-execute-program"
     "redhouse-health-check"
+    "redhouse-program-check"
     "redhouse-backup"
 )
 

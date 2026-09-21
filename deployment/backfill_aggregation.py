@@ -355,7 +355,7 @@ def run_analytics_bulk(
         # Batch write all points for this day
         if points:
             try:
-                client.write_api.write(
+                client.write_with_retry(
                     bucket=bucket,
                     org=config.influxdb_org,
                     record=points,

@@ -38,6 +38,7 @@ REDHOUSE_SERVICES = [
     "redhouse-solar-prediction",
     "redhouse-generate-program",
     "redhouse-execute-program",
+    "redhouse-program-check",
 ]
 
 # A repeating problem must not mail on every run. 96 runs a day once

@@ -236,7 +236,7 @@ def write_predictions_to_influxdb(pred, influx_client):
 
     if points:
         logger.info(f"Writing {len(points)} solar predictions to InfluxDB")
-        influx_client.write_api.write(bucket=config.influxdb_bucket_emeters, record=points)
+        influx_client.write_with_retry(bucket=config.influxdb_bucket_emeters, record=points)
         logger.info("Solar predictions written successfully")
     else:
         logger.warning("No valid predictions to write")

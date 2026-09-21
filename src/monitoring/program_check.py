@@ -2,12 +2,13 @@
 """Check that tomorrow's heating program exists, and mail if it does not.
 
 Runs once a day at 18:00 local. Generation runs at 16:06, so this
-leaves nearly two hours of slack before it complains and six hours
-before the executor falls back at midnight.
+leaves nearly two hours of slack before it complains, and the whole
+evening to act before the day it covers begins.
 """
 
 import datetime
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +18,7 @@ from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
 from src.monitoring.email_sender import send_alert_email
+from src.monitoring.health_check import _is_staging
 
 logger = setup_logger(__name__, "program_check.log")
 
@@ -40,9 +42,15 @@ def program_path(program_date: datetime.date, base_dir: str) -> Path:
 
 
 def local_day_bounds(program_date: datetime.date) -> tuple[str, str]:
-    """RFC3339 bounds of that local day, with the correct DST offset."""
+    """RFC3339 bounds of that local day, each with its own DST offset.
+
+    Localize both midnights separately. Adding 24 h to the start keeps
+    the start offset, which loses an hour in October and gains one in
+    March, because a local day is then 25 or 23 hours long.
+    """
+    next_day = program_date + datetime.timedelta(days=1)
     start = HELSINKI.localize(datetime.datetime.combine(program_date, datetime.time.min))
-    stop = start + datetime.timedelta(days=1)
+    stop = HELSINKI.localize(datetime.datetime.combine(next_day, datetime.time.min))
     return start.isoformat(), stop.isoformat()
 
 
@@ -72,6 +80,14 @@ from(bucket: "{influx.config.influxdb_bucket_load_control}")
     return 0
 
 
+def generator_unit() -> str:
+    """The generator service for this install. Staging carries a prefix."""
+    name = "redhouse-generate-program"
+    if _is_staging():
+        name = name.replace("redhouse-", "redhouse-staging-", 1)
+    return f"{name}.service"
+
+
 def generate_service_result() -> str:
     """The last lines of the generator's journal, for the mail body."""
     try:
@@ -79,7 +95,7 @@ def generate_service_result() -> str:
             [
                 "journalctl",
                 "-u",
-                "redhouse-generate-program.service",
+                generator_unit(),
                 "-n",
                 str(JOURNAL_LINES),
                 "--no-pager",
@@ -104,9 +120,9 @@ def build_body(program_date: datetime.date, path: Path, points: Optional[int]) -
             f"load_control points for that day: {counted}",
             "",
             "Generation runs at 16:06 daily.",
-            "The executor falls back to the latest program at midnight.",
+            "The executor has NO fallback: with no file it cannot run.",
             "",
-            "Last lines of redhouse-generate-program.service:",
+            f"Last lines of {generator_unit()}:",
             generate_service_result(),
         ]
     )
@@ -131,11 +147,11 @@ def check_program_exists(program_date: datetime.date, base_dir: str) -> bool:
 
 
 def main() -> int:
-    """Entry point. Exits 0 whether or not the program is there.
+    """Entry point.
 
-    The mail is the signal. Failing the unit would only add noise to
-    systemctl --failed, the mistake already corrected on the health
-    check.
+    A missing program exits 0, because the mail is the signal and a
+    failed unit would only add noise. Failing to SEND that mail exits
+    1: then the job itself did not happen and nothing else says so.
     """
     config = get_config()
     base_dir = config.get("PROGRAM_OUTPUT_DIR", DEFAULT_PROGRAM_DIR)
@@ -150,7 +166,7 @@ def main() -> int:
 
     if not api_key or not to_email:
         logger.error("Email not configured, cannot report the missing program")
-        return 0
+        return 1
 
     points = None
     try:
@@ -165,11 +181,13 @@ def main() -> int:
         body=build_body(program_date, program_path(program_date, base_dir), points),
         from_email=from_email,
     )
-    logger.info("Missing program mail sent: %s", sent)
+    if not sent:
+        logger.error("Could not send the missing program mail")
+        return 1
+
+    logger.info("Missing program mail sent for %s", program_date.isoformat())
     return 0
 
 
 if __name__ == "__main__":
-    import sys
-
     sys.exit(main())

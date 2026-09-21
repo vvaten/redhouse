@@ -41,20 +41,46 @@ class TestTomorrowLocal:
         assert pc.tomorrow_local(now) == datetime.date(2027, 1, 1)
 
 
+def _hours(start: str, stop: str) -> float:
+    a = datetime.datetime.fromisoformat(start)
+    b = datetime.datetime.fromisoformat(stop)
+    return (b - a).total_seconds() / 3600.0
+
+
 class TestLocalDayBounds:
-    """A fixed offset would be wrong for half the year."""
+    """Both midnights must carry their own offset.
 
-    def test_summer_is_plus_three(self):
+    Adding 24 h to the start keeps the start offset, which ends an hour
+    early in October and an hour late in March. An earlier version of
+    this class asserted both bounds shared one offset, which cemented
+    that bug instead of catching it.
+    """
+
+    def test_summer_day_is_24_hours(self):
         start, stop = pc.local_day_bounds(datetime.date(2026, 7, 15))
-        assert start.endswith("+03:00")
-        assert stop.endswith("+03:00")
+        assert start.endswith("+03:00") and stop.endswith("+03:00")
+        assert _hours(start, stop) == 24
 
-    def test_winter_is_plus_two(self):
+    def test_winter_day_is_24_hours(self):
         start, stop = pc.local_day_bounds(datetime.date(2026, 1, 15))
-        assert start.endswith("+02:00")
-        assert stop.endswith("+02:00")
+        assert start.endswith("+02:00") and stop.endswith("+02:00")
+        assert _hours(start, stop) == 24
 
-    def test_bounds_are_one_day_apart(self):
+    def test_clocks_back_gives_a_25_hour_day(self):
+        """2026-10-25: offset changes inside the day, so bounds differ."""
+        start, stop = pc.local_day_bounds(datetime.date(2026, 10, 25))
+        assert start.endswith("+03:00")
+        assert stop.endswith("+02:00")
+        assert _hours(start, stop) == 25
+
+    def test_clocks_forward_gives_a_23_hour_day(self):
+        """2026-03-29: the local day is an hour short."""
+        start, stop = pc.local_day_bounds(datetime.date(2026, 3, 29))
+        assert start.endswith("+02:00")
+        assert stop.endswith("+03:00")
+        assert _hours(start, stop) == 23
+
+    def test_bounds_are_consecutive_local_midnights(self):
         start, stop = pc.local_day_bounds(datetime.date(2026, 9, 22))
         assert start.startswith("2026-09-22T00:00:00")
         assert stop.startswith("2026-09-23T00:00:00")
@@ -78,6 +104,12 @@ class TestCheckProgramExists:
 
 
 class TestMain:
+    @pytest.fixture(autouse=True)
+    def _no_journal(self):
+        """Otherwise each case spawns journalctl with a 30 s timeout."""
+        with patch.object(pc, "generate_service_result", return_value="(journal)"):
+            yield
+
     def _config(self, base_dir):
         config = MagicMock()
         values = {
@@ -107,13 +139,13 @@ class TestMain:
         mail.assert_called_once()
         assert "2026-09-22" in mail.call_args.kwargs["subject"]
 
-    def test_exits_zero_when_missing(self, program_dir):
+    def test_exits_zero_when_missing_but_mailed(self, program_dir):
         """The mail is the signal; a failed unit would only add noise."""
         day = datetime.date(2026, 9, 22)
         with patch.object(pc, "get_config", return_value=self._config(program_dir)):
             with patch.object(pc, "tomorrow_local", return_value=day):
                 with patch.object(pc, "InfluxClient", side_effect=Exception("down")):
-                    with patch.object(pc, "send_alert_email", return_value=False):
+                    with patch.object(pc, "send_alert_email", return_value=True):
                         assert pc.main() == 0
 
     def test_influx_failure_does_not_stop_the_mail(self, program_dir):
@@ -125,7 +157,17 @@ class TestMain:
                         pc.main()
         assert "unknown" in mail.call_args.kwargs["body"]
 
-    def test_no_email_config_is_logged_not_crashed(self, program_dir):
+    def test_failed_send_exits_one(self, program_dir):
+        """A Resend outage must not look like a clean run."""
+        day = datetime.date(2026, 9, 22)
+        with patch.object(pc, "get_config", return_value=self._config(program_dir)):
+            with patch.object(pc, "tomorrow_local", return_value=day):
+                with patch.object(pc, "InfluxClient", side_effect=Exception("down")):
+                    with patch.object(pc, "send_alert_email", return_value=False):
+                        assert pc.main() == 1
+
+    def test_unconfigured_email_exits_one(self, program_dir):
+        """No way to report the miss is a failure of this job."""
         config = MagicMock()
         config.get.side_effect = lambda k, d=None: {"PROGRAM_OUTPUT_DIR": str(program_dir)}.get(
             k, d
@@ -133,7 +175,7 @@ class TestMain:
         with patch.object(pc, "get_config", return_value=config):
             with patch.object(pc, "tomorrow_local", return_value=datetime.date(2026, 9, 22)):
                 with patch.object(pc, "send_alert_email") as mail:
-                    assert pc.main() == 0
+                    assert pc.main() == 1
         mail.assert_not_called()
 
 
@@ -152,3 +194,26 @@ class TestBuildBody:
         with patch.object(pc, "generate_service_result", return_value="(journal)"):
             body = pc.build_body(day, pc.program_path(day, "."), None)
         assert "load_control points for that day: unknown" in body
+
+
+class TestGeneratorUnit:
+    """A staging install must quote its own journal, not production's."""
+
+    def test_production_unit(self):
+        with patch.object(pc, "_is_staging", return_value=False):
+            assert pc.generator_unit() == "redhouse-generate-program.service"
+
+    def test_staging_unit(self):
+        with patch.object(pc, "_is_staging", return_value=True):
+            assert pc.generator_unit() == "redhouse-staging-generate-program.service"
+
+
+class TestBodyDoesNotPromiseAFallback:
+    """Part 2 is not built: the executor has no fallback yet."""
+
+    def test_says_there_is_no_fallback(self):
+        day = datetime.date(2026, 9, 22)
+        with patch.object(pc, "generate_service_result", return_value="(journal)"):
+            body = pc.build_body(day, pc.program_path(day, "."), 0)
+        assert "NO fallback" in body
+        assert "falls back to the latest program at midnight" not in body
