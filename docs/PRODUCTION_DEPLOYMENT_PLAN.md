@@ -81,7 +81,8 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   `python -u deployment/setup_grafana_alerts.py --env production`
   There is also an empty legacy folder "RedHouse Alerts (Wibatemp)".
 - 2026-09-09: three unbacked wibatemp data archives were copied to the
-  PC at E:/test_data/redhouse_weather_data for solar model development.
+  PC at E:/redhouse_data/redhouse_weather_data for solar model
+  development.
   The nightly Pi backup covers only .env, pump state and systemd units,
   so none of this was backed up before.
 
@@ -131,8 +132,9 @@ names its checkpoint: the thing to verify before starting the next.
 ### Week timeline, from 2026-09-13
 
 Dates, not durations, because almost every checkpoint lands at 16:05
-when the heating program runs. Reference cron lines by content, not
-number: the numbering shifts each time a line is commented.
+when the heating program runs. Cron line numbers are lines of the
+live root crontab. Commenting a line keeps the numbering, but adding
+or deleting one shifts it, so check the content before you edit.
 
 | Date | Action | Checkpoint |
 |------|--------|-----------|
@@ -163,8 +165,8 @@ Clean swaps. Each reads its own external API live, writes only its own
 bucket, and the field names already match what wibatemp writes. Nothing
 downstream reads their script output, only the bucket.
 
-Comment cron lines 13 (weather), 15 (windpower), 3 and 4 (spot prices,
-two schedules). Then `systemctl enable --now` each timer and re-run
+Comment live cron lines 46 (weather), 48 (windpower), 31 and 32 (spot
+prices, two schedules). Then `systemctl enable --now` each timer and re-run
 setup_grafana_alerts.py --env production to pick up the new rules.
 
 Checkpoint: weather and windpower prove out within the hour at :02 and
@@ -176,26 +178,40 @@ tomorrow's prices. Do not start Phase 2 until that has happened once.
 
 NOT a clean swap. Both predictors write the same field,
 `solar_yield_avg_prediction`, into `emeters`/`energy`. They must never
-run together. Comment cron line 14 and start the timer in one step.
+run together. Comment live cron line 47 and start the timer in one step.
 
 Redhouse's predictor reads `emeters`/`energy`, which only wibatemp's
 netting produces, so this works today and needs no code change. That
-dependency is what pins cron line 9 in place until Phase 5.
+dependency pins live lines 38 and 39 in place: line 39 nets, and it
+needs ts_diff from line 38. Both retire together in Phase 7.
 
 Checkpoint: one hourly run writes the field, and the 16:05 program
 still reports a solar figure.
 
 ### Phase 3: Shelly EM3 (first hardware collector)
 
-Replaces cron line 8 only. Lines 10 and 12
-(shelly_ht_to_fissio_rest_api) MUST STAY: redhouse's temperature
-collector reads temperature_status.json for the four Shelly HT
-sensors. The older step text saying to comment 38, 43 and 45 together
-is wrong and would silently drop four sensors.
+Additive. No cron change belongs in this phase. Line numbers below are
+lines of the live root crontab, verified 2026-09-17.
 
-Checkpoint: shelly_em3_emeters_raw gets 1440 points/day. This gates
-Phase 4 absolutely, because the 5-min aggregator rejects every window
-without Shelly data.
+The obvious candidate, line 38 (run_energy_to_fissio.sh), also writes
+emeters/energy: energy_to_fissio.py reads the Shelly EM3 at
+192.168.1.5 and writes emeter_avg and ts_diff there. The line 39
+netter adds the CheckWatt fields to those points and needs ts_diff.
+The solar predictor and heating_data_fetcher read emeters/energy
+until Phase 5. Commenting it here stopped emeters for 25 minutes on
+2026-09-17. Line 38 retires in Phase 7, together with line 39.
+
+Lines 43 and 45 (shelly_ht_to_fissio_rest_api) MUST STAY at every
+phase: redhouse's temperature collector reads temperature_status.json
+for the four Shelly HT sensors.
+
+Checkpoint: shelly_em3_emeters_raw gets 1440 points/day. Measured
+2026-09-17, the 5-min aggregator accepts a window with zero Shelly
+points and writes null for consumption_avg, emeter_avg and
+emeter_diff; it rejects a window with exactly one, because it
+differences a counter. So partial coverage yields rows analytics
+cannot use, and the earlier claim that it "rejects every window
+without Shelly data" is wrong.
 
 ### Phase 4: aggregation tiers
 
@@ -213,17 +229,17 @@ windows in staging, so confirm that is gone before relying on it.
 ### Phase 5: repoint the emeters readers (code change)
 
 Move redhouse predict_solar_yield and heating_data_fetcher from
-`emeters`/`energy` to `emeters_5min`. This is the only thing standing
-between here and retiring wibatemp's netting.
+`emeters`/`energy` to `emeters_5min`. Then nothing in redhouse reads
+wibatemp's netting, and Phase 7 can retire lines 38 and 39.
 
 Checkpoint: both read the new bucket and produce the same figures for
 a day, compared side by side.
 
 ### Phase 6: heating control (the critical cutover)
 
-Comment cron lines 5, 6, 7 and the @reboot mlp_control restore, then
-start generate-program and execute-program together. Only one system
-may drive the pump.
+Comment live cron lines 33, 34, 35 and 27 (the @reboot mlp_control
+restore), then start generate-program and execute-program together.
+Only one system may drive the pump.
 
 Prerequisites, all of them: Phases 1-5 complete; the pump control test
 done and recorded; generate-program given a retry and a curve-only
@@ -235,11 +251,13 @@ getting data, and the physical pump responding.
 
 ### Phase 7: cleanup
 
-Retire cron line 9 (checkwatt_dataloader and its netting) once nothing
-reads `emeters`/`energy`. Start health-check and backup timers. Keep
-line 11 (i2c setup).
+Retire live lines 38 (run_energy_to_fissio.sh) and 39
+(run_checkwatt_dataloader.sh) in one step. Both write
+`emeters`/`energy`, and the line 39 netter fails without line 38's
+ts_diff. Start health-check, program-check and backup timers. Keep
+line 44 (i2c setup).
 
-Then port pinglogger (cron line 2). Deferred deliberately until the
+Then port pinglogger (live line 29). Deferred deliberately until the
 heating program runs from redhouse. It is the largest bucket in the
 instance at 230 MB, over half of all storage, and still runs from
 wibatemp with hardcoded credentials.
@@ -267,8 +285,8 @@ side effect of a dry-run.
 
 ### Outstanding, not blocking any phase
 
-- Writes have no retry. query_with_retry covers reads only; the 5
-  wrapper write methods and 6 direct write_api.write call sites do not.
+- DONE 2026-09-22. Writes now retry. write_with_retry mirrors
+  query_with_retry, and every write site in the tree goes through it.
 - InfluxDB hygiene: nine production buckets use forever retention with
   7-day shard groups, growing 469 shards/year. Widen the shard groups
   to 90 days: that cuts growth 13x and discards no history.
@@ -303,10 +321,82 @@ side effect of a dry-run.
   extend at least N hours past now. 12 h for spotprice would catch a
   failed fetch the same afternoon. Worth doing before Phase 2.
 - KeskikerrosKH (Shelly id 192) has never reported: low battery.
-  PaaMH2 (id 181) is a stale id, the sensor was replaced. Hilla and
-  Ulkolampo were unplugged over a year ago. sensors.yaml still maps all
-  four, which would make a 24h-silence alert fire forever.
+  PaaMH2 (id 181) is a stale id, the sensor was replaced. Both still
+  map in sensors.yaml, which would make a 24h-silence alert fire
+  forever. Hilla (8a) and Ulkolampo (02) were removed 2026-09-14;
+  both last reported 2025-10-19 07:28, in the same minute.
 - Shelly HT reading still depends on wibatemp's REST service.
+
+### Outstanding, added 2026-09-22
+
+Deployment script:
+
+- The deploy runs the copy of deploy_production.sh already on disk, so
+  a fix to that script cannot apply to the deploy that installs it. On
+  2026-09-22 the ALWAYS_ON fix landed and program-check still ended up
+  disabled, while the deploy reported 14 timers running, none left
+  stopped, and exited 0. Re-exec from the updated checkout after
+  the fast-forward, so the freshest script always does the work.
+- No post-deploy verification. The script has five exit 1 guards, all
+  before the install and none after. It should assert every timer in
+  deployment/systemd reached its intended state and fail loudly.
+
+CI gates:
+
+- No CI gate on deploy. CI ran on all 12 pushes from 2026-09-13 and
+  failed every one, and nobody looked. Unit tests were green
+  throughout on 3.9, 3.10 and 3.11; only lint failed, because that job
+  installed black unpinned and drifted to 26.5.1 against the 24.10.0
+  in requirements.txt. Now pinned. The deploy should refuse a commit
+  whose CI is not green. gh is absent on the Pi, curl is present, so
+  query the commit status API. It needs an explicit override flag with
+  a loud log line, or an outage teaches people to bypass it.
+- The local gate must block, not report. run_all_checks.py printed
+  [FAIL] Tests on every commit for days and was narrated past each
+  time. It must also use the pinned versions, or [OK] Formatting does
+  not mean what CI means.
+- CI lints src/ and tests/ only, so root files and everything under
+  deployment/ are never format-checked.
+
+Integration tests against production InfluxDB:
+
+- Isolation is incomplete. tests/integration/conftest.py overrides
+  nine buckets; INFLUXDB_BUCKET_LOAD_CONTROL and
+  INFLUXDB_BUCKET_WINDPOWER are not among them.
+- test_heating_program_integration.py redirects load_control per test
+  with generator.config["influxdb_bucket_load_control"] = ..., but
+  Config has only properties and no __setitem__, so the assignment
+  raises, the except swallows it, and the write never happens. It is
+  safe by accident and the print claiming otherwise is false. Add both
+  buckets to the conftest and delete the redirect rather than repair
+  it. Phase 6 gives load_control authority over the pump.
+- The same file has 3 asserts across 6 except blocks in six test
+  functions, so most of it passes vacuously.
+- test_aggregation_pipeline.py is 174 s of a 185 s suite and its four
+  tests fail constantly. They drive the real aggregators against live
+  InfluxDB over a moving three-hour window: 186 gap retries and 444
+  queries per run, so what they assert depends on what happened on the
+  NAS in the last few hours. Mark them slow, which leaves 853 tests in
+  11 s, then rework them onto seeded fixtures and a fixed window.
+
+Monitoring:
+
+- The 18:00 program check mails a false alarm whenever Persistent=true
+  fires a catch-up before 16:06. Enabling the timer at 04:40 on
+  2026-09-22 made systemd run the missed 18:00 slot at once, and the
+  program for the next day correctly did not exist yet. This recurs on
+  any boot before 16:06, and the timer is still enabled. The check
+  needs to refuse to judge before generation has had its chance:
+  earlier than 16:06 plus a margin, log and exit without mailing.
+  Persistent itself is right and should stay, so a genuinely missed
+  18:00 check still reports.
+- The health check allows 10 s for /health while the instance is known
+  to stall 26 to 33 s, so a badly timed run reports FAILURE about a
+  database that is merely busy.
+- A condition that never clears re-mails every 6 h forever. The 2.0 GB
+  memory threshold did that for a week before it was removed.
+- program_check imports the private _is_staging from health_check, and
+  health_check.py is 484 lines against a 450 soft limit.
 
 ## Stability Findings (2026-09-09)
 
@@ -883,9 +973,9 @@ replace cron line 39. See "CheckWatt Bucket Migration" below.
 Solar prediction note: both predictors write the same field
 `solar_yield_avg_prediction` into `emeters`/`energy`. Never run both.
 Swap in one step: comment line 47, start the redhouse timer. The redhouse
-predictor reads `emeters`/`energy` netting, which cron line 39 produces,
-so line 39 must keep running until the predictor is repointed to
-`emeters_5min` (TODO) or the heating cutover retires wibatemp.
+predictor reads `emeters`/`energy` netting, which cron line 39 produces
+from line 38's Shelly fields, so lines 38 and 39 keep running until
+roadmap Phase 7 retires them together.
 
 For each:
 ```bash
@@ -907,9 +997,9 @@ wibatemp keeps writing `checkwatt_full_data`. Reasons:
 - Cron line 39 (checkwatt_dataloader) also computes the 5-min netted
   `energy` measurement in `emeters`. wibatemp generate_heating_program,
   wibatemp predict_solar_yield, redhouse predict_solar_yield and
-  redhouse heating_data_fetcher all read it. Line 39 must run until the
-  heating cutover (Step 4). Separate buckets let both loaders run in
-  parallel with no collision.
+  redhouse heating_data_fetcher all read it. Lines 38 and 39 run until
+  roadmap Phase 7. Separate buckets let both loaders run in parallel
+  with no collision.
 - Both loaders write identical points (measurement `checkwatt`, same six
   fields, timestamps from the CheckWatt API), so a copy is lossless.
 
@@ -953,8 +1043,8 @@ Two halves, retire separately:
    Condition: a week of parallel running with the buckets matching and
    under 1% collector failures.
 2. Netter. Can keep running long after the raw writer is gone. Retire
-   it only once redhouse's solar predictor and heating_data_fetcher
-   read `emeters_5min` instead of `emeters`/`energy`.
+   it together with line 38 in roadmap Phase 7, after Phase 5 has moved
+   redhouse's readers to `emeters_5min`. It fails without line 38.
 
 /home/pi/wibatemp is NOT a git repository and there is no backup of
 checkwatt_dataloader.py on the Pi. Copy the file before editing it.
@@ -979,12 +1069,14 @@ sudo systemctl restart redhouse-temperature.timer
 
 **2b. Shelly EM3 energy collection**
 
-Replaces both fissio SBFspot script and shelly_ht_to_fissio.
+Additive. Start the collector and change no cron line here.
 
 ```bash
-# Disable wibatemp (line 38 only)
-crontab -e  # comment out line 38
-# Do NOT comment out lines 43 and 45 (shelly_ht_to_fissio_rest_api):
+# Do NOT comment line 38 (run_energy_to_fissio.sh) in this phase: it
+# also writes emeters/energy, which the solar predictor and
+# heating_data_fetcher read until Phase 5. Doing it here stopped
+# emeters for 25 minutes on 2026-09-17.
+# Do NOT comment lines 43 and 45 (shelly_ht_to_fissio_rest_api):
 # redhouse-temperature reads Shelly HT values from its status file.
 
 # Enable redhouse
@@ -1033,7 +1125,7 @@ crontab -e
 #   Line 34: execute_heating_program (*/15)
 #   Line 35: mlp_cycle_evu_off (*/2 :23)
 #   Line 27: @reboot mlp_control.sh restore
-#   Line 39: checkwatt_dataloader (emeters netting no longer needed)
+# Lines 38 and 39 stay. They retire together in roadmap Phase 7.
 
 # 2. Enable redhouse heating control
 sudo systemctl restart redhouse-generate-program.timer
@@ -1075,7 +1167,8 @@ sudo systemctl restart redhouse-backup.timer
 
 After 1 week of stable production:
 
-- [ ] Remove all wibatemp cron entries (keep only pinglogger + i2c reboot)
+- [ ] Remove the wibatemp cron entries not in "Crontab Lines to Keep",
+  and lines 38 and 39 (roadmap Phase 7)
 - [ ] Remove old .env values that moved to config.yaml (cosmetic)
 - [ ] Verify production Grafana dashboard
 - [ ] Document any operational differences from wibatemp
@@ -1090,7 +1183,8 @@ These wibatemp cron entries are NOT replaced by redhouse and must stay:
 |------|-------|--------|
 | 29 | pinglogger | Not ported yet (TODO in PLAN.md) |
 | 44 | @reboot set_i2c_wire_configuration.sh | Hardware setup, still needed |
-| 39 | checkwatt_dataloader | Produces emeters/energy netting, keep until Step 4 |
+| 38 | energy_to_fissio | Writes emeters/energy Shelly fields, keep until Phase 7 |
+| 39 | checkwatt_dataloader | Nets emeters/energy, needs line 38, keep until Phase 7 |
 | 43, 45 | shelly_ht_to_fissio_rest_api | redhouse-temperature reads its status file |
 
 ---
