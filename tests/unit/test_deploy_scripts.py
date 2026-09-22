@@ -98,30 +98,64 @@ class TestHealthCheckUnit:
                 assert line.split("=", 1)[1].split() == ["2"]
 
 
+def _health_check_minute(timer_text: str) -> int:
+    match = re.search(r"^OnCalendar=\*:(\d{1,2})/15$", timer_text, re.M)
+    assert match, "health check OnCalendar not found"
+    return int(match.group(1))
+
+
+def _deploy_windows() -> list:
+    deploy = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+    match = re.search(r"OPTIMAL_WINDOWS=\(([0-9 ]+)\)", deploy)
+    assert match, "OPTIMAL_WINDOWS not found"
+    return [int(x) for x in match.group(1).split()]
+
+
+@pytest.mark.skipif(BASH is None, reason="bash not available")
 class TestStagingScheduleDoesNotCollide:
     """Staging must not fire its health check with production's."""
 
     GENERATOR = REPO / "deployment" / "generate_staging_systemd.sh"
     PROD_TIMER = REPO / "deployment" / "systemd" / "redhouse-health-check.timer"
 
-    def test_production_still_on_the_quarter_hour(self):
-        """The generator rewrites this exact string, so pin it."""
-        assert "OnCalendar=*:00/15" in self.PROD_TIMER.read_text(encoding="utf-8")
+    def _staging_minute(self, tmp_path) -> int:
+        """Run the generator's own sed, so the assertion is behavioural.
 
-    def test_generator_offsets_the_staging_health_check(self):
+        Asserting the string appears in the script passed while the
+        pattern matched nothing, which is how the offset could break.
+        """
         text = self.GENERATOR.read_text(encoding="utf-8")
-        assert "OnCalendar=*:10/15" in text
+        expr = re.search(r"sed -i -E '([^']+)'", text)
+        assert expr, "generator sed expression not found"
+        target = tmp_path / "staging.timer"
+        target.write_text(self.PROD_TIMER.read_text(encoding="utf-8"), encoding="utf-8")
+        result = subprocess.run(
+            [BASH, "-c", f"sed -i -E '{expr.group(1)}' '{target.as_posix()}'"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr
+        return _health_check_minute(target.read_text(encoding="utf-8"))
 
-    def test_offset_avoids_the_deploy_windows(self):
-        """A staging run inside a deploy window would race the deploy."""
-        deploy = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
-        match = re.search(r"OPTIMAL_WINDOWS=\(([0-9 ]+)\)", deploy)
-        assert match, "OPTIMAL_WINDOWS not found"
-        windows = [int(x) for x in match.group(1).split()]
-        staging_minutes = [10, 25, 40, 55]
-        for start in windows:
-            for minute in staging_minutes:
-                assert not start <= minute <= start + 2, f"{minute} is inside window {start}"
+    def test_generator_actually_rewrites_the_minute(self, tmp_path):
+        """The sed must fire against whatever production currently uses."""
+        prod = _health_check_minute(self.PROD_TIMER.read_text(encoding="utf-8"))
+        assert self._staging_minute(tmp_path) != prod
+
+    def test_both_minutes_avoid_the_deploy_windows(self, tmp_path):
+        """A run inside a deploy window would race the deploy."""
+        prod = _health_check_minute(self.PROD_TIMER.read_text(encoding="utf-8"))
+        staging = self._staging_minute(tmp_path)
+        for start in _deploy_windows():
+            for label, minute in [("production", prod), ("staging", staging)]:
+                for m in range(minute, 60, 15):
+                    assert not start <= m <= start + 2, f"{label} :{m} in window {start}"
+
+    def test_production_is_off_the_quarter_hour(self):
+        """Every read timeout in 7 days landed on :00, :15, :30 or :45."""
+        prod = _health_check_minute(self.PROD_TIMER.read_text(encoding="utf-8"))
+        assert prod % 15 != 0, "health check is back on the quarter hour"
 
 
 class TestStagingTimersScript:

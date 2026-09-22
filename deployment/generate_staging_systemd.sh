@@ -40,11 +40,11 @@ for src_file in "$SOURCE_DIR"/redhouse-*.service "$SOURCE_DIR"/redhouse-*.timer;
         -e 's|Description=RedHouse |Description=RedHouse Staging |g' \
         "$src_file" > "/etc/systemd/system/$staging_name"
 
-    # Both health checks are *:00/15, so they contend every quarter
-    # hour. :10/15 is clear of the 5 and 15 minute jobs and of the
-    # deploy windows at :07, :22, :37 and :52.
+    # Staging must not share production's minute. Match any minute, not
+    # a literal, or changing production silently stops the offset and
+    # the two converge again. :10/15 is clear of every other job.
     if [ "$staging_name" = "redhouse-staging-health-check.timer" ]; then
-        sed -i 's|OnCalendar=\*:00/15|OnCalendar=*:10/15|' \
+        sed -i -E 's|OnCalendar=\*:[0-9]{1,2}/15|OnCalendar=*:10/15|' \
             "/etc/systemd/system/$staging_name"
     fi
 
