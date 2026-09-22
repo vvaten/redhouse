@@ -11,6 +11,7 @@ REPO = Path(__file__).parents[2]
 PRODUCTION_DEPLOY = REPO / "deployment" / "deploy_production.sh"
 STAGING_DEPLOY = REPO / "deployment" / "deploy_staging.sh"
 WAS_RUNNING_TEST = REPO / "tests" / "shell" / "was_running.sh"
+ALWAYS_ON_TEST = REPO / "tests" / "shell" / "is_always_on.sh"
 
 # Resolve the executable, never the bare name. Windows resolves "bash"
 # to System32\bash.exe, which is WSL and cannot see C:\Projects, so
@@ -29,6 +30,14 @@ class TestWasRunningMatcher:
         """
         result = subprocess.run(
             [BASH, str(WAS_RUNNING_TEST)], capture_output=True, text=True, timeout=60
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "FAIL" not in result.stdout
+
+    def test_always_on_matcher_executes(self):
+        """The matcher that keeps the watchdog enabled through a deploy."""
+        result = subprocess.run(
+            [BASH, str(ALWAYS_ON_TEST)], capture_output=True, text=True, timeout=60
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "FAIL" not in result.stdout
