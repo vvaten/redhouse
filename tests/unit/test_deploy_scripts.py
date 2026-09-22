@@ -12,8 +12,13 @@ PRODUCTION_DEPLOY = REPO / "deployment" / "deploy_production.sh"
 STAGING_DEPLOY = REPO / "deployment" / "deploy_staging.sh"
 WAS_RUNNING_TEST = REPO / "tests" / "shell" / "was_running.sh"
 
+# Resolve the executable, never the bare name. Windows resolves "bash"
+# to System32\bash.exe, which is WSL and cannot see C:\Projects, so
+# every one of these tests exited 127 without asserting anything.
+BASH = shutil.which("bash")
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+
+@pytest.mark.skipif(BASH is None, reason="bash not available")
 class TestWasRunningMatcher:
     def test_shell_assertions_pass(self):
         """Guards the whitespace bug that disabled every timer.
@@ -23,7 +28,7 @@ class TestWasRunningMatcher:
         normalisation nothing matches and the deploy disables everything.
         """
         result = subprocess.run(
-            ["bash", str(WAS_RUNNING_TEST)], capture_output=True, text=True, timeout=60
+            [BASH, str(WAS_RUNNING_TEST)], capture_output=True, text=True, timeout=60
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "FAIL" not in result.stdout
@@ -43,12 +48,12 @@ class TestCaptureNormalisesWhitespace:
         assert '*" $1 "*)' in text, "was_running should match on surrounding spaces"
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+@pytest.mark.skipif(BASH is None, reason="bash not available")
 class TestScriptsParse:
     @pytest.mark.parametrize("script", [PRODUCTION_DEPLOY, STAGING_DEPLOY])
     def test_syntax_is_valid(self, script):
         result = subprocess.run(
-            ["bash", "-n", str(script)], capture_output=True, text=True, timeout=60
+            [BASH, "-n", str(script)], capture_output=True, text=True, timeout=60
         )
         assert result.returncode == 0, result.stderr
 
