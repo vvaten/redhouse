@@ -30,9 +30,9 @@ go_memstats_sys_bytes 1.63e+09
     'storage_tsm_files_total{bucket="a",id="%d"} 1\n' % i for i in range(1, 1730)
 )
 
-# Healthy, 4 h after the restart. sys_bytes has climbed past the 2 GB
-# threshold but 0.67 GB of it is already released, so resident is
-# below even the just-restarted reading.
+# Healthy, 4 h after the restart. sys_bytes has climbed past 2 GB but
+# 0.67 GB of it is already released, so resident is below even the
+# just-restarted reading.
 RELEASED = """\
 go_gc_duration_seconds{quantile="0.5"} 0.000162168
 go_gc_duration_seconds{quantile="1"} 0.506775308
@@ -71,20 +71,26 @@ class TestMetricParsing:
 
 
 class TestMetricWarnings:
-    def test_degraded_state_warns_on_all_three(self):
+    def test_degraded_state_warns_on_gc_and_shards(self):
         out = ih.metric_warnings(DEGRADED)
-        assert len(out) == 3
+        assert len(out) == 2
         joined = " ".join(out)
         assert "GC pauses" in joined
-        assert "resident" in joined
         assert "shards" in joined
+
+    def test_memory_is_logged_not_warned(self):
+        """A 2.0 GB line mailed every 6 h for a week; the instance
+        oscillated 1.69 to 2.22 GB at 8.5 days uptime."""
+        joined = " ".join(ih.metric_warnings(DEGRADED))
+        assert "resident" not in joined
+        assert not hasattr(ih, "RESIDENT_BYTES_WARN")
 
     def test_healthy_state_is_silent(self):
         assert ih.metric_warnings(HEALTHY) == []
 
     def test_released_memory_is_not_memory_pressure(self):
-        """sys_bytes above the threshold must not warn on its own."""
-        assert ih._gauge(RELEASED, "go_memstats_sys_bytes") > ih.RESIDENT_BYTES_WARN
+        """Healthy 4 h in: sys_bytes 2.21 GB, 0.67 GB of it released."""
+        assert ih._gauge(RELEASED, "go_memstats_sys_bytes") > 2.0e9
         assert ih.metric_warnings(RELEASED) == []
 
     def test_goroutines_are_not_a_signal(self):
@@ -138,7 +144,7 @@ class TestCheckInfluxdbPerformance:
             with patch.object(ih, "_fetch_metrics", return_value=DEGRADED):
                 failures, warnings = ih.check_influxdb_performance(influx, "http://x", "t")
         assert failures == []
-        assert len(warnings) == 3
+        assert len(warnings) == 2
 
     def test_unreachable_metrics_warns_and_stops(self):
         influx = MagicMock()
@@ -154,15 +160,13 @@ class TestThresholdsSitBetweenTheMeasuredStates:
 
     Both anchors are single samples, so this only catches a gross
     error. It passed a latency threshold that warned on 42% of healthy
-    runs. The three left separate the states by orders of magnitude,
-    which is what makes single samples good enough for them.
+    runs, and a memory one that mailed every 6 h. The two left separate
+    the states 1600-fold and by 1207 shards, which is what makes single
+    samples good enough for them.
     """
 
     def test_gc_pause(self):
         assert 0.00016 < ih.GC_PAUSE_WARN_SECONDS < 0.257
-
-    def test_resident(self):
-        assert 1.63e9 < ih.RESIDENT_BYTES_WARN < 2.618e9
 
     def test_shards(self):
         assert 1729 < ih.SHARD_COUNT_WARN < 2936

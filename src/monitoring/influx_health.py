@@ -24,13 +24,17 @@ degraded instance falls inside that healthy spread, so it never
 separated the two states. A probe that fails outright is still a
 failure.
 
-Memory here means resident, not sys_bytes. sys_bytes counts address
-space reserved from the OS including pages Go has already given back,
-so it climbs with uptime on an instance that is behaving. The 4 h
-column is that case: sys_bytes reached 2.21 GB with 0.67 GB of it
-already released, while every other signal stayed healthy. The
-degraded reading did not capture heap_released_bytes, so its resident
-figure is its sys_bytes and may be an overestimate.
+Memory is logged and never warns either. A 2.0 GB line on resident
+sent a mail every 6 h for a week: at 8.5 days uptime the instance
+oscillated 1.69 to 2.22 GB, so the line sat inside normal operation.
+The band also widens with uptime, so no fixed line survives. Resident
+is still the honest figure to log, because sys_bytes counts pages Go
+has already given back and climbs on a healthy instance.
+
+That leaves GC pause and shard count, which separated the two states
+by 1600-fold and by 1207 shards. GC pause is the live signal: it
+reached 0.0103 s at 8.5 days, 64 times the post-restart value and
+still a fifth of its threshold.
 """
 
 import re
@@ -46,7 +50,6 @@ logger = setup_logger(__name__, "influx_health.log")
 # Each sits between the two measured states, so this warns while there
 # is still headroom rather than once queries already fail.
 GC_PAUSE_WARN_SECONDS = 0.05
-RESIDENT_BYTES_WARN = 2_000_000_000
 SHARD_COUNT_WARN = 2200
 
 METRICS_TIMEOUT_SECONDS = 30
@@ -152,11 +155,6 @@ def metric_warnings(text: str) -> list[str]:
         out.append(
             f"InfluxDB GC pauses at {gc_pause:.2f}s median "
             f"(warn above {GC_PAUSE_WARN_SECONDS}s); this is what times out writes"
-        )
-    if resident is not None and resident > RESIDENT_BYTES_WARN:
-        out.append(
-            f"InfluxDB using {resident / 1e9:.2f} GB resident "
-            f"(warn above {RESIDENT_BYTES_WARN / 1e9:.1f} GB); a restart reclaims it"
         )
     if shards > SHARD_COUNT_WARN:
         out.append(
