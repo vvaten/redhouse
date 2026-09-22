@@ -289,10 +289,26 @@ was_running() {
     esac
 }
 
+# These watch the system rather than drive it, so the migration rule
+# does not apply. Without this the deploy that installs one disables it
+# again, and health_check skips disabled timers, so nothing reports it.
+ALWAYS_ON=(
+    "redhouse-program-check"
+)
+
+is_always_on() {
+    for timer in "${ALWAYS_ON[@]}"; do
+        if [ "$timer" = "$1" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 RUNNING=0
 STOPPED=0
 for timer in "${TIMERS[@]}"; do
-    if [ "$START_ALL" = true ] || was_running "$timer.timer"; then
+    if [ "$START_ALL" = true ] || was_running "$timer.timer" || is_always_on "$timer"; then
         systemctl enable "$timer.timer" 2>/dev/null
         systemctl restart "$timer.timer"
         echo "  [OK] $timer.timer"

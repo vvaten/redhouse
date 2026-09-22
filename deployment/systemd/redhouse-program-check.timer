@@ -7,6 +7,9 @@ Requires=redhouse-program-check.service
 # 16:06, leaving nearly two hours of slack before it complains and six
 # before the executor falls back at midnight.
 OnCalendar=*-*-* 18:00:00
+# Once a day, so a reboot across 18:00 would otherwise skip that day
+# in silence. Persistent runs the missed one at the next boot.
+Persistent=true
 AccuracySec=1s
 
 [Install]

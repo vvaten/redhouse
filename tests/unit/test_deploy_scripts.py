@@ -192,3 +192,53 @@ class TestTimerSchedulesAreNotUnioned:
             if len(lines) > 1 and any(v.lower() in self.SHORTHAND for v in lines):
                 offenders.append(f"{unit.name}: {lines}")
         assert not offenders, "shorthand unions with explicit times: " + "; ".join(offenders)
+
+
+class TestMonitoringTimersSurviveADeploy:
+    """The deploy disables anything that was not already running.
+
+    redhouse-program-check was installed by the very deploy that then
+    disabled it, and health_check skips disabled timers, so nothing
+    reported the silence.
+    """
+
+    UNITS = REPO / "deployment" / "systemd"
+
+    def test_production_deploy_has_an_always_on_list(self):
+        text = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+        match = re.search(r"ALWAYS_ON=\((.*?)^\)", text, re.S | re.M)
+        assert match, "ALWAYS_ON not found"
+        assert '"redhouse-program-check"' in match.group(1)
+
+    def test_always_on_bypasses_the_was_running_gate(self):
+        text = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+        assert 'was_running "$timer.timer" || is_always_on "$timer"' in text
+
+    def test_every_always_on_timer_exists(self):
+        text = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+        match = re.search(r"ALWAYS_ON=\((.*?)^\)", text, re.S | re.M)
+        assert match
+        for name in re.findall(r'"([^"]+)"', match.group(1)):
+            assert (self.UNITS / f"{name}.timer").is_file(), name
+
+
+class TestDailyTimersCatchUp:
+    """A once-a-day timer without catch-up skips a day on reboot."""
+
+    UNITS = sorted((REPO / "deployment" / "systemd").glob("*.timer"))
+
+    def test_daily_timers_are_persistent(self):
+        offenders = []
+        for unit in self.UNITS:
+            text = unit.read_text(encoding="utf-8")
+            schedules = [
+                ln.split("=", 1)[1].strip()
+                for ln in text.splitlines()
+                if ln.startswith("OnCalendar=")
+            ]
+            daily = [s for s in schedules if re.match(r"^\*-\*-\* \d{2}:\d{2}:\d{2}$", s)]
+            if not daily:
+                continue
+            if "Persistent=true" not in text and "OnBootSec" not in text:
+                offenders.append(unit.name)
+        assert not offenders, f"daily timers with no catch-up: {offenders}"

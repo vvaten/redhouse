@@ -102,11 +102,13 @@ class InfluxClient:
         Raises:
             Last exception if all attempts fail
         """
+        last_error: Exception = Exception("No attempts made")
         for attempt in range(1, WRITE_MAX_RETRIES + 1):
             try:
                 self.write_api.write(**kwargs)
                 return
             except Exception as e:
+                last_error = e
                 if is_timeout_error(e) and attempt < WRITE_MAX_RETRIES:
                     logger.warning(
                         f"Write timeout (attempt {attempt}/{WRITE_MAX_RETRIES}),"
@@ -115,6 +117,7 @@ class InfluxClient:
                     time.sleep(WRITE_RETRY_DELAY_S)
                 else:
                     raise
+        raise last_error
 
     def write_point(
         self,

@@ -1,7 +1,9 @@
 """Tests for the heating program presence check."""
 
 import datetime
+import inspect
 import json
+import pathlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -110,13 +112,14 @@ class TestMain:
         with patch.object(pc, "generate_service_result", return_value="(journal)"):
             yield
 
+    @pytest.fixture(autouse=True)
+    def _base_dir(self, program_dir):
+        with patch.object(pc, "PROGRAM_BASE_DIR", str(program_dir)):
+            yield
+
     def _config(self, base_dir):
         config = MagicMock()
-        values = {
-            "PROGRAM_OUTPUT_DIR": str(base_dir),
-            "RESEND_API_KEY": "key",
-            "ALERT_EMAIL_TO": "to@example.com",
-        }
+        values = {"RESEND_API_KEY": "key", "ALERT_EMAIL_TO": "to@example.com"}
         config.get.side_effect = lambda k, d=None: values.get(k, d)
         return config
 
@@ -169,9 +172,7 @@ class TestMain:
     def test_unconfigured_email_exits_one(self, program_dir):
         """No way to report the miss is a failure of this job."""
         config = MagicMock()
-        config.get.side_effect = lambda k, d=None: {"PROGRAM_OUTPUT_DIR": str(program_dir)}.get(
-            k, d
-        )
+        config.get.side_effect = lambda k, d=None: d
         with patch.object(pc, "get_config", return_value=config):
             with patch.object(pc, "tomorrow_local", return_value=datetime.date(2026, 9, 22)):
                 with patch.object(pc, "send_alert_email") as mail:
@@ -217,3 +218,18 @@ class TestBodyDoesNotPromiseAFallback:
             body = pc.build_body(day, pc.program_path(day, "."), 0)
         assert "NO fallback" in body
         assert "falls back to the latest program at midnight" not in body
+
+
+class TestBaseDirCannotDriftFromTheExecutor:
+    """A checker looking elsewhere than the executor mails false alarms."""
+
+    def test_matches_load_program_default(self):
+        from src.control.program_executor import HeatingProgramExecutor
+
+        sig = inspect.signature(HeatingProgramExecutor.load_program)
+        assert pc.PROGRAM_BASE_DIR == sig.parameters["base_dir"].default
+
+    def test_no_config_key_shadows_it(self):
+        """A config key here would invent a disagreement with the writer."""
+        source = pathlib.Path(pc.__file__).read_text(encoding="utf-8")
+        assert "PROGRAM_OUTPUT_DIR" not in source

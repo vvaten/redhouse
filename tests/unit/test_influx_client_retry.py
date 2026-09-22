@@ -162,3 +162,21 @@ class TestWriteWithRetry:
             client.write_with_retry(bucket="b", record="p")
 
         assert client.write_api.write.call_count == 1
+
+
+class TestRetryLoopsNeverFallThrough:
+    """Falling off the loop returns None, and callers log success."""
+
+    def test_write_raises_when_no_attempt_is_made(self):
+        client = _make_client()
+        with patch("src.common.influx_client.WRITE_MAX_RETRIES", 0):
+            with pytest.raises(Exception, match="No attempts made"):
+                client.write_with_retry(bucket="b", record="p")
+        client.write_api.write.assert_not_called()
+
+    def test_query_raises_when_no_attempt_is_made(self):
+        client = _make_client()
+        with patch("src.common.influx_client.QUERY_MAX_RETRIES", 0):
+            with pytest.raises(Exception, match="No attempts made"):
+                client.query_with_retry("some flux query")
+        client.query_api.query.assert_not_called()

@@ -26,7 +26,11 @@ logger = setup_logger(__name__, "program_check.log")
 # fixed offset is right for half the year only.
 HELSINKI = pytz.timezone("Europe/Helsinki")
 
-DEFAULT_PROGRAM_DIR = "."
+# Must equal program_executor.load_program's base_dir default. Both
+# resolve against the unit's WorkingDirectory, and neither unit passes
+# a directory, so a config key here would only invent a disagreement.
+PROGRAM_BASE_DIR = "."
+
 JOURNAL_LINES = 12
 JOURNAL_TIMEOUT_S = 30
 
@@ -154,10 +158,9 @@ def main() -> int:
     1: then the job itself did not happen and nothing else says so.
     """
     config = get_config()
-    base_dir = config.get("PROGRAM_OUTPUT_DIR", DEFAULT_PROGRAM_DIR)
     program_date = tomorrow_local()
 
-    if check_program_exists(program_date, base_dir):
+    if check_program_exists(program_date, PROGRAM_BASE_DIR):
         return 0
 
     api_key = config.get("RESEND_API_KEY")
@@ -178,7 +181,7 @@ def main() -> int:
         api_key=api_key,
         to_email=to_email,
         subject=f"[RedHouse WARNING] No heating program for {program_date.isoformat()}",
-        body=build_body(program_date, program_path(program_date, base_dir), points),
+        body=build_body(program_date, program_path(program_date, PROGRAM_BASE_DIR), points),
         from_email=from_email,
     )
     if not sent:
