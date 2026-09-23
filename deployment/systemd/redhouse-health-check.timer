@@ -3,7 +3,6 @@ Description=RedHouse Health Check Timer
 Requires=redhouse-health-check.service
 
 [Timer]
-OnBootSec=5min
 # Off the quarter hour. All 10 read timeouts in the 7 days to
 # 2026-09-22 landed on :00, :15, :30 or :45, where execute-program and
 # the every-minute collectors start in the same second.

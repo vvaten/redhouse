@@ -3,7 +3,6 @@ Description=RedHouse Weather Forecast Collection Timer
 Requires=redhouse-weather.service
 
 [Timer]
-OnBootSec=2min
 OnCalendar=*:02:00
 AccuracySec=1s
 

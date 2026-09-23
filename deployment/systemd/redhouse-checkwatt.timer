@@ -3,7 +3,6 @@ Description=RedHouse CheckWatt Data Collection Timer
 Requires=redhouse-checkwatt.service
 
 [Timer]
-OnBootSec=3min
 # Every 5 minutes at :02:30, :07:30, ... Offset 90 s from wibatemp cron
 # line 39 (:01, :06, ...) so the two loaders do not write to the NAS at
 # the same instant while both run. Must stay AHEAD of

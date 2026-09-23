@@ -3,6 +3,9 @@ Description=RedHouse Temperature Collection Timer
 Requires=redhouse-temperature.service
 
 [Timer]
+# OnUnitActiveSec measures from a previous activation, so without
+# OnBootSec the timer never elapses and temperature collection never
+# starts.
 OnBootSec=1min
 OnUnitActiveSec=1min
 AccuracySec=1s

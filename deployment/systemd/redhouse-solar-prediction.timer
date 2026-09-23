@@ -3,7 +3,6 @@ Description=RedHouse Solar Yield Prediction Timer
 Requires=redhouse-solar-prediction.service
 
 [Timer]
-OnBootSec=3min
 OnCalendar=*:03:00
 AccuracySec=1s
 

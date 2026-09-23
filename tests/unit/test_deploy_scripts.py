@@ -270,23 +270,157 @@ class TestMonitoringTimersSurviveADeploy:
             assert (self.UNITS / f"{name}.timer").is_file(), name
 
 
+TRIGGER_KEYS = (
+    "OnCalendar",
+    "OnBootSec",
+    "OnStartupSec",
+    "OnActiveSec",
+    "OnUnitActiveSec",
+    "OnUnitInactiveSec",
+)
+
+
+def _effective(text: str) -> dict:
+    """Values of each live directive in order, as systemd reads them.
+    Comments start with # or ;. An empty value resets that list, and an
+    empty trigger resets every trigger."""
+    values: dict = {}
+    for ln in text.splitlines():
+        if "=" in ln and not ln.lstrip().startswith(("#", ";")):
+            key, value = (part.strip() for part in ln.split("=", 1))
+            if not value and key in TRIGGER_KEYS:
+                for trigger in TRIGGER_KEYS:
+                    values[trigger] = []
+            elif not value:
+                values[key] = []
+            elif key in values:
+                values[key].append(value)
+            else:
+                values[key] = [value]
+    return values
+
+
+def _values(text: str, key: str) -> list:
+    effective = _effective(text)
+    return effective[key] if key in effective else []
+
+
+def _directives(text: str) -> set:
+    """Keys that still carry a value."""
+    return {k for k, v in _effective(text).items() if v}
+
+
+DAILY = re.compile(r"^(daily|(\*-\*-\* )?\d{1,2}:\d{2}(:\d{2})?)$")
+
+
+def _daily_schedules(text: str) -> list:
+    return [s for s in _values(text, "OnCalendar") if DAILY.match(s)]
+
+
+def _has_catchup(text: str) -> bool:
+    """A single-valued setting: the last assignment wins."""
+    persistent = _values(text, "Persistent")
+    return bool(persistent) and persistent[-1].lower() in {"1", "yes", "y", "true", "t", "on"}
+
+
 class TestDailyTimersCatchUp:
-    """A once-a-day timer without catch-up skips a day on reboot."""
+    """A once-a-day timer without catch-up skips a day on reboot.
+
+    Two have none on purpose: a boot-time run before prices publish fails.
+    """
 
     UNITS = sorted((REPO / "deployment" / "systemd").glob("*.timer"))
+    # generate-program needs the day's spot prices, published in the
+    # afternoon: a boot-time run failed at 04:37 on 2026-09-22.
+    # spot-prices already retries six times across that window.
+    NO_CATCHUP_BY_DESIGN = {
+        "redhouse-generate-program.timer",
+        "redhouse-spot-prices.timer",
+    }
 
     def test_daily_timers_are_persistent(self):
-        offenders = []
-        for unit in self.UNITS:
-            text = unit.read_text(encoding="utf-8")
-            schedules = [
-                ln.split("=", 1)[1].strip()
-                for ln in text.splitlines()
-                if ln.startswith("OnCalendar=")
-            ]
-            daily = [s for s in schedules if re.match(r"^\*-\*-\* \d{2}:\d{2}:\d{2}$", s)]
-            if not daily:
-                continue
-            if "Persistent=true" not in text and "OnBootSec" not in text:
-                offenders.append(unit.name)
+        offenders = [
+            u.name
+            for u in self.UNITS
+            if u.name not in self.NO_CATCHUP_BY_DESIGN
+            and _daily_schedules(u.read_text(encoding="utf-8"))
+            and not _has_catchup(u.read_text(encoding="utf-8"))
+        ]
         assert not offenders, f"daily timers with no catch-up: {offenders}"
+
+    def test_the_exemptions_are_still_daily_and_still_bare(self):
+        """Stops the exemption list rotting into a silent excuse."""
+        for name in self.NO_CATCHUP_BY_DESIGN:
+            text = (REPO / "deployment" / "systemd" / name).read_text(encoding="utf-8")
+            assert _daily_schedules(text), f"{name} is no longer a daily timer"
+            assert not _has_catchup(text), f"{name} gained a catch-up; revisit the exemption"
+
+
+class TestNoTriggerFiresOnRestart:
+    """A deploy restarts timers, and these then fire off schedule:
+    OnBootSec and OnStartupSec at once, OnActiveSec at its offset."""
+
+    UNITS = sorted((REPO / "deployment" / "systemd").glob("*.timer"))
+    ALLOWED = {"redhouse-temperature.timer"}
+    FIRES_ON_RESTART = {"OnBootSec", "OnStartupSec", "OnActiveSec"}
+
+    def test_units_exist(self):
+        assert self.UNITS
+
+    def test_only_temperature_has_one(self):
+        offenders = [
+            u.name
+            for u in self.UNITS
+            if u.name not in self.ALLOWED
+            and self.FIRES_ON_RESTART & _directives(u.read_text(encoding="utf-8"))
+        ]
+        assert not offenders, f"restart-firing trigger reintroduced: {offenders}"
+
+    def test_temperature_still_has_it(self):
+        """OnBootSec is its only trigger that fires without an earlier run."""
+        text = (REPO / "deployment" / "systemd" / "redhouse-temperature.timer").read_text(
+            encoding="utf-8"
+        )
+        keys = _directives(text)
+        assert "OnBootSec" in keys
+        assert "OnUnitActiveSec" in keys
+        assert "OnCalendar" not in keys
+
+
+class TestEveryTimerFires:
+    """A timer with no trigger that can fire first never runs its job."""
+
+    UNITS = sorted((REPO / "deployment" / "systemd").glob("*.timer"))
+    # OnUnitActiveSec and OnUnitInactiveSec need an earlier run first.
+    FIRST_TRIGGERS = {"OnCalendar", "OnBootSec", "OnStartupSec", "OnActiveSec"}
+
+    def test_units_exist(self):
+        assert self.UNITS
+
+    def test_every_timer_has_a_first_trigger(self):
+        offenders = [
+            u.name
+            for u in self.UNITS
+            if not self.FIRST_TRIGGERS & _directives(u.read_text(encoding="utf-8"))
+        ]
+        assert not offenders, f"timers that never fire: {offenders}"
+
+    def test_a_commented_or_empty_trigger_does_not_count(self):
+        text = "#OnBootSec=1min\n; OnCalendar=daily\nOnCalendar=\nOnUnitActiveSec=1min\n"
+        assert not self.FIRST_TRIGGERS & _directives(text)
+
+    def test_spaced_directives_are_parsed(self):
+        assert "OnBootSec" in _directives("  OnBootSec = 5min\n")
+        assert _has_catchup("Persistent = yes\n")
+        assert _daily_schedules(" OnCalendar = *-*-* 16:06:00\n") == ["*-*-* 16:06:00"]
+
+    def test_order_is_kept(self):
+        assert "OnCalendar" not in _directives("OnCalendar=daily\nOnCalendar=\n")
+        assert not set(TRIGGER_KEYS) & _directives("OnCalendar=daily\nOnBootSec=\n")
+        assert "OnBootSec" in _directives("OnCalendar=\nOnBootSec=1min\n")
+        assert not _has_catchup("Persistent=true\nPersistent=false\n")
+
+    def test_short_daily_forms_are_daily(self):
+        for form in ("daily", "16:06", "*-*-* 16:06", "*-*-* 16:06:00"):
+            assert _daily_schedules(f"OnCalendar={form}\n") == [form], form
+        assert _daily_schedules("OnCalendar=*:14/15\n") == []
