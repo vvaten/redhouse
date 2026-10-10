@@ -1,7 +1,7 @@
 # RedHouse Production Deployment Plan
 
 **Created:** 2026-04-06
-**Updated:** 2026-09-09
+**Updated:** 2026-10-10
 **Status:** In Progress
 **Goal:** Replace wibatemp with redhouse as the production system
 
@@ -13,8 +13,9 @@ Migrate from wibatemp (crontab-based) to redhouse (systemd-based) using a
 gradual feature-by-feature cutover. Both systems write to the same InfluxDB
 buckets in the same format, so there should be zero data gaps.
 
-## Current State (2026-09-09)
+## Current State (snapshot, 2026-09-09 to 2026-09-10)
 
+The Roadmap below supersedes this snapshot where the two disagree.
 Steps 1-3 and 5 below were done on 2026-04-06. Since then:
 
 - /opt/redhouse runs in production mode (STAGING_MODE=false, production
@@ -31,6 +32,7 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   control. deploy_production.sh now disables them on its next run, but
   until it runs the hazard is live. To close it now:
   `sudo systemctl disable redhouse-<name>.timer` for each stopped timer.
+  Closed since: see Roadmap: Done.
 - CheckWatt uses a NEW bucket `checkwatt` in redhouse (old system:
   `checkwatt_full_data`). See "CheckWatt Bucket Migration" below.
 - redhouse-temperature reads Shelly HT values from
@@ -70,16 +72,19 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   mixture that was never tested as a whole. Bring it to main with
   `sudo deployment/deploy_production.sh`, which will stash the 3 files
   and fast-forward. Deploy the fixed script itself first.
+  Done since: see Roadmap: Done.
 - 2026-09-09: the 7 staging Grafana alerts are PAUSED. Stopping the
   staging timers made every freshness rule fire and mail the contact
   point. Resume together with the staging timers:
   `python -u deployment/pause_grafana_alerts.py --env staging --resume`
+  Resumed 2026-09-10, see the entry above.
 - No Production alert folder exists in Grafana. Only
   RedHouse-Alerts-Staging (7 rules) and RedHouse-Alerts-Wibatemp (5
   rules) are set up, so the alert step of deploy_production.sh has never
   succeeded. Production has NO alerting. Fix before Step 4:
   `python -u deployment/setup_grafana_alerts.py --env production`
   There is also an empty legacy folder "RedHouse Alerts (Wibatemp)".
+  Production alerting set up since: see Roadmap: Done.
 - 2026-09-09: three unbacked wibatemp data archives were copied to the
   PC at E:/redhouse_data/redhouse_weather_data for solar model
   development.
@@ -255,8 +260,9 @@ getting data, and the physical pump responding.
 Retire live lines 38 (run_energy_to_fissio.sh) and 39
 (run_checkwatt_dataloader.sh) in one step. Both write
 `emeters`/`energy`, and the line 39 netter fails without line 38's
-ts_diff. Start health-check, program-check and backup timers. Keep
-line 44 (i2c setup).
+ts_diff. Keep line 44 (i2c setup). The health-check, program-check
+and backup timers already run in production. program-check is
+ALWAYS_ON; the other two stay on through a deploy only while running.
 
 Then port pinglogger (live line 29). Deferred deliberately until the
 heating program runs from redhouse. It is the largest bucket in the
@@ -267,7 +273,7 @@ wibatemp with hardcoded credentials.
 
 2026-04-06 and 2026-04-08, against the real hardware, all commands
 successful: ON, ALE, EVU, ON. Recorded in /var/log/redhouse/
-pump_control.log. Earlier text saying "status not recorded" was wrong.
+pump_control.log.
 
 ### Program comparison, 2026-09-13
 
@@ -287,7 +293,7 @@ side effect of a dry-run.
 ### Outstanding, not blocking any phase
 
 - DONE 2026-09-22. Writes now retry. write_with_retry mirrors
-  query_with_retry, and every write site in the tree goes through it.
+  query_with_retry, and every write site in src/ goes through it.
 - InfluxDB hygiene: nine production buckets use forever retention with
   7-day shard groups, growing 469 shards/year. Widen the shard groups
   to 90 days: that cuts growth 13x and discards no history.
@@ -361,24 +367,17 @@ CI gates:
 
 Integration tests against production InfluxDB:
 
-- Isolation is incomplete. tests/integration/conftest.py overrides
-  nine buckets; INFLUXDB_BUCKET_LOAD_CONTROL and
-  INFLUXDB_BUCKET_WINDPOWER are not among them.
-- test_heating_program_integration.py redirects load_control per test
-  with generator.config["influxdb_bucket_load_control"] = ..., but
-  Config has only properties and no __setitem__, so the assignment
-  raises, the except swallows it, and the write never happens. It is
-  safe by accident and the print claiming otherwise is false. Add both
-  buckets to the conftest and delete the redirect rather than repair
-  it. Phase 6 gives load_control authority over the pump.
-- The same file has 3 asserts across 6 except blocks in six test
-  functions, so most of it passes vacuously.
-- test_aggregation_pipeline.py is 174 s of a 185 s suite and its four
-  tests fail constantly. They drive the real aggregators against live
-  InfluxDB over a moving three-hour window: 186 gap retries and 444
-  queries per run, so what they assert depends on what happened on the
-  NAS in the last few hours. Mark them slow, which leaves 853 tests in
-  11 s, then rework them onto seeded fixtures and a fixed window.
+- Done 2026-10-10: an autouse fixture in tests/integration/conftest.py
+  points all eleven buckets at their *_test copies and aborts the run
+  if one still names a real bucket. The broken load_control redirect
+  and the script entry points are gone, and the tests run only with
+  REDHOUSE_INTEGRATION=1, so the default suite never reaches InfluxDB.
+- test_heating_program_integration.py has 3 asserts across 6 except
+  blocks in six test functions, so most of it passes vacuously.
+- test_aggregation_pipeline.py drives the real aggregators against
+  live InfluxDB over a moving three-hour window, so what it asserts
+  depends on what happened on the NAS in the last few hours. Rework
+  it onto seeded fixtures and a fixed window.
 
 Monitoring:
 
@@ -433,7 +432,9 @@ Not healthy:
 
 3. When generate-program fails at 16:05, the next day has no program
    and execute-program does nothing all day. In production the pump
-   would get no commands. Blocks Step 4 until fixed.
+   would get no commands. Blocks Step 4 until fixed. Fixed 2026-10-10:
+   generation retries hourly until 23:06, and the 23:50 fallback copies
+   the day's program forward.
 
 ## Hardening Before The Next Migration Step
 
@@ -446,15 +447,14 @@ Do these before any further cron line is disabled:
   in src/common/influx_client.py. The constant was called
   QUERY_TIMEOUT_MS but governs writes too, which hid the effect. The
   CheckWatt collector went from failing on it to 5 of 5 runs clean.
-- [ ] Retry writes as well as queries. query_with_retry covers reads
-  only; the 5 wrapper write methods and 6 direct write_api.write call
-  sites in src/ have no retry at all.
+- [x] Retry writes as well as queries. Done 2026-09-22: every write
+  site in src/ goes through write_with_retry.
 - [x] generate-program retries hourly until 23:06, and a missing or
   unusable day gets the previous day's program copied forward, with a
   mail. Done 2026-10-10 instead of a curve-only program.
 - [ ] Check NAS InfluxDB load (CPU, disk, compactions). Consider
   lowering staging query load.
-- [ ] Create the production Grafana alerts (folder does not exist)
+- [x] Create the production Grafana alerts. Done, see Roadmap: Done.
 - [ ] Prune /home/pi/weather_data daily while get_weather.py still runs.
   It has no retention and regrows at 3 MB/day. Proposed root cron line:
   `30 4 * * * find /home/pi/weather_data -name "*.json" -mtime +30 -delete`
@@ -483,9 +483,9 @@ Do these before any further cron line is disabled:
   SystemMaxUse=500M in /etc/systemd/journald.conf.
 - [x] Make deploy_production.sh restart only active timers. Done
   2026-09-10.
-- [ ] Disable the 12 idle production timers now, rather than waiting for
-  the next deploy to do it (reboot hazard, Current State)
-- [ ] Bring production to origin/main and retire the hand-patched files
+- [x] Disable the 12 idle production timers. Done, see Roadmap: Done.
+- [x] Bring production to origin/main and retire the hand-patched
+  files. Done, see Roadmap: Done.
 - [ ] Re-measure staging for 7 days after the fixes. Gate: fewer than
   1% failed runs per unit, generate-program 7 of 7
 
@@ -542,11 +542,12 @@ NAS (192.168.1.164)
 - [x] Set up staging environment /opt/redhouse-staging (Step 1, 2026-04-06)
 - [x] Hand off staging to /opt/redhouse-staging (Step 2, 2026-04-06)
 - [x] Switch /opt/redhouse to production mode (Step 3, 2026-04-06)
-- [ ] Pump control test (Step 4) - status not recorded, confirm
+- [x] Pump control test (Step 4, 2026-04-06 and 2026-04-08, see
+  "Pump control test: DONE")
 - [x] Temperature collection test - 24h (Step 5, 2026-04-06, in production
   since; see LESSONS_LEARNED.md lessons 2 and 3)
 - [ ] Create staging data copy timer (daily production -> staging)
-- [ ] Disable idle production timers (reboot hazard, see Current State)
+- [x] Disable idle production timers. Done, see Roadmap: Done.
 
 ---
 
@@ -667,12 +668,16 @@ Scripts:
 
 ## Pump Control Test (pre-requisite)
 
-Redhouse has never controlled the real pump. Before the gradual migration,
-do a controlled test to verify I2C communication works.
+Done 2026-04-06 and 2026-04-08, see "Pump control test: DONE". The
+procedure below is the plan, written for an install in staging mode
+before Step 3 moved ahead of it. On /opt/redhouse skip steps 2 and 7:
+STAGING_MODE=true would stop temperature collection, turn
+execute-program into a dry run and use mock pump hardware.
 
-NOTE: control_pump.py does not write to InfluxDB, so no bucket name
-changes are needed. But STAGING_MODE must be set to false temporarily
-because PumpController uses mock hardware when staging mode is on.
+NOTE, for an install in staging mode only: control_pump.py does not
+write to InfluxDB, so no bucket name changes are needed. But
+STAGING_MODE must be false for the test, because PumpController uses
+mock hardware when staging mode is on.
 
 ### Preparation
 
@@ -742,7 +747,7 @@ tail -5 /home/pi/wibatemp/execute_heating_program.log
 
 ### If test fails
 
-- Restore wibatemp immediately (step 6)
+- Restore wibatemp immediately (steps 8 and 9)
 - Check I2C bus: `i2cdetect -y 1` (should show device at 0x10)
 - Check redhouse logs for error details
 - Fix issue and re-test before proceeding with migration
@@ -757,10 +762,11 @@ The migration happens in this order:
 2. Stop /opt/redhouse staging timers - done
 3. Start /opt/redhouse-staging timers (staging continues uninterrupted) - done
 4. Switch /opt/redhouse to production mode (all buckets + STAGING_MODE) - done
-5. Pump control test - status not recorded
+5. Pump control test - done 2026-04-06 and 2026-04-08
 6. Temperature collection test (24h) - done, in production since 2026-04-06
-7. CheckWatt bucket migration - started 2026-09-09
-8. Hardening (disk, InfluxDB timeouts, program generation fallback)
+7. CheckWatt bucket migration - done, collector running since 2026-09-10
+8. Hardening (disk, InfluxDB timeouts, program generation fallback) -
+   timeouts and fallback done, disk still open
 9. Gradual migration of remaining features
 
 ---
@@ -880,7 +886,8 @@ Wibatemp cron is still running all production tasks.
 
 ## Step 4: Pump Control Test
 
-(Same as before - see Pump Control Test section above)
+Done 2026-04-06 and 2026-04-08. For a re-test, see the Pump Control
+Test section above.
 
 ---
 
@@ -1062,7 +1069,8 @@ These interact with hardware on the Pi. Only one writer per data source.
 
 **2a. Temperature collection**
 
-Pre-req: humidity gap must be fixed first.
+Pre-req: humidity gap must be fixed first. Done: the humidity gap is
+fixed, and 2a itself was done on 2026-04-06.
 
 ```bash
 # Disable wibatemp (line 28)
@@ -1163,7 +1171,8 @@ sudo /home/pi/wibatemp/mlp_control.sh restore
 
 ### Step 5: Health monitoring and backup
 
-After all features migrated:
+Done early: both timers already run in production. Originally, after
+all features migrated:
 
 ```bash
 sudo systemctl restart redhouse-health-check.timer
@@ -1203,7 +1212,7 @@ Both systems write identical formats to InfluxDB:
 | Bucket | Measurement | Wibatemp | Redhouse | Compatible? |
 |--------|-------------|----------|----------|-------------|
 | temperatures | temperatures | suffix-mapped names | same suffix mapping | YES |
-| temperatures | humidities | writes humidity | NOT YET -- needs fix | FIX NEEDED |
+| temperatures | humidities | writes humidity | writes humidity, in production since 2026-04-06 | YES |
 | weather | weather | FMI field names | identical | YES |
 | spotprice | spot | field names | identical | YES |
 | checkwatt_full_data (old) / checkwatt (new) | checkwatt | 6 fields | identical, history copied 2026-09-09 | YES |
