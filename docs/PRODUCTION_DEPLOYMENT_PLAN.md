@@ -398,6 +398,23 @@ Monitoring:
 - program_check imports the private _is_staging from health_check, and
   health_check.py is 484 lines against a 450 soft limit.
 
+Staging isolation, added 2026-10-10:
+
+- The guard that refuses a staging write to a production bucket,
+  ConfigValidator.validate_write, runs only in InfluxClient.write_point:
+  temperature (with humidity), Shelly EM3 and emeters_5min. CheckWatt,
+  windpower, solar prediction, the analytics tiers, program_generator
+  and program_executor call write_with_retry directly. Weather and spot
+  prices use helpers that skip the guard too, and so do the unused
+  write_temperatures and write_humidities. A staging .env that named a
+  production bucket for one of those would write into it.
+- The staging .env names one production bucket on purpose, as
+  deployment/STAGING_DEPLOYMENT_GUIDE.md documents:
+  INFLUXDB_BUCKET_TEMPERATURES=temperatures, for reading. It is safe
+  only because temperature collection exits in staging mode and writes
+  through write_point. Fix: run the check inside write_with_retry, so
+  every write passes it, and test the refusal on each write path.
+
 ## Stability Findings (2026-09-09)
 
 Measured from the Pi journal (only reaches back to 2026-08-28, 12 days)
