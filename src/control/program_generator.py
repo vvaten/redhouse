@@ -78,7 +78,7 @@ class HeatingProgramGenerator:
         logger.info(f"Generating heating program for date_offset={date_offset}")
 
         program_date_str, program_date = self._calculate_program_date(base_date, date_offset)
-        df = self._fetch_and_validate_data(date_offset)
+        df = self._fetch_and_validate_data(date_offset, program_date.date())
         avg_temperature, hours_to_heat = self._calculate_heating_requirements(df, date_offset)
         day_priorities = self._calculate_and_filter_priorities(df, date_offset)
 
@@ -137,18 +137,20 @@ class HeatingProgramGenerator:
         logger.info(f"Program date: {program_date_str}")
         return program_date_str, program_date
 
-    def _fetch_and_validate_data(self, date_offset: int):
+    def _fetch_and_validate_data(self, date_offset: int, program_day: datetime.date):
         """
         Fetch heating data and validate availability.
 
         Args:
             date_offset: Day offset from today
+            program_day: The day the program is for, which the data must cover
 
         Returns:
             DataFrame with heating data
 
         Raises:
             ValueError: If no data available
+            HeatingDataUnavailable: If prices or forecast miss an hour of the day
         """
         df = self.data_fetcher.fetch_heating_data(
             date_offset=date_offset, lookback_days=1, lookahead_days=2
@@ -158,6 +160,7 @@ class HeatingProgramGenerator:
             logger.error("No data fetched, cannot generate program")
             raise ValueError("No data available for program generation")
 
+        self.data_fetcher.require_day_coverage(df, program_day)
         return df
 
     def _calculate_heating_requirements(self, df, date_offset: int) -> tuple:

@@ -5,12 +5,41 @@ import datetime
 from typing import Any
 
 import pandas as pd
+import pytz
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+HELSINKI = pytz.timezone("Europe/Helsinki")
+
+# (column, label, per clock hour): inputs the program cannot be planned
+# without. The repeated October hour was stored once in 2025, so prices
+# need each local clock hour once, not each instant.
+REQUIRED_HOURLY_INPUTS = (
+    ("price_total", "spot prices", True),
+    ("Air temperature", "weather forecast", False),
+)
+
+
+def local_day_hours(day: datetime.date) -> list:
+    """Epoch second of each local hour start of that day: 23, 24 or 25."""
+    start = HELSINKI.localize(datetime.datetime.combine(day, datetime.time.min))
+    next_day = day + datetime.timedelta(days=1)
+    stop = HELSINKI.localize(datetime.datetime.combine(next_day, datetime.time.min))
+    return list(range(int(start.timestamp()), int(stop.timestamp()), 3600))
+
+
+def _hour_slots(hours: list, per_clock_hour: bool) -> list:
+    """Groups of instants of which at least one must have data."""
+    if not per_clock_hour:
+        return [[h] for h in hours]
+    by_clock: dict = {}
+    for h in hours:
+        by_clock.setdefault(datetime.datetime.fromtimestamp(h, HELSINKI).hour, []).append(h)
+    return [by_clock[clock] for clock in sorted(by_clock)]
 
 
 class HeatingDataUnavailable(Exception):
@@ -263,6 +292,28 @@ class HeatingDataFetcher:
         df = df.sort_values(by="index").reset_index(drop=True)
 
         return df
+
+    def require_day_coverage(self, df: pd.DataFrame, day: datetime.date) -> None:
+        """Raise HeatingDataUnavailable unless each required input covers every
+        local hour of that day. A partial day plans the missing hours blind.
+        """
+        hours = local_day_hours(day)
+
+        for column, label, per_clock_hour in REQUIRED_HOURLY_INPUTS:
+            present: set = set()
+            if column in df.columns:
+                present = {int(t.timestamp()) for t in df.loc[df[column].notna(), "time_floor"]}
+            slots = _hour_slots(hours, per_clock_hour)
+            missing = [slot for slot in slots if not present.intersection(slot)]
+            if missing:
+                first = datetime.datetime.fromtimestamp(missing[0][0], HELSINKI)
+                raise HeatingDataUnavailable(
+                    f"{label}: {len(slots) - len(missing)} of {len(slots)} hours "
+                    f"of {day.isoformat()} present, first missing hour "
+                    f"{first.strftime('%H:%M')} local"
+                )
+
+        logger.info(f"Inputs cover all {len(hours)} hours of {day.isoformat()}")
 
     def get_day_average_temperature(self, df: pd.DataFrame, date_offset: int = 1) -> float:
         """

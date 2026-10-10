@@ -6,7 +6,11 @@ from unittest.mock import Mock, patch
 
 import pandas as pd
 
-from src.control.heating_data_fetcher import HeatingDataFetcher, HeatingDataUnavailable
+from src.control.heating_data_fetcher import (
+    HeatingDataFetcher,
+    HeatingDataUnavailable,
+    local_day_hours,
+)
 
 
 class TestHeatingDataFetcher(unittest.TestCase):
@@ -608,3 +612,120 @@ class TestRequiredInputsFailLoudly(unittest.TestCase):
 
         df = fetcher.fetch_heating_data()
         self.assertFalse(df.empty)
+
+
+class TestRequireDayCoverage(unittest.TestCase):
+    """A partial day must stop generation instead of planning blind."""
+
+    @patch("src.control.heating_data_fetcher.InfluxClient")
+    @patch("src.control.heating_data_fetcher.get_config")
+    def setUp(self, mock_config, mock_influx_class):
+        self.fetcher = HeatingDataFetcher()
+
+    def _frame(self, start_utc, hours, drop=(), drop_column=None):
+        """Samples every 15 min, stamped at window stop as the queries do:
+        +5 min for prices (5m windows), +15 min for weather (15m windows).
+        drop removes the points whose stamp falls in those UTC hours."""
+        prices, weather = {}, {}
+        for i in range(hours * 4):
+            sample = start_utc + datetime.timedelta(minutes=15 * i)
+            for column, stamp, target in (
+                ("price_total", sample + datetime.timedelta(minutes=5), prices),
+                ("Air temperature", sample + datetime.timedelta(minutes=15), weather),
+            ):
+                if drop_column == column and stamp.replace(minute=0) in drop:
+                    continue
+                target[stamp] = {column: -3.0 if column == "Air temperature" else 0.1}
+        return self.fetcher._merge_data({}, prices, weather)
+
+    def _utc(self, *args):
+        return datetime.datetime(*args, tzinfo=datetime.timezone.utc)
+
+    def test_local_day_hours_follow_dst(self):
+        self.assertEqual(len(local_day_hours(datetime.date(2026, 10, 12))), 24)
+        self.assertEqual(len(local_day_hours(datetime.date(2026, 10, 25))), 25)
+        self.assertEqual(len(local_day_hours(datetime.date(2026, 3, 29))), 23)
+
+    def test_full_day_passes(self):
+        df = self._frame(self._utc(2026, 10, 11, 0), 72)
+        self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 12))
+
+    def test_long_dst_day_passes(self):
+        df = self._frame(self._utc(2026, 10, 24, 0), 72)
+        self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 25))
+
+    def test_short_dst_day_passes(self):
+        df = self._frame(self._utc(2026, 3, 28, 0), 72)
+        self.fetcher.require_day_coverage(df, datetime.date(2026, 3, 29))
+
+    def test_missing_25th_hour_is_refused(self):
+        """23:00 local on 2026-10-25 is 21:00 UTC, the hour a 24-hour day omits."""
+        for column, expected in (("price_total", "23 of 24"), ("Air temperature", "24 of 25")):
+            df = self._frame(
+                self._utc(2026, 10, 24, 0),
+                72,
+                drop={self._utc(2026, 10, 25, 21)},
+                drop_column=column,
+            )
+            with self.assertRaises(HeatingDataUnavailable) as ctx:
+                self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 25))
+            self.assertIn(f"{expected} hours", str(ctx.exception))
+            self.assertIn("23:00", str(ctx.exception))
+
+    def test_one_price_for_the_repeated_october_hour_is_enough(self):
+        """2025-10-26 stored 96 quarter-hours: the second 03:00 (01:00 UTC) was absent."""
+        df = self._frame(
+            self._utc(2026, 10, 24, 0),
+            72,
+            drop={self._utc(2026, 10, 25, 1)},
+            drop_column="price_total",
+        )
+        self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 25))
+
+    def test_both_repeated_october_price_hours_missing_is_refused(self):
+        drop = {self._utc(2026, 10, 25, 0), self._utc(2026, 10, 25, 1)}
+        df = self._frame(self._utc(2026, 10, 24, 0), 72, drop=drop, drop_column="price_total")
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 25))
+        self.assertIn("03:00", str(ctx.exception))
+
+    def test_repeated_october_forecast_hour_is_still_required(self):
+        df = self._frame(
+            self._utc(2026, 10, 24, 0),
+            72,
+            drop={self._utc(2026, 10, 25, 1)},
+            drop_column="Air temperature",
+        )
+        with self.assertRaises(HeatingDataUnavailable):
+            self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 25))
+
+    def test_missing_price_hour_is_refused(self):
+        # 23:00 local on Oct 12 is 20:00 UTC.
+        gap = self._utc(2026, 10, 12, 20)
+        df = self._frame(self._utc(2026, 10, 11, 0), 72, drop={gap}, drop_column="price_total")
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 12))
+        self.assertIn("spot prices: 23 of 24 hours", str(ctx.exception))
+        self.assertIn("23:00", str(ctx.exception))
+
+    def test_missing_forecast_hour_is_refused(self):
+        gap = self._utc(2026, 10, 11, 21)
+        df = self._frame(self._utc(2026, 10, 11, 0), 72, drop={gap}, drop_column="Air temperature")
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 12))
+        self.assertIn("weather forecast", str(ctx.exception))
+        self.assertIn("00:00", str(ctx.exception))
+
+    def test_prices_that_end_early_are_refused(self):
+        """Tomorrow's prices not yet published: only today is present."""
+        df = self._frame(self._utc(2026, 10, 10, 21), 24)
+        with self.assertRaises(HeatingDataUnavailable):
+            self.fetcher.require_day_coverage(df, datetime.date(2026, 10, 12))
+
+    def test_missing_column_is_refused(self):
+        df = self._frame(self._utc(2026, 10, 11, 0), 72)
+        with self.assertRaises(HeatingDataUnavailable) as ctx:
+            self.fetcher.require_day_coverage(
+                df.drop(columns=["Air temperature"]), datetime.date(2026, 10, 12)
+            )
+        self.assertIn("0 of 24", str(ctx.exception))

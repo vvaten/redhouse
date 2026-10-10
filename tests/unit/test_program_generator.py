@@ -3,11 +3,12 @@
 import datetime
 import json
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pandas as pd
 
 from src.control.evu_optimizer import EvuOptimizer
+from src.control.heating_data_fetcher import HeatingDataUnavailable
 from src.control.program_generator import HeatingProgramGenerator
 from src.control.schedule_builder import ScheduleBuilder
 
@@ -628,6 +629,21 @@ class TestGenerateDailyProgram(unittest.TestCase):
             self.generator.generate_daily_program(date_offset=1)
 
         self.assertIn("No data available", str(context.exception))
+
+    def test_generate_daily_program_partial_day_is_refused(self):
+        """A coverage failure stops generation before any planning."""
+        self.mock_data_fetcher.fetch_heating_data.return_value = pd.DataFrame({"x": [1]})
+        self.mock_data_fetcher.require_day_coverage.side_effect = HeatingDataUnavailable(
+            "spot prices cover 13 of 24 hours"
+        )
+
+        with self.assertRaises(HeatingDataUnavailable):
+            self.generator.generate_daily_program(date_offset=1, base_date="2026-10-24")
+
+        self.mock_data_fetcher.require_day_coverage.assert_called_once_with(
+            ANY, datetime.date(2026, 10, 25)
+        )
+        self.mock_optimizer.select_cheapest_hours.assert_not_called()
 
     def test_generate_daily_program_no_priority_data(self):
         """Test error handling when priority data is empty."""
