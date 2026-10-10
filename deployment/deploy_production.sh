@@ -12,8 +12,15 @@
 #   sudo deployment/deploy_production.sh              # Wait for safe window
 #   sudo deployment/deploy_production.sh --now        # Deploy immediately
 #   sudo deployment/deploy_production.sh --start-all  # Start every timer
+#   sudo deployment/deploy_production.sh --skip-ci-check  # Deploy a red CI
 
 set -e
+
+# Resolved before any cd, so the copy on origin/main can be compared.
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+if [ -n "${REDHOUSE_DEPLOY_REEXEC:-}" ]; then
+    rm -f "$REDHOUSE_DEPLOY_REEXEC"
+fi
 
 DEPLOY_DIR=/opt/redhouse
 VENV_DIR="$DEPLOY_DIR/venv"
@@ -111,10 +118,45 @@ wait_for_window() {
     echo "[OK] Safe deployment window reached"
 }
 
+# --- Deploy gates ---
+
+# Exit 0 only if every check run on that commit passed. The checker comes
+# from HEAD, the installed commit, not from the commit judged. An
+# unreadable or empty checker refuses the deploy.
+ci_gate() {
+    local checker
+    if ! checker=$(sudo -u pi git show "HEAD:deployment/ci_status.py") || [ -z "$checker" ]; then
+        echo "[FAIL] Cannot read deployment/ci_status.py at HEAD"
+        return 1
+    fi
+    python3 -c "$checker" "$1"
+}
+
+# Exit 0 only if each timer is enabled/active or disabled/inactive, as
+# should_run chose for it.
+verify_timer_states() {
+    local timer want got failed=0
+    for timer in "${TIMERS[@]}"; do
+        if should_run "$timer"; then
+            want="enabled/active"
+        else
+            want="disabled/inactive"
+        fi
+        got="$(systemctl is-enabled "$timer.timer" 2>/dev/null || true)"
+        got="$got/$(systemctl is-active "$timer.timer" 2>/dev/null || true)"
+        if [ "$got" != "$want" ]; then
+            echo "  [FAIL] $timer.timer is $got, expected $want"
+            failed=1
+        fi
+    done
+    return "$failed"
+}
+
 # --- Parse arguments ---
 
 DEPLOY_NOW=false
 START_ALL=false
+SKIP_CI_CHECK=false
 for arg in "$@"; do
     case "$arg" in
         --now)
@@ -123,9 +165,12 @@ for arg in "$@"; do
         --start-all)
             START_ALL=true
             ;;
+        --skip-ci-check)
+            SKIP_CI_CHECK=true
+            ;;
         *)
             echo "ERROR: unknown option '$arg'"
-            echo "Usage: $0 [--now] [--start-all]"
+            echo "Usage: $0 [--now] [--start-all] [--skip-ci-check]"
             exit 1
             ;;
     esac
@@ -168,8 +213,10 @@ if [ -d "$DEPLOY_DIR/.git" ]; then
         echo "       Recover with: git stash pop"
     fi
 
-    sudo -u pi git fetch origin main
-    echo "[OK] Fetched latest from origin/main"
+    if [ -z "${REDHOUSE_DEPLOY_SHA:-}" ]; then
+        sudo -u pi git fetch origin main
+        echo "[OK] Fetched latest from origin/main"
+    fi
 else
     echo "[INSTALL] Fresh production installation..."
     mkdir -p "$DEPLOY_DIR"
@@ -178,6 +225,45 @@ else
     cd "$DEPLOY_DIR"
     PRE_DEPLOY_COMMIT="(fresh install)"
     echo "[OK] Repository cloned"
+fi
+
+# --- Pin the commit this deploy gates, runs and merges ---
+# A re-run copy gets it from the copy that started it, so a push in
+# between cannot change what is deployed.
+
+DEPLOY_SHA="${REDHOUSE_DEPLOY_SHA:-$(sudo -u pi git rev-parse origin/main)}"
+echo "Deploying commit: $DEPLOY_SHA"
+
+# --- Refuse a commit whose CI is not green ---
+
+if [ "$SKIP_CI_CHECK" = true ]; then
+    echo "[WARN] =================================================="
+    echo "[WARN] CI CHECK SKIPPED (--skip-ci-check) for $DEPLOY_SHA"
+    echo "[WARN] =================================================="
+elif ! ci_gate "$DEPLOY_SHA"; then
+    echo "[FAIL] Refusing to deploy $DEPLOY_SHA: CI is not green"
+    echo "Wait for CI, or override with --skip-ci-check"
+    exit 1
+fi
+
+# --- Run this script as it is in the pinned commit ---
+# Bash keeps running the file it started with, so without this a fix
+# to this script would only take effect from the deploy after next.
+
+if [ "$PRE_DEPLOY_COMMIT" != "(fresh install)" ] && [ -z "${REDHOUSE_DEPLOY_REEXEC:-}" ]; then
+    FRESH_SCRIPT=$(mktemp)
+    if ! sudo -u pi git show "$DEPLOY_SHA:deployment/deploy_production.sh" > "$FRESH_SCRIPT"; then
+        rm -f "$FRESH_SCRIPT"
+        echo "[FAIL] Cannot read deploy_production.sh at $DEPLOY_SHA"
+        exit 1
+    fi
+    if ! cmp -s "$FRESH_SCRIPT" "$SELF"; then
+        echo "[INFO] deploy_production.sh differs in $DEPLOY_SHA, running that copy"
+        trap - EXIT
+        REDHOUSE_DEPLOY_REEXEC="$FRESH_SCRIPT" REDHOUSE_DEPLOY_SHA="$DEPLOY_SHA" \
+            exec bash "$FRESH_SCRIPT" "$@"
+    fi
+    rm -f "$FRESH_SCRIPT"
 fi
 
 # --- Wait for safe window (or skip with --now) ---
@@ -202,7 +288,7 @@ fi
 
 echo ""
 echo "Applying code update..."
-if ! sudo -u pi git merge --ff-only origin/main; then
+if ! sudo -u pi git merge --ff-only "$DEPLOY_SHA"; then
     echo "[FAIL] Fast-forward merge failed (local commits diverged from main)"
     echo "Resolve manually: git reset --hard origin/main"
     exit 1
@@ -307,10 +393,14 @@ is_always_on() {
     return 1
 }
 
+should_run() {
+    [ "$START_ALL" = true ] || was_running "$1.timer" || is_always_on "$1"
+}
+
 RUNNING=0
 STOPPED=0
 for timer in "${TIMERS[@]}"; do
-    if [ "$START_ALL" = true ] || was_running "$timer.timer" || is_always_on "$timer"; then
+    if should_run "$timer"; then
         systemctl enable "$timer.timer" 2>/dev/null
         systemctl restart "$timer.timer"
         echo "  [OK] $timer.timer"
@@ -328,6 +418,17 @@ if [ "$STOPPED" -gt 0 ]; then
     echo "Migrate one with: sudo systemctl enable --now redhouse-<name>.timer"
     echo "Disable its wibatemp cron line in the same step."
 fi
+
+# --- Verify every timer reached the state chosen above ---
+
+echo ""
+echo "Verifying timer states..."
+if ! verify_timer_states; then
+    echo "[FAIL] Deploy finished with timers in the wrong state"
+    echo "Rollback: sudo -u pi git reset --hard ${PRE_DEPLOY_COMMIT}"
+    exit 1
+fi
+echo "[OK] Every timer is in its intended state"
 
 # --- Set up Grafana alerts ---
 

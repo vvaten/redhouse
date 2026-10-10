@@ -284,7 +284,8 @@ class TestMonitoringTimersSurviveADeploy:
 
     def test_always_on_bypasses_the_was_running_gate(self):
         text = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
-        assert 'was_running "$timer.timer" || is_always_on "$timer"' in text
+        assert 'was_running "$1.timer" || is_always_on "$1"' in text
+        assert text.count('if should_run "$timer"; then') == 2, "install and verify loops"
 
     def test_every_always_on_timer_exists(self):
         text = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
@@ -445,3 +446,84 @@ class TestEveryTimerFires:
         for form in ("daily", "16:06", "*-*-* 16:06", "*-*-* 16:06:00"):
             assert _daily_schedules(f"OnCalendar={form}\n") == [form], form
         assert _daily_schedules("OnCalendar=*:14/15\n") == []
+
+
+def _list(text: str, name: str) -> list:
+    match = re.search(rf"^{name}=\((.*?)^\)", text, re.S | re.M)
+    assert match, f"{name} not found"
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+class TestEveryTimerIsDeployed:
+    """A timer missing from a list is installed but never started."""
+
+    NAMES = sorted(p.stem for p in (REPO / "deployment" / "systemd").glob("*.timer"))
+
+    def test_production_deploy_lists_every_timer(self):
+        assert sorted(_list(PRODUCTION_DEPLOY.read_text(encoding="utf-8"), "TIMERS")) == self.NAMES
+
+    def test_install_lists_every_timer(self):
+        text = (REPO / "deployment" / "deploy_install.sh").read_text(encoding="utf-8")
+        assert sorted(_list(text, "TIMERS")) == self.NAMES
+
+    def test_staging_lists_every_timer(self):
+        text = (REPO / "deployment" / "staging_timers.sh").read_text(encoding="utf-8")
+        staged = sorted(f"redhouse-{name}" for name in _list(text, "TIMERS"))
+        assert staged == self.NAMES
+
+
+class TestDeployGates:
+    """The order of the gates matters: each must act before any change."""
+
+    TEXT = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+
+    def _at(self, needle: str) -> int:
+        index = self.TEXT.find(needle)
+        assert index >= 0, needle
+        return index
+
+    @pytest.mark.skipif(BASH is None, reason="bash not available")
+    def test_gate_and_verification_execute(self):
+        """Runs both functions from the script itself against stubs."""
+        result = subprocess.run(
+            [BASH, str(REPO / "tests" / "shell" / "deploy_gates.sh"), str(PRODUCTION_DEPLOY)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "FAIL" not in result.stdout
+
+    def test_one_pinned_commit_is_gated_run_and_merged(self):
+        pin = self._at(
+            'DEPLOY_SHA="${REDHOUSE_DEPLOY_SHA:-$(sudo -u pi git rev-parse origin/main)}"'
+        )
+        gate = self._at('elif ! ci_gate "$DEPLOY_SHA"; then')
+        reexec = self._at('git show "$DEPLOY_SHA:deployment/deploy_production.sh"')
+        merge = self._at('git merge --ff-only "$DEPLOY_SHA"')
+        assert pin < gate < reexec < merge
+        assert 'REDHOUSE_DEPLOY_SHA="$DEPLOY_SHA"' in self.TEXT
+
+    def test_unverified_code_never_runs_before_the_gate(self):
+        gate = self._at('elif ! ci_gate "$DEPLOY_SHA"; then')
+        assert gate < self._at('exec bash "$FRESH_SCRIPT" "$@"')
+        assert gate < self._at("    wait_for_window\n")
+        assert gate < self._at('systemctl stop "$timer"')
+
+    def test_the_checker_is_not_the_commit_it_judges(self):
+        """A commit that breaks ci_status.py must not pass its own gate."""
+        assert 'git show "HEAD:deployment/ci_status.py"' in self.TEXT
+        assert '"$1:deployment/ci_status.py"' not in self.TEXT
+
+    def test_override_is_loud(self):
+        assert "--skip-ci-check)" in self.TEXT
+        assert "CI CHECK SKIPPED" in self.TEXT
+
+    def test_reexec_cannot_loop(self):
+        assert '[ -z "${REDHOUSE_DEPLOY_REEXEC:-}" ]; then' in self.TEXT
+        assert 'REDHOUSE_DEPLOY_REEXEC="$FRESH_SCRIPT" REDHOUSE_DEPLOY_SHA=' in self.TEXT
+
+    def test_verification_fails_the_deploy(self):
+        verify = self._at("if ! verify_timer_states; then")
+        assert verify > self._at('systemctl restart "$timer.timer"')
+        assert 'echo "[FAIL] Deploy finished with timers in the wrong state"' in self.TEXT

@@ -335,11 +335,11 @@ Deployment script:
   a fix to that script cannot apply to the deploy that installs it. On
   2026-09-22 the ALWAYS_ON fix landed and program-check still ended up
   disabled, while the deploy reported 14 timers running, none left
-  stopped, and exited 0. Re-exec from the updated checkout after
-  the fast-forward, so the freshest script always does the work.
-- No post-deploy verification. The script has five exit 1 guards, all
-  before the install and none after. It should assert every timer in
-  deployment/systemd reached its intended state and fail loudly.
+  stopped, and exited 0. Done 2026-10-10: after the fetch the deploy
+  runs the copy on origin/main when it differs from the one running.
+- No post-deploy verification. Done 2026-10-10: the deploy now fails
+  unless every timer ends enabled/active or disabled/inactive as it
+  chose, and a test asserts each list names every unit.
 
 CI gates:
 
@@ -347,10 +347,10 @@ CI gates:
   failed every one, and nobody looked. Unit tests were green
   throughout on 3.9, 3.10 and 3.11; only lint failed, because that job
   installed black unpinned and drifted to 26.5.1 against the 24.10.0
-  in requirements.txt. Now pinned. The deploy should refuse a commit
-  whose CI is not green. gh is absent on the Pi, curl is present, so
-  query the commit status API. It needs an explicit override flag with
-  a loud log line, or an outage teaches people to bypass it.
+  in requirements.txt. Now pinned. Done 2026-10-10: the deploy refuses
+  a commit unless every GitHub check run on it passed, read with
+  deployment/ci_status.py from the check-runs API. The commit status
+  API reports nothing for Actions. --skip-ci-check overrides, loudly.
 - The local gate must block, not report. run_all_checks.py printed
   [FAIL] Tests on every commit for days and was narrated past each
   time. It must also use the pinned versions, or [OK] Formatting does
@@ -561,14 +561,21 @@ Run as:    sudo deployment/deploy_production.sh
 
 Assumes code has already been tested in staging before production deploy.
 
-Steps (wait for safe window at :07, :22, :37, :52):
-  1. git pull origin main
-  2. pip install -r requirements.txt (if dependencies changed)
-  3. Validate .env and config/sensors.yaml exist
-  4. Install systemd service + timer files to /etc/systemd/system/
-  5. daemon-reload, enable and restart all production timers
-  6. Set up Grafana production alerts
-  7. Show timer status
+Steps:
+  1. git fetch origin main, and pin that commit for the whole run
+  2. Refuse the commit unless every GitHub check run on it passed
+     (--skip-ci-check overrides, with a loud banner). The checker is
+     the installed one, so a fix to it applies from the next deploy
+  3. If deploy_production.sh differs in that commit, run that copy
+  4. Wait for a safe window at :07, :22, :37, :52 (--now skips)
+  5. Stop the running timers, fast-forward to the pinned commit
+  6. pip install -r requirements.txt
+  7. Validate .env and config/sensors.yaml exist
+  8. Install systemd service + timer files to /etc/systemd/system/
+  9. daemon-reload; restart the timers that ran before and the
+     ALWAYS_ON ones, disable the rest (--start-all starts every one)
+  10. Fail unless every timer reached that state
+  11. Set up Grafana production alerts, show timer status
 
 Does NOT:
   - Touch /opt/redhouse-staging
