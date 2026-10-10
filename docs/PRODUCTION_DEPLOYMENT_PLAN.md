@@ -155,9 +155,10 @@ wibatemp control, which works.
 
 The critical path was not the phases, it was the generate-program
 fallback: without it a failed 16:05 leaves the pump with no program
-for a day, and staging saw that fail 3 times in 10. Built 2026-10-10,
-see Phase 6. Deploy it twice: the first deploy runs the old script,
-which does not know the redhouse-program-fallback timer.
+for a day, and staging saw that fail 3 times in 10. Built and deployed
+2026-10-10, see Phase 6. Since the second deploy that day, one deploy
+is enough: after the CI gate, the script re-runs the copy in the
+commit it deploys when that differs from the one on disk.
 
 ### Phase 1: weather, windpower, spot prices (ready)
 
