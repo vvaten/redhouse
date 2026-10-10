@@ -133,7 +133,3 @@ class TestJSONLoggingIntegration(unittest.TestCase):
         remaining = list(json_logger.log_dir.glob("*.json"))
         for f in remaining:
             self.assertFalse(f.name.startswith("old_test_"))
-
-
-if __name__ == "__main__":
-    unittest.main()

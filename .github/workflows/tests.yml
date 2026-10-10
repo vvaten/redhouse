@@ -30,13 +30,6 @@ jobs:
       run: |
         pytest tests/unit/ -v --tb=short
 
-    - name: Run integration tests (if applicable)
-      continue-on-error: true
-      run: |
-        # Integration tests require InfluxDB, so they may fail in CI
-        # This is expected and won't fail the build
-        pytest tests/integration/ -v --tb=short || true
-
   lint:
     runs-on: ubuntu-latest
 

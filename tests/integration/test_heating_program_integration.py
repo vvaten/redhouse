@@ -27,9 +27,7 @@ def test_influx_connection():
         config = get_config()
         print(f"  URL: {config.influxdb_url}")
         print(f"  Org: {config.influxdb_org}")
-        print(
-            f"  Load control bucket: {config.get('influxdb_bucket_load_control', 'load_control')}"
-        )
+        print(f"  Load control bucket: {config.influxdb_bucket_load_control}")
 
         _ = InfluxClient(config)  # Test connection succeeds
         print("  [OK] Connection: OK")
@@ -154,18 +152,11 @@ def test_program_save_to_influx():
         print("  Generating test program...")
         program = generator.generate_daily_program(date_offset=1)
 
-        # Override bucket to test bucket
-        original_bucket = generator.config.get("influxdb_bucket_load_control", "load_control")
-        generator.config["influxdb_bucket_load_control"] = "load_control_test"
-
-        print("  Writing to test bucket: load_control_test")
+        print(f"  Writing to bucket: {generator.config.influxdb_bucket_load_control}")
         generator.save_program_influxdb(program, data_type="plan")
 
         print("  [OK] Program saved to InfluxDB test bucket")
         print("  Check Grafana to verify the data")
-
-        # Restore original bucket
-        generator.config["influxdb_bucket_load_control"] = original_bucket
 
         return True
 
@@ -297,92 +288,3 @@ def test_end_to_end_simulation():
 
         traceback.print_exc()
         return False
-
-
-def main():
-    """Run all integration tests."""
-    print("\n" + "=" * 70)
-    print(" PHASE 4 INTEGRATION TESTS")
-    print("=" * 70)
-    print("\nThese tests require:")
-    print("  1. InfluxDB running at configured URL")
-    print("  2. Valid credentials in .env file")
-    print("  3. Test buckets created (run: python scripts/setup_test_buckets.py)")
-    print("  4. Some data in weather/spotprice/emeters buckets")
-    print("\nNote: Some tests may fail if buckets are empty. This is expected.")
-
-    # Check if .env exists
-    if not os.path.exists(".env"):
-        print("\n[FAIL] ERROR: .env file not found!")
-        print("Please create .env with your InfluxDB credentials.")
-        return 1
-
-    results = []
-
-    # Test 1: Connection
-    results.append(("Connection", test_influx_connection()))
-
-    # Test 2: Data Fetcher
-    results.append(("Data Fetcher", test_data_fetcher()))
-
-    # Test 3: Program Generation
-    success, program = test_program_generation()
-    results.append(("Program Generation", success))
-
-    # Test 4: Save to InfluxDB (only if generation succeeded)
-    if success:
-        results.append(("Save to InfluxDB", test_program_save_to_influx()))
-    else:
-        print("\n[WARN] Skipping InfluxDB save test (generation failed)")
-        results.append(("Save to InfluxDB", None))
-
-    # Test 5: Execution (dry-run)
-    results.append(("Execution (Dry-Run)", test_program_execution_dry_run()))
-
-    # Test 6: End-to-End
-    results.append(("End-to-End Simulation", test_end_to_end_simulation()))
-
-    # Summary
-    print("\n" + "=" * 70)
-    print(" TEST SUMMARY")
-    print("=" * 70)
-
-    passed = 0
-    failed = 0
-    skipped = 0
-
-    for test_name, result in results:
-        if result is True:
-            status = "[OK] PASS"
-            passed += 1
-        elif result is False:
-            status = "[FAIL] FAIL"
-            failed += 1
-        else:
-            status = "[SKIP] SKIP"
-            skipped += 1
-
-        print(f"  {test_name:.<40} {status}")
-
-    print("=" * 70)
-    print(f"\nResults: {passed} passed, {failed} failed, {skipped} skipped")
-
-    if failed == 0 and passed > 0:
-        print("\n[OK] ALL TESTS PASSED!")
-        print("\nYou can now:")
-        print("  1. Check load_control_test bucket in Grafana")
-        print("  2. Run generate_heating_program_v2.py --dry-run")
-        print("  3. Deploy to Raspberry Pi when ready")
-        return 0
-    else:
-        print("\n[WARN] SOME TESTS FAILED")
-        print("\nCommon issues:")
-        print("  - InfluxDB not running or wrong URL")
-        print("  - Missing test buckets (run setup_test_buckets.py)")
-        print("  - Empty data buckets (run data collection scripts)")
-        print("  - Invalid token or permissions")
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

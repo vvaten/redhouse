@@ -1,4 +1,7 @@
-"""Pytest fixtures for integration tests."""
+"""Pytest fixtures for integration tests.
+
+They need a real InfluxDB: REDHOUSE_INTEGRATION=1 pytest tests/integration/
+"""
 
 import datetime
 import os
@@ -7,23 +10,74 @@ import pytest
 import pytz
 from influxdb_client import Point
 
-from src.common.config import get_config
+from src.common.config import Config, get_config
 from src.common.influx_client import InfluxClient
+
+OPT_IN_VAR = "REDHOUSE_INTEGRATION"
+
+if os.environ.get(OPT_IN_VAR) != "1":
+    collect_ignore_glob = ["test_*.py"]
+
+# One entry per influxdb_bucket_* property of Config. A unit test fails
+# when a new property has no entry here.
+TEST_BUCKETS = {
+    "INFLUXDB_BUCKET_TEMPERATURES": "temperatures_test",
+    "INFLUXDB_BUCKET_WEATHER": "weather_test",
+    "INFLUXDB_BUCKET_SPOTPRICE": "spotprice_test",
+    "INFLUXDB_BUCKET_EMETERS": "emeters_test",
+    "INFLUXDB_BUCKET_CHECKWATT": "checkwatt_test",
+    "INFLUXDB_BUCKET_SHELLY_EM3_RAW": "shelly_em3_emeters_raw_test",
+    "INFLUXDB_BUCKET_EMETERS_5MIN": "emeters_5min_test",
+    "INFLUXDB_BUCKET_ANALYTICS_15MIN": "analytics_15min_test",
+    "INFLUXDB_BUCKET_ANALYTICS_1HOUR": "analytics_1hour_test",
+    "INFLUXDB_BUCKET_WINDPOWER": "windpower_test",
+    "INFLUXDB_BUCKET_LOAD_CONTROL": "load_control_test",
+}
+
+
+def bucket_properties() -> list:
+    """Names of every bucket property on Config."""
+    return sorted(name for name in dir(Config) if name.startswith("influxdb_bucket_"))
+
+
+def non_test_buckets(config: Config) -> list:
+    """Bucket properties that do not resolve to a *_test bucket."""
+    offenders = []
+    for name in bucket_properties():
+        try:
+            bucket = getattr(config, name)
+        except ValueError:
+            offenders.append(f"{name} (unset)")
+            continue
+        if not bucket.endswith("_test"):
+            offenders.append(f"{name}={bucket}")
+    return offenders
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolate_buckets():
+    """Point every bucket at its test copy, or skip or abort the run.
+    Autouse: a test that calls get_config() never asks for config. The
+    skip covers paths named on the command line, which bypass the glob."""
+    if os.environ.get(OPT_IN_VAR) != "1":
+        pytest.skip(f"integration tests need {OPT_IN_VAR}=1")
+
+    saved = {key: os.environ.get(key) for key in TEST_BUCKETS}
+    os.environ.update(TEST_BUCKETS)
+    offenders = non_test_buckets(get_config())
+    if offenders:
+        pytest.exit(f"Refusing to run against real buckets: {offenders}", returncode=1)
+    yield
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key)
+        else:
+            os.environ[key] = value
 
 
 @pytest.fixture(scope="session")
-def config():
+def config(isolate_buckets):
     """Get config with test environment variables."""
-    # Override to use test buckets
-    os.environ["INFLUXDB_BUCKET_TEMPERATURES"] = "temperatures_test"
-    os.environ["INFLUXDB_BUCKET_WEATHER"] = "weather_test"
-    os.environ["INFLUXDB_BUCKET_SPOTPRICE"] = "spotprice_test"
-    os.environ["INFLUXDB_BUCKET_EMETERS"] = "emeters_test"
-    os.environ["INFLUXDB_BUCKET_CHECKWATT"] = "checkwatt_test"
-    os.environ["INFLUXDB_BUCKET_SHELLY_EM3_RAW"] = "shelly_em3_emeters_raw_test"
-    os.environ["INFLUXDB_BUCKET_EMETERS_5MIN"] = "emeters_5min_test"
-    os.environ["INFLUXDB_BUCKET_ANALYTICS_15MIN"] = "analytics_15min_test"
-    os.environ["INFLUXDB_BUCKET_ANALYTICS_1HOUR"] = "analytics_1hour_test"
     return get_config()
 
 

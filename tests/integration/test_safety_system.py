@@ -60,16 +60,3 @@ def test_safety_blocks_test_data():
 
         traceback.print_exc()
         return 1
-
-
-def main():
-    """Run safety system test."""
-    if not os.path.exists(".env"):
-        print("\nERROR: .env file not found!")
-        return 1
-
-    return test_safety_blocks_test_data()
-
-
-if __name__ == "__main__":
-    sys.exit(main())

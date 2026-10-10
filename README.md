@@ -143,8 +143,8 @@ pytest tests/unit/ -v
 
 **Integration tests** (write to test buckets):
 ```bash
-# Create test buckets first (see below)
-pytest tests/integration/ -v
+# Create test buckets first (see below). Skipped unless opted in.
+REDHOUSE_INTEGRATION=1 pytest tests/integration/ -v
 ```
 
 **With coverage**:

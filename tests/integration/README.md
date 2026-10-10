@@ -4,8 +4,10 @@ Integration tests for the RedHouse aggregation pipeline that connect to actual I
 
 ## Important Notes
 
-- **Only uses `*_test` buckets** - completely isolated from production and staging
-- **Run during development only** - not executed during deployment
+- **Only uses `*_test` buckets** - conftest.py forces every bucket to its
+  `*_test` name and aborts the run if any bucket is still a real one
+- **Opt-in** - skipped unless `REDHOUSE_INTEGRATION=1` is set, so a plain
+  `pytest` and `scripts/run_all_checks.py` never touch InfluxDB
 - **Requires InfluxDB connection** - must have access to InfluxDB server
 - **Cleans up after each test** - removes test data automatically
 
@@ -15,13 +17,13 @@ From the project root directory:
 
 ```bash
 # Run all integration tests
-pytest tests/integration/ -v
+REDHOUSE_INTEGRATION=1 pytest tests/integration/ -v
 
 # Run specific test
-pytest tests/integration/test_aggregation_pipeline.py::test_5min_aggregation_writes_energy_measurement -v
+REDHOUSE_INTEGRATION=1 pytest tests/integration/test_aggregation_pipeline.py::test_5min_aggregation_writes_energy_measurement -v
 
 # Run with detailed output
-pytest tests/integration/ -vv -s
+REDHOUSE_INTEGRATION=1 pytest tests/integration/ -vv -s
 ```
 
 ## Test Coverage
