@@ -34,6 +34,7 @@ TIMERS=(
     "execute-program"
     "health-check"
     "program-check"
+    "program-fallback"
     "backup"
 )
 
@@ -46,6 +47,7 @@ NO_AUTO_START=(
     "health-check"
     # Would mail about staging programs, which nobody acts on.
     "program-check"
+    "program-fallback"
 )
 
 skips_auto_start() {

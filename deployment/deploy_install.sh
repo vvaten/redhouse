@@ -124,6 +124,7 @@ TIMERS=(
     "redhouse-execute-program"
     "redhouse-health-check"
     "redhouse-program-check"
+    "redhouse-program-fallback"
     "redhouse-backup"
 )
 

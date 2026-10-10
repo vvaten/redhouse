@@ -1,0 +1,16 @@
+[Unit]
+Description=RedHouse Heating Program Fallback Copy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/fallback_program.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-program-fallback
+
+[Install]
+WantedBy=multi-user.target

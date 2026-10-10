@@ -16,6 +16,7 @@ Options:
     --verbose           Enable verbose logging
     --simulation        Mark as simulation mode
     --base-date DATE    Base date for historical simulation (YYYY-MM-DD)
+    --if-missing        Skip if a generated program for that day exists
 
 Examples:
     # Generate tomorrow's program (normal operation)
@@ -32,10 +33,13 @@ Examples:
 """
 
 import argparse
+import datetime
 import sys
 
 from src.common.logger import setup_logger
+from src.control.program_fallback import is_fallback_copy, load_valid_program
 from src.control.program_generator import HeatingProgramGenerator
+from src.monitoring.program_check import program_path
 
 logger = setup_logger(__name__)
 
@@ -86,7 +90,27 @@ def parse_args():
         help="Base date for historical simulation (YYYY-MM-DD)",
     )
 
+    parser.add_argument(
+        "--if-missing",
+        action="store_true",
+        help="Do nothing if a generated program for that day already exists",
+    )
+
     return parser.parse_args()
+
+
+# Set in the JSON when the InfluxDB plan write failed, so a retry redoes both.
+PLAN_NOT_IN_INFLUX_KEY = "plan_not_in_influx"
+
+
+def generated_program_exists(date_offset: int, output_dir: str) -> bool:
+    """Whether a complete generated program is there. A fallback copy, an
+    unusable file or a plan missing from InfluxDB counts as not there."""
+    program_date = (datetime.datetime.now() + datetime.timedelta(days=date_offset)).date()
+    program = load_valid_program(program_path(program_date, output_dir))
+    if program is None:
+        return False
+    return not is_fallback_copy(program) and PLAN_NOT_IN_INFLUX_KEY not in program
 
 
 def _log_program_generation_info(program: dict, args):
@@ -100,16 +124,21 @@ def _log_program_generation_info(program: dict, args):
 
 
 def _save_program_files(generator, program: dict, output_dir: str, dry_run: bool):
-    """Save program to JSON and optionally to InfluxDB."""
+    """Save program to JSON and optionally to InfluxDB. The JSON is saved
+    even when InfluxDB fails, because the executor needs only the JSON."""
+    if dry_run:
+        logger.info("Dry-run: Skipped InfluxDB save")
+    else:
+        try:
+            generator.save_program_influxdb(program, data_type="plan")
+            logger.info("Saved program to InfluxDB")
+        except Exception:
+            program[PLAN_NOT_IN_INFLUX_KEY] = True
+            generator.save_program_json(program, output_dir=output_dir)
+            raise
+
     json_path = generator.save_program_json(program, output_dir=output_dir)
     logger.info(f"Saved program to: {json_path}")
-
-    if not dry_run:
-        generator.save_program_influxdb(program, data_type="plan")
-        logger.info("Saved program to InfluxDB")
-    else:
-        logger.info("Dry-run: Skipped InfluxDB save")
-
     return json_path
 
 
@@ -159,6 +188,11 @@ def main():
     logger.info("=" * 60)
     logger.info("Starting heating program generation")
     logger.info("=" * 60)
+
+    if args.if_missing and not args.base_date:
+        if generated_program_exists(args.date_offset, args.output_dir):
+            logger.info("Program already generated, nothing to do")
+            return 0
 
     try:
         generator = HeatingProgramGenerator()

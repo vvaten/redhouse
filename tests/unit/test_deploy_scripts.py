@@ -161,9 +161,11 @@ class TestStagingScheduleDoesNotCollide:
 class TestStagingTimersScript:
     SCRIPT = REPO / "deployment" / "staging_timers.sh"
 
-    @pytest.mark.parametrize("timer", ["temperature", "health-check"])
+    @pytest.mark.parametrize(
+        "timer", ["temperature", "health-check", "program-check", "program-fallback"]
+    )
     def test_is_not_auto_started(self, timer):
-        """Both do nothing useful in staging, one of them by email."""
+        """These do nothing useful in staging, three of them by email."""
         text = self.SCRIPT.read_text(encoding="utf-8")
         match = re.search(r"NO_AUTO_START=\((.*?)^\)", text, re.S | re.M)
         assert match, "NO_AUTO_START not found"
@@ -195,20 +197,42 @@ class TestHeatingControlUnits:
         assert len(exec_start) == 1, exec_start
         assert "--dry-run" in exec_start[0]
 
+    FALLBACK = REPO / "deployment" / "systemd" / "redhouse-program-fallback.timer"
+    SCHEDULE = re.compile(r"^\*-\*-\* (\d{2})\.\.(\d{2}):(\d{2}):00$")
+
+    def _generate_schedule(self) -> tuple:
+        """(first hour, last hour, minute) of the hourly retries."""
+        schedules = _values(self.GENERATE.read_text(encoding="utf-8"), "OnCalendar")
+        assert len(schedules) == 1, schedules
+        match = self.SCHEDULE.match(schedules[0])
+        assert match, f"not an hourly retry range: {schedules[0]}"
+        return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
     def test_generate_does_not_collide_with_wibatemp(self):
         """wibatemp generates the controlling program at 16:05."""
-        text = self.GENERATE.read_text(encoding="utf-8")
-        match = re.search(r"^OnCalendar=\S+ (\d{2}):(\d{2}):(\d{2})$", text, re.M)
-        assert match, "OnCalendar not found"
-        hour, minute = int(match.group(1)), int(match.group(2))
-        assert (hour, minute) != (16, 5), "must not run with wibatemp's generator"
+        first, _, minute = self._generate_schedule()
+        assert (first, minute) != (16, 5), "must not run with wibatemp's generator"
+
+    def test_generate_retries_until_late_evening_without_catchup(self):
+        """A boot-time catch-up before the prices publish only fails."""
+        first, last, _ = self._generate_schedule()
+        assert (first, last) == (16, 23)
+        assert not _has_catchup(self.GENERATE.read_text(encoding="utf-8"))
+
+    def test_generate_skips_a_program_it_already_made(self):
+        service = self.GENERATE.with_suffix(".service").read_text(encoding="utf-8")
+        assert "--if-missing" in _values(service, "ExecStart")[0]
+
+    def test_fallback_runs_after_the_last_retry(self):
+        _, last, minute = self._generate_schedule()
+        text = self.FALLBACK.read_text(encoding="utf-8")
+        assert _values(text, "OnCalendar") == ["*-*-* 23:50:00"]
+        assert (23, 50) > (last, minute)
+        assert _has_catchup(text)
 
     def test_generate_avoids_the_deploy_windows(self):
         """A run inside a deploy window would race the deploy."""
-        text = self.GENERATE.read_text(encoding="utf-8")
-        match = re.search(r"^OnCalendar=\S+ \d{2}:(\d{2}):\d{2}$", text, re.M)
-        assert match, "OnCalendar not found"
-        minute = int(match.group(1))
+        _, _, minute = self._generate_schedule()
         deploy = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
         win = re.search(r"OPTIMAL_WINDOWS=\(([0-9 ]+)\)", deploy)
         assert win, "OPTIMAL_WINDOWS not found"
@@ -326,15 +350,12 @@ def _has_catchup(text: str) -> bool:
 class TestDailyTimersCatchUp:
     """A once-a-day timer without catch-up skips a day on reboot.
 
-    Two have none on purpose: a boot-time run before prices publish fails.
+    One has none on purpose: a boot-time run before prices publish fails.
     """
 
     UNITS = sorted((REPO / "deployment" / "systemd").glob("*.timer"))
-    # generate-program needs the day's spot prices, published in the
-    # afternoon: a boot-time run failed at 04:37 on 2026-09-22.
-    # spot-prices already retries six times across that window.
+    # spot-prices already retries six times across the publishing window.
     NO_CATCHUP_BY_DESIGN = {
-        "redhouse-generate-program.timer",
         "redhouse-spot-prices.timer",
     }
 

@@ -275,6 +275,7 @@ TIMERS=(
     "redhouse-execute-program"
     "redhouse-health-check"
     "redhouse-program-check"
+    "redhouse-program-fallback"
     "redhouse-backup"
 )
 
@@ -289,11 +290,12 @@ was_running() {
     esac
 }
 
-# These watch the system rather than drive it, so the migration rule
-# does not apply. Without this the deploy that installs one disables it
-# again, and health_check skips disabled timers, so nothing reports it.
+# These never touch a load: they watch, or write a file only redhouse
+# reads. Without this the deploy that installs one disables it again,
+# and health_check skips disabled timers, so nothing reports it.
 ALWAYS_ON=(
     "redhouse-program-check"
+    "redhouse-program-fallback"
 )
 
 is_always_on() {

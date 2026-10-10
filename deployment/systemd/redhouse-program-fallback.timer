@@ -1,0 +1,14 @@
+[Unit]
+Description=RedHouse Heating Program Fallback Copy Timer
+Requires=redhouse-program-fallback.service
+
+[Timer]
+# After the generator's last retry at 23:06. Persistent recovers a copy
+# missed while the Pi was down; the script itself refuses to act while
+# the generator still has retries left.
+OnCalendar=*-*-* 23:50:00
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

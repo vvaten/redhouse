@@ -4,8 +4,8 @@ Requires=redhouse-program-check.service
 
 [Timer]
 # Local time, so this stays correct across DST. Generation runs at
-# 16:06, leaving nearly two hours of slack before it complains and six
-# before the executor falls back at midnight.
+# 16:06 and 17:06, so this complains after two attempts, well before
+# the 23:50 fallback copy.
 OnCalendar=*-*-* 18:00:00
 # Once a day, so a reboot across 18:00 would otherwise skip that day
 # in silence. Persistent runs the missed one at the next boot.

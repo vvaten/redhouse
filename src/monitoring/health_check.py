@@ -39,6 +39,7 @@ REDHOUSE_SERVICES = [
     "redhouse-generate-program",
     "redhouse-execute-program",
     "redhouse-program-check",
+    "redhouse-program-fallback",
 ]
 
 # A repeating problem must not mail on every run. 96 runs a day once

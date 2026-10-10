@@ -153,11 +153,11 @@ Friday start means two unattended days before anyone looks. Monday
 gives a full working week. The cost of waiting is one weekend of
 wibatemp control, which works.
 
-The critical path is not the phases, it is the generate-program
-fallback. Without it a failed 16:05 leaves the pump with no program
-for a day, and staging saw that fail 3 times in 10 before the
-database was fixed. Write it Mon to Wed, in parallel with the Phase 4
-soak, so it is not the thing holding up Monday 21.
+The critical path was not the phases, it was the generate-program
+fallback: without it a failed 16:05 leaves the pump with no program
+for a day, and staging saw that fail 3 times in 10. Built 2026-10-10,
+see Phase 6. Deploy it twice: the first deploy runs the old script,
+which does not know the redhouse-program-fallback timer.
 
 ### Phase 1: weather, windpower, spot prices (ready)
 
@@ -242,9 +242,9 @@ restore), then start generate-program and execute-program together.
 Only one system may drive the pump.
 
 Prerequisites, all of them: Phases 1-5 complete; the pump control test
-done and recorded; generate-program given a retry and a curve-only
-fallback, because a failed 16:05 leaves the pump with no program for a
-whole day; execute-program given a fallback to the previous program.
+done and recorded. The program fallback exists: generate-program
+retries hourly until 23:06, and program-fallback copies the day's
+program forward at 23:50 when the next one is still missing.
 
 Checkpoint: a pump command at the next quarter hour, load_control
 getting data, and the physical pump responding.
@@ -448,10 +448,9 @@ Do these before any further cron line is disabled:
 - [ ] Retry writes as well as queries. query_with_retry covers reads
   only; the 5 wrapper write methods and 6 direct write_api.write call
   sites in src/ have no retry at all.
-- [ ] generate-program: retry at 16:20 and 16:35 on failure, and a
-  curve-only fallback program when spot prices or predictions are
-  missing; execute-program: fall back to the previous program file
-  when today's is missing, and alert
+- [x] generate-program retries hourly until 23:06, and a missing or
+  unusable day gets the previous day's program copied forward, with a
+  mail. Done 2026-10-10 instead of a curve-only program.
 - [ ] Check NAS InfluxDB load (CPU, disk, compactions). Consider
   lowering staging query load.
 - [ ] Create the production Grafana alerts (folder does not exist)

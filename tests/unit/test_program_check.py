@@ -209,15 +209,15 @@ class TestGeneratorUnit:
             assert pc.generator_unit() == "redhouse-staging-generate-program.service"
 
 
-class TestBodyDoesNotPromiseAFallback:
-    """Part 2 is not built: the executor has no fallback yet."""
+class TestBodyNamesTheFallback:
+    """The mail must state what happens next, and when."""
 
-    def test_says_there_is_no_fallback(self):
+    def test_names_the_retries_and_the_copy_time(self):
         day = datetime.date(2026, 9, 22)
         with patch.object(pc, "generate_service_result", return_value="(journal)"):
             body = pc.build_body(day, pc.program_path(day, "."), 0)
-        assert "NO fallback" in body
-        assert "falls back to the latest program at midnight" not in body
+        assert "retries hourly until 23:06" in body
+        assert "copied forward at 23:50" in body
 
 
 class TestBaseDirCannotDriftFromTheExecutor:
