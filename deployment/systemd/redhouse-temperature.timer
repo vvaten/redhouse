@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse Temperature Collection Timer
-Requires=redhouse-temperature.service
 
 [Timer]
 # OnUnitActiveSec measures from a previous activation, so without

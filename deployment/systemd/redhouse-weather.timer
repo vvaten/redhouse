@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse Weather Forecast Collection Timer
-Requires=redhouse-weather.service
 
 [Timer]
 OnCalendar=*:02:00

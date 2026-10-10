@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse Heating Program Execution Timer
-Requires=redhouse-execute-program.service
 
 [Timer]
 # Run every 15 minutes

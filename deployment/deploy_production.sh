@@ -152,6 +152,55 @@ verify_timer_states() {
     return "$failed"
 }
 
+# A fresh install has no earlier commit to go back to.
+rollback_hint() {
+    if [ "$PRE_DEPLOY_COMMIT" != "(fresh install)" ]; then
+        echo "Rollback: sudo -u pi git reset --hard ${PRE_DEPLOY_COMMIT}"
+    fi
+}
+
+# Epoch seconds of a systemctl timestamp, or empty when it has none.
+epoch_of() {
+    case "$1" in
+        "" | n/a | infinity) echo "" ;;
+        *) date -d "$1" +%s 2>/dev/null || echo "" ;;
+    esac
+}
+
+# These run their job on every timer restart by design.
+FIRES_ON_RESTART=(
+    "redhouse-temperature"
+)
+
+# Exit 0 only if no service started after the timers were stopped and
+# before its timer was due, as recorded in DUE_AT. A Persistent catch-up
+# was due, so it passes. A timer with no recorded due time only warns.
+verify_no_offschedule_runs() {
+    local timer raw started due failed=0
+    for timer in "${TIMERS[@]}"; do
+        case " ${FIRES_ON_RESTART[*]} " in
+            *" $timer "*) continue ;;
+        esac
+        raw=$(systemctl show -p ExecMainStartTimestamp --value "$timer.service" 2>/dev/null || true)
+        started=$(epoch_of "$raw")
+        if [ -z "$started" ] && [ -n "$raw" ] && [ "$raw" != "n/a" ]; then
+            echo "  [WARN] cannot read when $timer.service last started: '$raw'"
+            continue
+        fi
+        if [ -z "$started" ] || [ "$started" -le "$QUIESCED_AT" ]; then
+            continue
+        fi
+        due="${DUE_AT[$timer.timer]:-}"
+        if [ -z "$due" ]; then
+            echo "  [WARN] $timer.service ran during the deploy; it was not running before"
+        elif [ "$started" -lt "$due" ]; then
+            echo "  [FAIL] $timer.service ran during the deploy, before it was due"
+            failed=1
+        fi
+    done
+    return "$failed"
+}
+
 # --- Parse arguments ---
 
 DEPLOY_NOW=false
@@ -191,7 +240,9 @@ restore_timers() {
     echo ""
     echo "Restarting the timers that were running before the deploy..."
     for timer in $RUNNING_TIMERS; do
-        systemctl start "$timer" && echo "  [OK] $timer"
+        if ! systemctl is-active -q "$timer"; then
+            systemctl start "$timer" && echo "  [OK] $timer"
+        fi
     done
 }
 trap restore_timers EXIT
@@ -276,6 +327,12 @@ fi
 
 # --- Quiesce the running timers before the files change ---
 
+declare -A DUE_AT
+for timer in $RUNNING_TIMERS; do
+    DUE_AT[$timer]=$(epoch_of "$(systemctl show -p NextElapseUSecRealtime --value \
+        "$timer" 2>/dev/null || true)")
+done
+
 if [ -n "$RUNNING_TIMERS" ]; then
     echo ""
     echo "Stopping running timers for the update..."
@@ -283,6 +340,9 @@ if [ -n "$RUNNING_TIMERS" ]; then
         systemctl stop "$timer" && echo "  [OK] stopped $timer"
     done
 fi
+# Taken after the stop, so a run that fired while DUE_AT was read counts
+# as one from before the deploy.
+QUIESCED_AT=$(date +%s)
 
 # --- Apply code update (fast-forward only) ---
 
@@ -425,10 +485,18 @@ echo ""
 echo "Verifying timer states..."
 if ! verify_timer_states; then
     echo "[FAIL] Deploy finished with timers in the wrong state"
-    echo "Rollback: sudo -u pi git reset --hard ${PRE_DEPLOY_COMMIT}"
+    rollback_hint
     exit 1
 fi
 echo "[OK] Every timer is in its intended state"
+
+echo "Checking that no job ran off schedule during the deploy..."
+if ! verify_no_offschedule_runs; then
+    echo "[FAIL] A timer restart ran its job off schedule"
+    rollback_hint
+    exit 1
+fi
+echo "[OK] No job ran off schedule"
 
 # --- Set up Grafana alerts ---
 
@@ -450,7 +518,7 @@ echo ""
 echo "Pre-deploy commit: ${PRE_DEPLOY_COMMIT}"
 echo "Current commit:    $(sudo -u pi git rev-parse HEAD)"
 echo ""
-echo "Rollback: sudo -u pi git reset --hard ${PRE_DEPLOY_COMMIT}"
+rollback_hint
 echo ""
 systemctl list-timers redhouse-* --no-pager
 echo ""

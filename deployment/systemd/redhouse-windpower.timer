@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse Wind Power Data Collection Timer
-Requires=redhouse-windpower.service
 
 [Timer]
 OnCalendar=*:05:00

@@ -454,6 +454,40 @@ def _list(text: str, name: str) -> list:
     return re.findall(r'"([^"]+)"', match.group(1))
 
 
+class TestTimersStartNothing:
+    """A dependency on the service starts it whenever the timer starts,
+    and every deploy restarts the timers. A timer finds its same-named
+    service without one."""
+
+    UNITS = sorted((REPO / "deployment" / "systemd").glob("*.timer"))
+    STARTS_UNITS = {"Requires", "Wants", "BindsTo", "Requisite", "PartOf", "Upholds"}
+
+    def test_no_timer_depends_on_a_unit(self):
+        offenders = {
+            u.name: sorted(self.STARTS_UNITS & _directives(u.read_text(encoding="utf-8")))
+            for u in self.UNITS
+        }
+        assert not {k: v for k, v in offenders.items() if v}
+
+    def test_every_timer_has_a_same_named_service(self):
+        for unit in self.UNITS:
+            assert unit.with_suffix(".service").is_file(), unit.name
+            assert "Unit" not in _directives(unit.read_text(encoding="utf-8")), unit.name
+
+    def test_the_exit_trap_starts_only_stopped_timers(self):
+        text = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+        match = re.search(r"^restore_timers\(\) \{(.*?)^\}", text, re.S | re.M)
+        assert match, "restore_timers not found"
+        assert 'if ! systemctl is-active -q "$timer"; then' in match.group(1)
+
+    def test_restart_exemptions_agree(self):
+        """The deploy check exempts exactly the timers allowed to fire on restart."""
+        allowed = {Path(n).stem for n in TestNoTriggerFiresOnRestart.ALLOWED}
+        assert set(_list(PRODUCTION_DEPLOY.read_text(encoding="utf-8"), "FIRES_ON_RESTART")) == (
+            allowed
+        )
+
+
 class TestEveryTimerIsDeployed:
     """A timer missing from a list is installed but never started."""
 

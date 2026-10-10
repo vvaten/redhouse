@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse Health Check Timer
-Requires=redhouse-health-check.service
 
 [Timer]
 # Off the quarter hour. All 10 read timeouts in the 7 days to

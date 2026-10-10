@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse 15-Minute Analytics Aggregation Timer
-Requires=redhouse-aggregate-analytics-15min.service
 
 [Timer]
 # IMPORTANT: If you change these times, also update deployment/smart_deploy.sh

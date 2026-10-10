@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse 1-Hour Analytics Aggregation Timer
-Requires=redhouse-aggregate-analytics-1hour.service
 After=redhouse-aggregate-analytics-15min.timer
 
 [Timer]

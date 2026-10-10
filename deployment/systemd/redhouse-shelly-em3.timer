@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse Shelly EM3 Energy Meter Data Collection Timer
-Requires=redhouse-shelly-em3.service
 
 [Timer]
 # Run every minute at the top of the minute (00 seconds)

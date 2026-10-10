@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse CheckWatt Data Collection Timer
-Requires=redhouse-checkwatt.service
 
 [Timer]
 # Every 5 minutes at :02:30, :07:30, ... Offset 90 s from wibatemp cron

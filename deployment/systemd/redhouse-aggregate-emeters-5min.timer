@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse 5-Minute Energy Meter Aggregation Timer
-Requires=redhouse-aggregate-emeters-5min.service
 After=redhouse-checkwatt.timer
 
 [Timer]

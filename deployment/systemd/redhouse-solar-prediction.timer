@@ -1,6 +1,5 @@
 [Unit]
 Description=RedHouse Solar Yield Prediction Timer
-Requires=redhouse-solar-prediction.service
 
 [Timer]
 OnCalendar=*:03:00
