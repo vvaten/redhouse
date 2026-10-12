@@ -38,6 +38,9 @@ import sys
 
 from src.common.logger import setup_logger
 from src.control.program_executor import HeatingProgramExecutor
+from src.control.program_fallback import load_valid_program
+from src.control.program_shape import program_is_well_formed
+from src.monitoring.program_check import program_path
 
 logger = setup_logger(__name__)
 
@@ -97,19 +100,21 @@ def _load_program_with_error_handling(executor, program_date: str, base_dir: str
         return None
 
 
-def _handle_day_transition_if_needed(executor, program, base_dir: str):
+def _load_previous_program(program_date: str, base_dir: str):
+    """Load the program of the day before, or None if it is missing or unusable."""
+    previous_date = datetime.date.fromisoformat(program_date) - datetime.timedelta(days=1)
+    program = load_valid_program(program_path(previous_date, base_dir))
+    if program is None:
+        logger.warning(f"Program for {previous_date} is not usable")
+    return program
+
+
+def _handle_day_transition_if_needed(executor, program, previous_program):
     """Handle day transition if in the first 15 minutes of the day."""
     now = datetime.datetime.now()
-    if now.hour == 0 and now.minute < 15:
-        yesterday_date = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        try:
-            yesterday_program = executor.load_program(
-                program_date=yesterday_date, base_dir=base_dir
-            )
-            program = executor.handle_day_transition(program, yesterday_program)
-            logger.info("Day transition handled")
-        except FileNotFoundError:
-            logger.warning(f"Yesterday's program not found: {yesterday_date}")
+    if now.hour == 0 and now.minute < 15 and previous_program is not None:
+        program = executor.handle_day_transition(program, previous_program)
+        logger.info("Day transition handled")
     return program
 
 
@@ -154,13 +159,25 @@ def main():
         program_date = args.date if args.date else datetime.date.today().strftime("%Y-%m-%d")
         logger.info(f"Executing program for {'specified date' if args.date else 'today'}: {program_date}")
 
-        # Load program
-        program = _load_program_with_error_handling(executor, program_date, args.base_dir)
+        # Load programs. Without one the pump keeps its state, so it still
+        # needs its EVU pulse while ON, decided by its own last command.
+        previous_program = _load_previous_program(program_date, args.base_dir)
+        try:
+            program = _load_program_with_error_handling(executor, program_date, args.base_dir)
+        except (OSError, ValueError, TypeError) as e:
+            logger.error(f"Program for {program_date} is unusable: {e}")
+            program = None
+        if program is not None and not program_is_well_formed(program):
+            logger.error(f"Program for {program_date} is not well formed")
+            program = None
         if program is None:
+            executor.run_periodic_pulse(
+                int(datetime.datetime.now().timestamp()), previous_program=previous_program
+            )
             return 1
 
         # Handle day transition
-        program = _handle_day_transition_if_needed(executor, program, args.base_dir)
+        program = _handle_day_transition_if_needed(executor, program, previous_program)
 
         # Apply force flag
         if args.force:
@@ -168,7 +185,9 @@ def main():
             logger.warning("Force mode: Ignoring max execution delay")
 
         # Execute program
-        summary = executor.execute_program(program, base_dir=args.base_dir)
+        summary = executor.execute_program(
+            program, base_dir=args.base_dir, previous_program=previous_program
+        )
 
         # Print summary
         _print_execution_summary(summary, program_date, args.dry_run)

@@ -173,6 +173,21 @@ class TestLoadValidProgram:
         path.write_text(json.dumps({"version": "2.0.0", "loads": []}))
         assert pf.load_valid_program(path) is None
 
+    def test_an_io_error_or_a_directory_is_none(self, tmp_path, monkeypatch):
+        """An SD card error must not stop the executor's pulse check."""
+        assert pf.load_valid_program(tmp_path) is None
+
+        def eio(*args, **kwargs):
+            raise OSError(5, "Input/output error")
+
+        path = tmp_path / "p.json"
+        path.write_text(json.dumps(_day_program(D10)))
+        with monkeypatch.context() as m:
+            m.setattr(pf.Path, "is_file", eio)
+            assert pf.load_valid_program(path)["program_date"] == "2026-10-10"
+        monkeypatch.setattr(pf, "open", eio, raising=False)
+        assert pf.load_valid_program(path) is None
+
     def test_a_usable_program_is_returned(self, tmp_path):
         path = tmp_path / "p.json"
         path.write_text(json.dumps(_day_program(D10)))

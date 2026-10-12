@@ -15,6 +15,7 @@ import pytz
 
 from src.common.config import get_config
 from src.common.logger import setup_logger
+from src.control.program_shape import program_is_well_formed
 from src.monitoring.email_sender import send_alert_email
 from src.monitoring.program_check import (
     HELSINKI,
@@ -48,21 +49,17 @@ def is_fallback_copy(program: dict) -> bool:
 
 def load_valid_program(path: Path) -> Optional[dict]:
     """The program at path, or None if it is missing or the executor
-    could not use it: unreadable, not JSON, or without version and loads."""
-    if not path.is_file():
-        return None
+    could not use it: unreadable, not JSON, or not well formed."""
     try:
         with open(path) as f:
             program = json.load(f)
+    except FileNotFoundError:
+        return None
     except (OSError, ValueError) as e:
         logger.warning("Program file %s is unreadable: %s", path, e)
         return None
-    if (
-        not isinstance(program, dict)
-        or "version" not in program
-        or not isinstance(program.get("loads"), dict)
-    ):
-        logger.warning("Program file %s lacks version or loads", path)
+    if not program_is_well_formed(program):
+        logger.warning("Program file %s is not well formed", path)
         return None
     return program
 

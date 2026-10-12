@@ -48,9 +48,8 @@ def main():
         print(f"Last command: {controller.last_command or 'Unknown'}")
         if controller.last_command_time:
             print(f"Last command time: {time.ctime(controller.last_command_time)}")
-        print(
-            f"ON time accumulated: {controller.on_time_accumulated}s ({controller.on_time_accumulated/60:.1f} min)"
-        )
+        if controller.on_since:
+            print(f"ON since: {time.ctime(controller.on_since)}")
         if controller.last_evu_cycle_time:
             print(f"Last EVU cycle: {time.ctime(controller.last_evu_cycle_time)}")
         print(f"EVU cycle threshold: {controller.EVU_CYCLE_THRESHOLD/60:.0f} min")

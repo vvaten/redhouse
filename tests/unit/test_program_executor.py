@@ -52,6 +52,8 @@ def mock_load_controller():
         mock_pump = Mock()
         mock_pump.check_evu_cycle_needed = Mock(return_value=False)
         mock_pump.perform_evu_cycle = Mock(return_value={"success": True})
+        mock_pump.execute_command = Mock(return_value={"success": True})
+        mock_pump.last_command_time = 500
         mock_instance.pump_controller = mock_pump
 
         mock.return_value = mock_instance
@@ -537,3 +539,185 @@ class TestHandleDayTransition:
 
         # Should not duplicate
         assert len(result["loads"]["pump"]["schedule"]) == 2  # Original 2, no merge
+
+
+def _pump_program(*entries):
+    return {
+        "version": "2.0.0",
+        "loads": {
+            "geothermal_pump": {
+                "schedule": [
+                    {"timestamp": ts, "command": command, "local_time": str(ts)}
+                    for ts, command in entries
+                ]
+            }
+        },
+    }
+
+
+class TestPeriodicPulseFollowsTheProgram:
+    """A pulse ends in ON, so a due ALE or EVU the pump never got is applied
+    instead. The pump last got ON at 500 unless a test says otherwise."""
+
+    def _executor(self, mock_config, mock_load_controller):
+        executor = HeatingProgramExecutor(config=mock_config)
+        pump = executor.load_controller.pump_controller
+        pump.check_evu_cycle_needed = Mock(return_value=True)
+        return executor, pump
+
+    def test_pulses_while_the_program_wants_on(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        program = _pump_program((1000, "ON"), (9000, "ALE"))
+        assert executor.run_periodic_pulse(5000, program) is True
+        pump.perform_evu_cycle.assert_called_once()
+
+    def test_a_due_ale_or_evu_the_pump_never_got_is_applied(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        """The due ALE or EVU failed or was skipped, leaving the pump in ON."""
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        for due in ("ALE", "EVU"):
+            pump.execute_command.reset_mock()
+            program = _pump_program((1000, "ON"), (4000, due))
+            assert executor.run_periodic_pulse(5000, program) is True, due
+            pump.execute_command.assert_called_once_with(due, 4000, 5000)
+        pump.perform_evu_cycle.assert_not_called()
+
+    def test_a_manual_on_newer_than_the_due_entry_gets_its_pulse(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        pump.last_command_time = 4500
+        program = _pump_program((1000, "ON"), (4000, "ALE"))
+        assert executor.run_periodic_pulse(5000, program) is True
+        pump.perform_evu_cycle.assert_called_once_with(5000)
+        pump.execute_command.assert_not_called()
+
+    def test_nothing_happens_before_the_threshold(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        pump.check_evu_cycle_needed = Mock(return_value=False)
+        program = _pump_program((1000, "ON"), (4000, "ALE"))
+        assert executor.run_periodic_pulse(5000, program) is False
+        pump.perform_evu_cycle.assert_not_called()
+        pump.execute_command.assert_not_called()
+
+    def test_without_a_program_the_pump_state_decides(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        assert executor.run_periodic_pulse(5000, None) is True
+        pump.perform_evu_cycle.assert_called_once()
+
+    def test_the_pulse_check_runs_even_when_a_command_raises(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        pump.check_evu_cycle_needed = Mock(side_effect=[False, True])
+        executor.save_program = Mock(side_effect=OSError("disk full"))
+        program = _pump_program((1000, "ON"))
+        program["program_date"] = "2026-10-12"
+        with pytest.raises(OSError):
+            executor.execute_program(program, current_time=1100)
+        assert pump.check_evu_cycle_needed.call_count == 2
+        pump.perform_evu_cycle.assert_called_once_with(1100)
+
+    def test_the_pulse_runs_before_the_commands(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        """A stalled InfluxDB write in a command must not delay the pulse."""
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        order = []
+        pump.check_evu_cycle_needed = Mock(side_effect=[True, False])
+        pump.perform_evu_cycle = Mock(
+            side_effect=lambda t: order.append("pulse") or {"success": True}
+        )
+        executor._process_and_execute_command = Mock(
+            side_effect=lambda *args: order.append("command") or "executed"
+        )
+        program = _pump_program((1000, "ON"))
+        summary = executor.execute_program(program, current_time=1100)
+        assert order == ["pulse", "command"]
+        assert summary["evu_cycle_performed"] is True
+
+    def test_after_midnight_the_previous_program_still_counts(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        """Today's first entry is later, so yesterday's last entry is due."""
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        today = _pump_program((9000, "ON"))
+        for last in ("ALE", "EVU", "ON"):
+            pump.perform_evu_cycle.reset_mock()
+            pump.execute_command.reset_mock()
+            yesterday = _pump_program((1000, "ON"), (4000, last))
+            assert executor.run_periodic_pulse(5000, today, yesterday) is True, last
+            assert pump.perform_evu_cycle.called is (last == "ON"), last
+            assert pump.execute_command.called is (last != "ON"), last
+
+    def test_today_wins_over_the_previous_program(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        yesterday = _pump_program((1000, "ON"))
+        today = _pump_program((4000, "ALE"))
+        assert executor.run_periodic_pulse(5000, today, yesterday) is True
+        pump.execute_command.assert_called_once_with("ALE", 4000, 5000)
+        pump.perform_evu_cycle.assert_not_called()
+
+    def test_both_checks_of_a_run_see_the_previous_program(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        yesterday = _pump_program((1000, "ON"), (4000, "ALE"))
+        today = _pump_program((9000, "ON"))
+        executor.execute_program(today, current_time=5000, previous_program=yesterday)
+        assert pump.execute_command.call_count == 2
+        pump.perform_evu_cycle.assert_not_called()
+
+    def test_the_check_after_the_commands_uses_the_time_they_ended(
+        self, mock_config, mock_influx_client, mock_load_controller, monkeypatch
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        pump.check_evu_cycle_needed = Mock(return_value=False)
+        readings = [100.0]
+        executor._collect_and_sort_commands = Mock(
+            side_effect=lambda program: readings.append(1300.0) or []
+        )
+        monkeypatch.setattr("src.control.program_executor.time.monotonic", lambda: readings[-1])
+        executor.execute_program(_pump_program((9000, "ON")), current_time=5000)
+        assert [c.args[0] for c in pump.check_evu_cycle_needed.call_args_list] == [5000, 6200]
+
+    def test_a_malformed_program_has_nothing_due(self):
+        """Yesterday's broken file must not decide, or crash, the check."""
+        good = _pump_program((1000, "ON"))
+        broken = _pump_program((2000, "ALE"))
+        broken["loads"]["geothermal_pump"]["schedule"].append({"timestamp": "3000"})
+        assert HeatingProgramExecutor.due_pump_entry([broken, good], 5000)["command"] == "ON"
+        broken["loads"]["geothermal_pump"] = {}
+        assert HeatingProgramExecutor.due_pump_entry([broken], 5000) is None
+
+    def test_an_unknown_last_command_time_lets_the_due_entry_win(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        executor, pump = self._executor(mock_config, mock_load_controller)
+        pump.last_command_time = None
+        program = _pump_program((1000, "ON"), (4000, "EVU"))
+        assert executor.run_periodic_pulse(5000, program) is True
+        pump.execute_command.assert_called_once_with("EVU", 4000, 5000)
+        pump.perform_evu_cycle.assert_not_called()
+
+    def test_a_save_that_dies_midway_keeps_the_old_program(
+        self, mock_config, mock_influx_client, mock_load_controller, sample_program, tmp_path
+    ):
+        executor = HeatingProgramExecutor(config=mock_config)
+        os.makedirs(tmp_path / sample_program["program_date"][:7])
+        executor.save_program(sample_program, base_dir=str(tmp_path))
+        changed = dict(sample_program, version="broken")
+        with patch("src.control.program_executor.json.dump", side_effect=OSError("power")):
+            with pytest.raises(OSError):
+                executor.save_program(changed, base_dir=str(tmp_path))
+        reloaded = executor.load_program(sample_program["program_date"], str(tmp_path))
+        assert reloaded["version"] == sample_program["version"]

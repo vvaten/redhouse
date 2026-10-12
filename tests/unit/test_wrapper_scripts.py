@@ -31,6 +31,7 @@ def _load_wrapper(filename: str):
         "aggregate_analytics_15min.py",
         "aggregate_analytics_1hour.py",
         "check_program.py",
+        "execute_heating_program_v2.py",
         "fallback_program.py",
         "generate_heating_program_v2.py",
     ],

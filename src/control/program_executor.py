@@ -11,6 +11,7 @@ from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
 from src.control.multi_load_controller import MultiLoadController
+from src.control.program_shape import PUMP_LOAD, program_is_well_formed
 
 logger = setup_logger(__name__)
 
@@ -108,68 +109,72 @@ class HeatingProgramExecutor:
         filename = f"heating_program_schedule_{program_date}.json"
         filepath = os.path.join(base_dir, year_month, filename)
 
-        with open(filepath, "w") as f:
+        # A power cut mid-write must not leave a truncated program
+        with open(filepath + ".tmp", "w") as f:
             json.dump(program, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(filepath + ".tmp", filepath)
 
         logger.debug(f"Saved updated program to: {filepath}")
 
     def execute_program(
-        self, program: dict, current_time: Optional[int] = None, base_dir: str = "."
+        self,
+        program: dict,
+        current_time: Optional[int] = None,
+        base_dir: str = ".",
+        previous_program: Optional[dict] = None,
     ) -> dict:
-        """
-        Execute all pending commands in the program.
-
-        Args:
-            program: Program dict from load_program()
-            current_time: Current time (epoch), defaults to now
-            base_dir: Base directory for saving updated program
-
-        Returns:
-            Execution summary dict with:
-            - executed_count: Number of commands executed
-            - skipped_count: Number of commands skipped
-            - failed_count: Number of commands that failed
-            - next_execution_time: Next scheduled command time
-        """
+        """Execute every due command of the program, with the periodic EVU check
+        before them (slow InfluxDB writes must not delay it) and after them.
+        Returns executed_count, skipped_count, failed_count, next_execution_time."""
         if current_time is None:
             current_time = int(time.time())
 
         logger.info(f"Executing program at {datetime.datetime.fromtimestamp(current_time)}")
 
-        all_commands = self._collect_and_sort_commands(program)
-
+        all_commands: list = []
         executed_count = 0
         skipped_count = 0
         failed_count = 0
         next_execution_time = None
 
-        # Execute pending commands
-        for cmd_info in all_commands:
-            entry = cmd_info["entry"]
-            scheduled_time = entry["timestamp"]
+        # Execute pending commands. The pulse check runs even if one raises.
+        pulsed_before = False
+        pulsed_after = False
+        started = time.monotonic()
+        try:
+            pulsed_before = self.run_periodic_pulse(current_time, program, previous_program)
+            all_commands = self._collect_and_sort_commands(program)
+            for cmd_info in all_commands:
+                entry = cmd_info["entry"]
+                scheduled_time = entry["timestamp"]
 
-            # Skip if already executed
-            if entry.get("executed_at"):
-                continue
+                # Skip if already executed
+                if entry.get("executed_at"):
+                    continue
 
-            # Check if time to execute
-            if current_time >= scheduled_time:
-                exec_result = self._process_and_execute_command(
-                    program, cmd_info, current_time, base_dir
-                )
-                if exec_result == "executed":
-                    executed_count += 1
-                elif exec_result == "skipped":
-                    skipped_count += 1
-                elif exec_result == "failed":
-                    failed_count += 1
-            else:
-                # This is a future command
-                if next_execution_time is None:
-                    next_execution_time = scheduled_time
-                break
-
-        evu_cycle_performed = self._check_and_perform_evu_cycle(current_time)
+                # Check if time to execute
+                if current_time >= scheduled_time:
+                    exec_result = self._process_and_execute_command(
+                        program, cmd_info, current_time, base_dir
+                    )
+                    if exec_result == "executed":
+                        executed_count += 1
+                    elif exec_result == "skipped":
+                        skipped_count += 1
+                    elif exec_result == "failed":
+                        failed_count += 1
+                else:
+                    # This is a future command
+                    if next_execution_time is None:
+                        next_execution_time = scheduled_time
+                    break
+        finally:
+            # Slow InfluxDB writes can make the run end much later than it began
+            ended = current_time + int(time.monotonic() - started)
+            pulsed_after = self.run_periodic_pulse(ended, program, previous_program)
+        evu_cycle_performed = pulsed_before or pulsed_after
 
         summary = self._update_program_summary(
             program,
@@ -192,18 +197,8 @@ class HeatingProgramExecutor:
     def _process_and_execute_command(
         self, program: dict, cmd_info: dict, current_time: int, base_dir: str
     ) -> str:
-        """
-        Process and execute a single command with validation.
-
-        Args:
-            program: Program dict
-            cmd_info: Command info dict with load_id, entry, timestamp
-            current_time: Current time (epoch)
-            base_dir: Base directory for saving updated program
-
-        Returns:
-            Result status: "executed", "skipped", or "failed"
-        """
+        """Execute one command (cmd_info has load_id, entry, timestamp) unless it
+        is too late. Returns "executed", "skipped" or "failed"."""
         entry = cmd_info["entry"]
         scheduled_time = entry["timestamp"]
 
@@ -239,15 +234,7 @@ class HeatingProgramExecutor:
             return "failed"
 
     def _collect_and_sort_commands(self, program: dict) -> list:
-        """
-        Collect all commands from all loads and sort by timestamp.
-
-        Args:
-            program: Program dict with loads and schedules
-
-        Returns:
-            List of command info dicts sorted by timestamp
-        """
+        """All commands of all loads as load_id, entry, timestamp, by time."""
         all_commands = []
         for load_id, load_data in program["loads"].items():
             for entry in load_data["schedule"]:
@@ -262,28 +249,50 @@ class HeatingProgramExecutor:
         all_commands.sort(key=lambda x: x["timestamp"])
         return all_commands
 
-    def _check_and_perform_evu_cycle(self, current_time: int) -> bool:
-        """
-        Check if EVU cycle needed and perform it.
+    @staticmethod
+    def due_pump_entry(programs: list, current_time: int) -> Optional[dict]:
+        """The latest geothermal_pump entry at or before now across the given
+        well-formed programs, so yesterday's last entry still counts."""
+        due = [
+            e
+            for program in programs
+            if program_is_well_formed(program) and PUMP_LOAD in program["loads"]
+            for e in program["loads"][PUMP_LOAD]["schedule"]
+            if e["timestamp"] <= current_time
+        ]
+        return max(due, key=lambda e: e["timestamp"]) if due else None
 
-        Args:
-            current_time: Current time (epoch)
-
-        Returns:
-            True if EVU cycle was performed successfully
-        """
-        evu_cycle_performed = False
-        if hasattr(self.load_controller, "pump_controller"):
-            pump_ctrl = self.load_controller.pump_controller
-            if pump_ctrl.check_evu_cycle_needed(current_time):
-                logger.info("Periodic EVU cycle needed (105 min threshold reached)")
-                cycle_result = pump_ctrl.perform_evu_cycle(current_time)
-                if cycle_result["success"]:
-                    logger.info("Periodic EVU cycle completed successfully")
-                    evu_cycle_performed = True
-                else:
-                    logger.error(f"Periodic EVU cycle failed: {cycle_result.get('error')}")
-        return evu_cycle_performed
+    def run_periodic_pulse(
+        self,
+        current_time: int,
+        program: Optional[dict] = None,
+        previous_program: Optional[dict] = None,
+    ) -> bool:
+        """EVU-pulse the pump once it has been ON too long. A due ALE or EVU
+        newer than the pump's own ON never got applied, so apply it instead:
+        a pulse would end in ON. Without a due entry, the pump decides."""
+        if not hasattr(self.load_controller, "pump_controller"):
+            return False
+        pump_ctrl = self.load_controller.pump_controller
+        if not pump_ctrl.check_evu_cycle_needed(current_time):
+            return False
+        due = self.due_pump_entry([previous_program, program], current_time)
+        known = pump_ctrl.last_command_time
+        if (
+            due is not None
+            and due["command"] != "ON"
+            and (known is None or due["timestamp"] > known)
+        ):
+            logger.warning(f"Pump ON, but {due['command']} is due since {due['timestamp']}")
+            result = pump_ctrl.execute_command(due["command"], due["timestamp"], current_time)
+        else:
+            logger.info("Periodic EVU cycle needed")
+            result = pump_ctrl.perform_evu_cycle(current_time)
+        if not result["success"]:
+            logger.error(f"Periodic EVU check failed: {result['error']}")
+            return False
+        logger.info("Periodic EVU check completed successfully")
+        return True
 
     def _update_program_summary(
         self,
