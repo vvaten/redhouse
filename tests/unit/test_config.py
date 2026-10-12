@@ -75,6 +75,19 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.influxdb_token, "test-token")
             self.assertEqual(config.influxdb_org, "test-org")
 
+    def test_config_loads_the_env_file_it_is_given(self):
+        """The test session stubs load_dotenv, so check the call itself."""
+        yaml_path = _make_temp_config()
+        try:
+            with patch("src.common.config.load_dotenv") as load:
+                Config(config_path=yaml_path, env_path="/opt/redhouse/.env")
+                load.assert_called_once_with("/opt/redhouse/.env")
+                load.reset_mock()
+                Config(config_path=yaml_path)
+                load.assert_called_once_with()
+        finally:
+            os.unlink(yaml_path)
+
     def test_config_required_env_values(self):
         """Test that critical env values raise ValueError when missing."""
         yaml_path = _make_temp_config()

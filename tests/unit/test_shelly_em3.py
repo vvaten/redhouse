@@ -463,13 +463,16 @@ async def test_collect_shelly_em3_data_success():
 
 
 @pytest.mark.asyncio
-async def test_collect_shelly_em3_data_no_url():
-    """Test collection fails when SHELLY_EM3_URL not set."""
-    # Ensure env var is not set
-    with patch.dict("os.environ", {}, clear=True):
-        result = await collect_shelly_em3_data(dry_run=False)
-
-        assert result == 1  # Failure
+async def test_collect_shelly_em3_data_uses_the_configured_url():
+    """The URL comes from config.yaml, and no real device is contacted."""
+    config = MagicMock(shelly_em3_url="http://192.0.2.10")
+    with patch("src.data_collection.shelly_em3.get_config", return_value=config):
+        with patch(
+            "src.data_collection.shelly_em3.fetch_shelly_em3_status",
+            new=AsyncMock(return_value=None),
+        ) as mock_fetch:
+            assert await collect_shelly_em3_data(dry_run=False) == 1
+    mock_fetch.assert_called_once_with("http://192.0.2.10")
 
 
 @pytest.mark.asyncio

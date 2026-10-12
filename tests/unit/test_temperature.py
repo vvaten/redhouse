@@ -585,10 +585,11 @@ class TestWriteHumidityToInflux(unittest.TestCase):
 class TestCollectTemperaturesWithShelly(unittest.TestCase):
     """Test collect_temperatures merges Shelly HT data."""
 
+    @patch("src.data_collection.temperature.JSONDataLogger")
     @patch("src.data_collection.temperature.load_shelly_ht_data")
     @patch("src.data_collection.temperature.get_temperature_meter_ids")
     @patch("src.data_collection.temperature.get_temperature")
-    def test_merges_shelly_data(self, mock_get_temp, mock_get_ids, mock_shelly):
+    def test_merges_shelly_data(self, mock_get_temp, mock_get_ids, mock_shelly, mock_logger):
         """Test that Shelly HT data is merged with 1-wire data."""
         mock_get_ids.return_value = ["28-000006a"]
         mock_get_temp.return_value = 21.5
