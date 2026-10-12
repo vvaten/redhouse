@@ -415,6 +415,31 @@ Staging isolation, added 2026-10-10:
   through write_point. Fix: run the check inside write_with_retry, so
   every write passes it, and test the refusal on each write path.
 
+Unit test isolation, added 2026-10-12:
+
+- deploy_install.sh and deploy_staging.sh run the unit tests inside the
+  install, next to its real .env. The tests no longer load that .env,
+  but they stay off the network and InfluxDB only because each test
+  mocks the right thing. A Shelly EM3 test once fetched the real meter
+  and could write it to InfluxDB. Fix: a guard in the unit test
+  conftest that fails any test which opens a network connection or
+  builds a real InfluxClient write, so a missing mock shows as red. It
+  must allow loopback, which asyncio uses for its self-pipe on Windows.
+- deploy_production.sh runs no unit tests on the Pi; it relies on the
+  CI gate, which runs on x86 Ubuntu. Decide whether to run them after
+  the pip install, within the deploy window, and what a failure leaves.
+- The staging units on the Pi date from 2026-09-14, and every staging
+  timer still has Requires= on its service, which the templates have
+  since dropped. Starting such a timer starts its service at once: on
+  2026-10-12 a staging deploy failed its tests, its exit trap restarted
+  the timers at 12:22:44, and every staging service ran then. Only the
+  generator failed, as tomorrow's prices were not out. A staging deploy
+  that passes its tests regenerates the units; check after it that no
+  staging timer has Requires=.
+- test_spot_prices.py reads datetime.utcnow() as local time and fails
+  east of UTC+3; test_edit_heating_program.py fails at some times of
+  day far east. Helsinki passes.
+
 ## Stability Findings (2026-09-09)
 
 Measured from the Pi journal (only reaches back to 2026-08-28, 12 days)
