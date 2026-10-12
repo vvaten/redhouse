@@ -134,6 +134,10 @@ for timer in "${TIMERS[@]}"; do
     echo "[OK] Enabled $timer.timer"
 done
 
+# Runs once at boot; enabled, never started here
+systemctl enable redhouse-pump-restore.service
+echo "[OK] Enabled redhouse-pump-restore.service for boot"
+
 # Show status
 echo ""
 echo "=================================================="

@@ -167,6 +167,15 @@ class TestEVUCycling(unittest.TestCase):
         assert controller.last_command == "EVU" and controller.on_since is None
         assert json.loads(Path(controller.state_file).read_text())["last_command"] == "EVU"
 
+    def test_an_unsynced_apply_keeps_the_last_real_command_time(self):
+        """Also when the mode write after the pulse fails and EVU is recorded."""
+        for write_ok in (True, False):
+            controller = _controller(self.tmpdir, "ON", on_since=7000)
+            controller.hardware.write_pump_command = lambda c, ok=write_ok: ok or c == "EVU"
+            controller.apply_state("ON", 3000, clock_ok=False)
+            assert controller.last_command == ("ON" if write_ok else "EVU")
+            assert controller.last_command_time == 7000, write_ok
+
     def test_a_write_that_dies_midway_keeps_the_old_state(self):
         controller = _controller(self.tmpdir, "EVU", on_since=None)
         controller._save_state()

@@ -160,6 +160,8 @@ class TestCheckSystemdServices:
     """A disabled timer is a deployment choice, not a fault."""
 
     def _run(self, answers):
+        answers = {"is-failed": "inactive", **answers}
+
         def fake(verb, unit):
             return answers[verb]
 
@@ -186,6 +188,12 @@ class TestCheckSystemdServices:
         failures, warnings = self._run({"is-enabled": "unknown", "is-active": "unknown"})
         assert failures == []
         assert len(warnings) == len(health_check.REDHOUSE_SERVICES)
+
+    def test_a_failed_boot_restore_is_a_failure(self):
+        failures, _ = self._run(
+            {"is-enabled": "enabled", "is-active": "active", "is-failed": "failed"}
+        )
+        assert failures == ["Boot unit redhouse-pump-restore.service failed: check the pump state"]
 
     def test_skipped_off_linux(self):
         with patch.object(health_check.platform, "system", return_value="Windows"):

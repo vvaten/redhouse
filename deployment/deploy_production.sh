@@ -152,6 +152,21 @@ verify_timer_states() {
     return "$failed"
 }
 
+# Exit 0 only if every boot-only unit is enabled exactly when the
+# executor timer runs: a boot restore drives the pump like the executor.
+verify_boot_units() {
+    local unit want got failed=0
+    if should_run "redhouse-execute-program"; then want="enabled"; else want="disabled"; fi
+    for unit in "${BOOT_UNITS[@]}"; do
+        got="$(systemctl is-enabled "$unit.service" 2>/dev/null || true)"
+        if [ "$got" != "$want" ]; then
+            echo "  [FAIL] $unit.service is $got, expected $want"
+            failed=1
+        fi
+    done
+    return "$failed"
+}
+
 # A fresh install has no earlier commit to go back to.
 rollback_hint() {
     if [ "$PRE_DEPLOY_COMMIT" != "(fresh install)" ]; then
@@ -479,12 +494,32 @@ if [ "$STOPPED" -gt 0 ]; then
     echo "Disable its wibatemp cron line in the same step."
 fi
 
+BOOT_UNITS=(
+    "redhouse-pump-restore"
+)
+# Run once at boot, never started here; they follow the executor timer
+for unit in "${BOOT_UNITS[@]}"; do
+    if should_run "redhouse-execute-program"; then
+        action="enable"
+    else
+        action="disable"
+    fi
+    if systemctl "$action" "$unit.service"; then
+        echo "  [OK] $unit.service: $action"
+    else
+        echo "  [WARN] could not $action $unit.service; the check below reports it"
+    fi
+done
+
 # --- Verify every timer reached the state chosen above ---
 
 echo ""
 echo "Verifying timer states..."
-if ! verify_timer_states; then
-    echo "[FAIL] Deploy finished with timers in the wrong state"
+STATES_OK=true
+verify_timer_states || STATES_OK=false
+verify_boot_units || STATES_OK=false
+if [ "$STATES_OK" != true ]; then
+    echo "[FAIL] Deploy finished with timers or boot units in the wrong state"
     rollback_hint
     exit 1
 fi
@@ -523,4 +558,5 @@ echo ""
 systemctl list-timers redhouse-* --no-pager
 echo ""
 echo "Monitor: journalctl -u \"redhouse-*\" -f"
-echo "Stop:    sudo systemctl stop redhouse-*.timer"
+echo "Pump:    to hand the pump back to wibatemp, follow the Phase 6"
+echo "         Rollback in docs/PRODUCTION_DEPLOYMENT_PLAN.md"

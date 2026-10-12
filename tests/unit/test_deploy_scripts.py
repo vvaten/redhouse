@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
+from src.control import pump_restore
+from src.control.pump_controller import PumpController
+
 REPO = Path(__file__).parents[2]
+# The request timeouts of the Shelly call (connect and read, 5 s each)
+# and the timedatectl call
+SHELLY_HTTP_TIMEOUT = 10
+TIMEDATECTL_TIMEOUT = 10
 PRODUCTION_DEPLOY = REPO / "deployment" / "deploy_production.sh"
 STAGING_DEPLOY = REPO / "deployment" / "deploy_staging.sh"
 WAS_RUNNING_TEST = REPO / "tests" / "shell" / "was_running.sh"
@@ -184,6 +191,46 @@ class TestHeatingControlUnits:
 
     EXECUTE = REPO / "deployment" / "systemd" / "redhouse-execute-program.service"
     GENERATE = REPO / "deployment" / "systemd" / "redhouse-generate-program.timer"
+
+    def test_pump_restore_is_dry_run_until_cutover(self):
+        """Before the cutover, wibatemp's cron line 27 owns the boot restore."""
+        unit = REPO / "deployment" / "systemd" / "redhouse-pump-restore.service"
+        exec_start = _values(unit.read_text(encoding="utf-8"), "ExecStart")
+        assert len(exec_start) == 1 and "--dry-run" in exec_start[0]
+
+    def test_executor_and_restore_hand_over_together(self):
+        """Both units drive the pump: one live and one dry-run is never right."""
+        restore = REPO / "deployment" / "systemd" / "redhouse-pump-restore.service"
+        dry = [
+            "--dry-run" in _values(unit.read_text(encoding="utf-8"), "ExecStart")[0]
+            for unit in (self.EXECUTE, restore)
+        ]
+        assert dry[0] == dry[1]
+
+    def test_restore_runs_before_the_executor_with_room_to_finish(self):
+        restore = REPO / "deployment" / "systemd" / "redhouse-pump-restore.service"
+        text = restore.read_text(encoding="utf-8")
+        assert "redhouse-execute-program.service" in " ".join(_values(text, "Before"))
+        pc = PumpController
+        shelly = pc.SHELLY_ATTEMPTS * (SHELLY_HTTP_TIMEOUT + pc.SHELLY_RETRY_WAIT)
+        relays = 2 * (pc.RELAY_ATTEMPTS - 1) * pc.RELAY_RETRY_WAIT
+        waits = pump_restore.CLOCK_SYNC_TIMEOUT + pump_restore.LATE_SYNC_TIMEOUT
+        overshoot = 2 * (pump_restore.CLOCK_SYNC_POLL + TIMEDATECTL_TIMEOUT)
+        budget = waits + overshoot + 2 * (pc.EVU_CYCLE_DURATION + shelly + relays)
+        assert int(_values(text, "TimeoutStartSec")[0]) >= budget
+
+    def test_boot_units_follow_the_executor_and_are_never_started(self):
+        """A rollback that stopped the executor must not get a live boot restore back."""
+        text = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+        units = _list(text, "BOOT_UNITS")
+        assert units == ["redhouse-pump-restore"]
+        for unit in units:
+            assert (REPO / "deployment" / "systemd" / f"{unit}.service").is_file()
+            assert not (REPO / "deployment" / "systemd" / f"{unit}.timer").exists()
+        assert text.count('if should_run "redhouse-execute-program"; then') >= 2
+        assert 'systemctl "$action" "$unit.service"' in text
+        assert 'systemctl restart "$unit' not in text and 'systemctl start "$unit' not in text
+        assert "verify_boot_units || STATES_OK=false" in text
 
     def test_executor_is_dry_run_until_cutover(self):
         """Removing --dry-run hands pump control to redhouse.
@@ -558,6 +605,9 @@ class TestDeployGates:
         assert 'REDHOUSE_DEPLOY_REEXEC="$FRESH_SCRIPT" REDHOUSE_DEPLOY_SHA=' in self.TEXT
 
     def test_verification_fails_the_deploy(self):
-        verify = self._at("if ! verify_timer_states; then")
+        verify = self._at("verify_timer_states || STATES_OK=false")
         assert verify > self._at('systemctl restart "$timer.timer"')
-        assert 'echo "[FAIL] Deploy finished with timers in the wrong state"' in self.TEXT
+        assert (
+            'echo "[FAIL] Deploy finished with timers or boot units in the wrong state"'
+            in self.TEXT
+        )

@@ -1,0 +1,22 @@
+[Unit]
+Description=RedHouse Heat Pump State Restore
+After=network-online.target redhouse-program-fallback.service
+Wants=network-online.target
+# The executor must not drive the pump while the restore does
+Before=redhouse-execute-program.service
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+# Runs once at boot. --dry-run until the Phase 6 cutover, like the
+# executor: before it, wibatemp restores the pump from cron line 27.
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/restore_pump_state.py --dry-run
+# Up to 17 min of clock sync waits plus two applies with Shelly retries
+TimeoutStartSec=1500
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-pump-restore
+
+[Install]
+WantedBy=multi-user.target

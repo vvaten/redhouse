@@ -410,13 +410,14 @@ class PumpController:
 
         return result
 
-    def apply_state(self, command: str, current_time: int) -> dict:
+    def apply_state(self, command: str, current_time: int, clock_ok: bool = True) -> dict:
         """Set the pump to command from any unknown state, as after a reboot.
-        ON and ALE get an EVU-off pulse first, which also opens the pump's
-        direct-heating block window; the circulation pump is set explicitly."""
+        ON and ALE get an EVU-off pulse first; the circulation pump is set too.
+        An unsynced clock is not recorded as the command time."""
         if command not in self.VALID_COMMANDS:
             raise ValueError(f"Invalid command '{command}'")
 
+        stamp = current_time if clock_ok else self.last_command_time
         result: dict[str, Any] = {"success": False, "command": command, "error": None}
         circulation_ok = True
         if command in ("ON", "ALE"):
@@ -431,7 +432,7 @@ class PumpController:
         if not applied["success"]:
             if command in ("ON", "ALE"):
                 # The pulse left the relays in EVU
-                self.last_command, self.last_command_time, self.on_since = "EVU", current_time, None
+                self.last_command, self.last_command_time, self.on_since = "EVU", stamp, None
                 self._save_state()
             result["error"] = f"{command} failed: {applied['error']}"
             return result
@@ -440,7 +441,7 @@ class PumpController:
 
         released = current_time + self.EVU_CYCLE_DURATION
         self.last_command = command
-        self.last_command_time = current_time
+        self.last_command_time = stamp
         if command in ("ON", "ALE"):
             self.last_evu_cycle_time = current_time
         self.on_since = released if command == "ON" else None

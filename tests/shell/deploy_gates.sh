@@ -9,7 +9,7 @@ FAILED=0
 extract() {
     sed -n "/^$1() {/,/^}/p" "$SCRIPT"
 }
-for fn in ci_gate verify_timer_states epoch_of verify_no_offschedule_runs; do
+for fn in ci_gate verify_timer_states verify_boot_units epoch_of verify_no_offschedule_runs; do
     eval "$(extract "$fn")"
     if ! declare -F "$fn" > /dev/null; then
         echo "  FAIL  could not extract $fn from $SCRIPT"
@@ -46,6 +46,7 @@ should_run() { [ "$1" = "redhouse-a" ]; }
 declare -A ENABLED ACTIVE
 systemctl() {
     local name="${2%.timer}"
+    name="${name%.service}"
     case "$1" in
         is-enabled) echo "${ENABLED[$name]}" ;;
         is-active) echo "${ACTIVE[$name]}" ;;
@@ -65,6 +66,18 @@ verify_timer_states > /dev/null; expect "an enabled timer that should not run fa
 ENABLED[redhouse-b]=disabled
 ENABLED[redhouse-a]=not-found
 verify_timer_states > /dev/null; expect "a missing unit fails" 1 $?
+
+echo "case: boot units follow the executor timer"
+BOOT_UNITS=("redhouse-boot")
+should_run() { [ "$1" = "redhouse-execute-program" ]; }
+ENABLED[redhouse-boot]=enabled
+verify_boot_units > /dev/null; expect "enabled while the executor runs passes" 0 $?
+ENABLED[redhouse-boot]=disabled
+verify_boot_units > /dev/null; expect "disabled while the executor runs fails" 1 $?
+should_run() { false; }
+verify_boot_units > /dev/null; expect "disabled while the executor is stopped passes" 0 $?
+ENABLED[redhouse-boot]=enabled
+verify_boot_units > /dev/null; expect "enabled while the executor is stopped fails" 1 $?
 
 echo "case: no job ran off schedule"
 TIMERS=("redhouse-a" "redhouse-b" "redhouse-temperature")

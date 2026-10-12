@@ -33,6 +33,7 @@ def _load_wrapper(filename: str):
         "check_program.py",
         "execute_heating_program_v2.py",
         "fallback_program.py",
+        "restore_pump_state.py",
         "generate_heating_program_v2.py",
     ],
 )

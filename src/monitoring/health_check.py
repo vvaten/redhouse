@@ -42,6 +42,9 @@ REDHOUSE_SERVICES = [
     "redhouse-program-fallback",
 ]
 
+# Oneshot services that run at boot, with no timer to watch
+BOOT_SERVICES = ["redhouse-pump-restore"]
+
 # A repeating problem must not mail on every run. 96 runs a day once
 # exhausted the Resend daily quota and buried the real alerts.
 ALERT_STATE_FILE = Path("data/health_check_state.json")
@@ -186,6 +189,11 @@ def check_systemd_services() -> tuple[list[str], list[str]]:
         active = _systemctl("is-active", timer_name)
         if active != "active":
             failures.append(f"Timer {timer_name} is enabled but {active}")
+
+    for service in BOOT_SERVICES:
+        unit = _timer_unit(service).replace(".timer", ".service")
+        if _systemctl("is-failed", unit) == "failed":
+            failures.append(f"Boot unit {unit} failed: check the pump state")
 
     if not failures:
         logger.info("All %d enabled systemd timers are active", checked)
