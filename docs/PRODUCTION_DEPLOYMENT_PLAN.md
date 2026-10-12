@@ -1,7 +1,7 @@
 # RedHouse Production Deployment Plan
 
 **Created:** 2026-04-06
-**Updated:** 2026-10-10
+**Updated:** 2026-10-12
 **Status:** In Progress
 **Goal:** Replace wibatemp with redhouse as the production system
 
@@ -149,7 +149,7 @@ or deleting one shifts it, so check the content before you edit.
 | Wed 16 | Phase 4 soak. Fallback code to staging. | tiers at 288 / 96 / 24 per day |
 | Thu 17 | Phase 4 checkpoint at 48 h. Phase 5 repoint the emeters readers. Fallback to production. | both readers on emeters_5min give the same figures |
 | Fri 18 | Soak. Do NOT cut over heating before a weekend. | 15-min tier holding 96/day, no window loss |
-| Mon 21 | Phase 6 heating cutover, right after 16:05 when a fresh program exists. | pump command at the next quarter hour, load_control filling, pump responds |
+| Mon 21 | Phase 6 heating cutover, right after 16:05 when a fresh program exists. Moved to Mon 2026-10-12. | pump command at the next quarter hour, load_control filling, pump responds |
 | Tue 22 on | Watch, then Phase 7 cleanup. | |
 
 Why Monday 21 and not Friday 18 for the cutover: it is the one step
@@ -186,10 +186,9 @@ NOT a clean swap. Both predictors write the same field,
 `solar_yield_avg_prediction`, into `emeters`/`energy`. They must never
 run together. Comment live cron line 47 and start the timer in one step.
 
-Redhouse's predictor reads `emeters`/`energy`, which only wibatemp's
-netting produces, so this works today and needs no code change. That
-dependency pins live lines 38 and 39 in place: line 39 nets, and it
-needs ts_diff from line 38. Both retire together in Phase 7.
+Redhouse's predictor read its error history from `emeters`/`energy`,
+which only wibatemp's netting produces. Since Phase 5 it reads
+`emeters_5min` instead. Lines 38 and 39 retire together in Phase 7.
 
 Checkpoint: one hourly run writes the field, and the 16:05 program
 still reports a solar figure.
@@ -234,26 +233,84 @@ windows in staging, so confirm that is gone before relying on it.
 
 ### Phase 5: repoint the emeters readers (code change)
 
-Move redhouse predict_solar_yield and heating_data_fetcher from
-`emeters`/`energy` to `emeters_5min`. Then nothing in redhouse reads
-wibatemp's netting, and Phase 7 can retire lines 38 and 39.
-
-Checkpoint: both read the new bucket and produce the same figures for
-a day, compared side by side.
+Done 2026-10-12. Only predict_solar_yield read wibatemp's netting, and
+only for the prediction error it logs: it now reads solar_yield_avg
+from `emeters_5min`. The prediction itself uses weather only, and
+heating_data_fetcher reads only the prediction, which redhouse writes
+to `emeters` since Phase 2. Line 38 no longer writes predictions: its
+source, wibatemp's predictor, stopped on 2026-09-17.
 
 ### Phase 6: heating control (the critical cutover)
 
-Comment live cron lines 33, 34, 35 and 27 (the @reboot mlp_control
-restore), then start generate-program and execute-program together.
-Only one system may drive the pump.
+Only one system may drive the pump. Prerequisites: the pump control
+test (2026-04-06 and 2026-04-08); done 2026-10-12: the program
+fallback, the EVU pulse fix (one pulse every 105 min of continuous ON,
+inside the pump's 120-min direct-heating block) and
+redhouse-pump-restore, the boot unit that replaces cron line 27.
 
-Prerequisites, all of them: Phases 1-5 complete; the pump control test
-done and recorded. The program fallback exists: generate-program
-retries hourly until 23:06, and program-fallback copies the day's
-program forward at 23:50 when the next one is still missing.
+Cutover, after 16:06 when both systems have tomorrow's program and
+neither has a command pending. The deploy itself makes redhouse live:
+it restarts the executor timer with the unit that drives the pump.
 
-Checkpoint: a pump command at the next quarter hour, load_control
-getting data, and the physical pump responding.
+If the pump is ON, time it from wibatemp's EVU pulse, which line 35
+runs at :23 of even hours. Do step 3 right after the 16:23 pulse, for
+example at 16:24. Deploy in the :37 window, and start step 5 by
+16:43. Step 5 must always run within 120 min of wibatemp's last pulse.
+
+1. Compare tomorrow's two programs.
+2. Push the cutover commit and wait for green CI. Nothing changes on
+   the Pi until the deploy.
+3. `sudo crontab -l > /home/pi/crontab_backup_YYYYMMDD.txt`, then
+   comment live root cron lines 33, 34, 35 and 27.
+4. Deploy. It removes --dry-run from redhouse-execute-program and
+   redhouse-pump-restore.
+5. Check that `systemctl is-active redhouse-execute-program.service`
+   does not say activating. Move aside the mock state the old dry-run
+   executor left: `sudo -u pi mv /opt/redhouse/data/pump_state.json
+   /opt/redhouse/data/pump_state_before_cutover.json`. Then
+   `sudo systemctl start redhouse-pump-restore.service` once, not
+   within a minute of :00, :15, :30 or :45: it applies the program's
+   due state on the real hardware. If it fails, the health check
+   reports it; start it again once the cause is fixed.
+6. Check its journal for CombinedHardwareInterface and no I2C error,
+   and that redhouse-execute-program.timer is active.
+
+If the deploy does not end green, check
+`systemctl cat redhouse-execute-program.service | grep ExecStart`.
+With --dry-run, nothing drives the pump: uncomment lines 34, 35 and 27
+at once, before the next quarter hour (line 33 has already run).
+wibatemp then replays the entries it missed. Without it, redhouse
+drives the pump: continue with step 5, or roll back.
+
+Checkpoint: the first scheduled commands run on real hardware, with an
+EVU pulse at most every 120 min of ON, and the pump responds.
+
+Rollback:
+
+1. At once: `sudo systemctl disable --now redhouse-execute-program.timer`
+   and `sudo systemctl disable redhouse-pump-restore.service`, so a
+   reboot does not start them again. Then wait until
+   `systemctl is-active redhouse-execute-program.service
+   redhouse-pump-restore.service` no longer says activating: a run in
+   progress still writes the relays.
+2. Do this at once after step 1. Write redhouse's last command from
+   /opt/redhouse/data/pump_state.json into
+   /home/pi/wibatemp/mlp_status.txt, so wibatemp knows the relays.
+   Then set the state wibatemp starts from with
+   `sudo /home/pi/wibatemp/mlp_control.sh <state>`, which sets the
+   relays and the file together. Setting ON pulses EVU first, which
+   gives a fresh 120-min release. Use the state today's program
+   wants now. From the second day after the cutover, wibatemp has no
+   program for today and holds that state until tomorrow, so use ALE,
+   not EVU. Then uncomment the four lines. If the rollback happens
+   after 16:05, also run run_generate_heating_program.sh once by hand.
+3. `git revert` the cutover commit, push, wait for green CI, deploy.
+   The deploy leaves the stopped executor timer disabled.
+
+On its first run wibatemp replays every entry of today's program that
+has no executed_at, in a burst with an EVU pulse before each ON; it
+ends in the state its program wants. With no program for today it
+holds the mlp_status.txt state until the next day.
 
 Manual control. Until the cutover, use wibatemp's
 `sudo /home/pi/wibatemp/mlp_control.sh ON|ALE|EVU`. After it, use
@@ -1047,10 +1104,9 @@ replace cron line 39. See "CheckWatt Bucket Migration" below.
 
 Solar prediction note: both predictors write the same field
 `solar_yield_avg_prediction` into `emeters`/`energy`. Never run both.
-Swap in one step: comment line 47, start the redhouse timer. The redhouse
-predictor reads `emeters`/`energy` netting, which cron line 39 produces
-from line 38's Shelly fields, so lines 38 and 39 keep running until
-roadmap Phase 7 retires them together.
+Swap in one step: comment line 47, start the redhouse timer. Since
+Phase 5 the redhouse predictor reads its error history from
+`emeters_5min`; lines 38 and 39 retire together in roadmap Phase 7.
 
 For each:
 ```bash
@@ -1070,11 +1126,10 @@ Decision: redhouse writes CheckWatt data to a NEW bucket `checkwatt`.
 wibatemp keeps writing `checkwatt_full_data`. Reasons:
 
 - Cron line 39 (checkwatt_dataloader) also computes the 5-min netted
-  `energy` measurement in `emeters`. wibatemp generate_heating_program,
-  wibatemp predict_solar_yield, redhouse predict_solar_yield and
-  redhouse heating_data_fetcher all read it. Lines 38 and 39 run until
-  roadmap Phase 7. Separate buckets let both loaders run in parallel
-  with no collision.
+  `energy` measurement in `emeters`. When this was decided, both
+  generators and both solar predictors read it; since Phase 5 no
+  redhouse code does. Lines 38 and 39 run until roadmap Phase 7.
+  Separate buckets let both loaders run in parallel with no collision.
 - Both loaders write identical points (measurement `checkwatt`, same six
   fields, timestamps from the CheckWatt API), so a copy is lossless.
 
@@ -1102,11 +1157,9 @@ two calls: the raw writer (`update_checkwatt_data_in_influx`) then the
 netter (`checkwatt_energy_netter`). They are separable, which matters
 because only the raw writer is replaced by redhouse.
 
-The netter is NOT replaced. It produces `emeters`/`energy`, read by
-wibatemp generate_heating_program, both solar predictors, and redhouse
-heating_data_fetcher. Redhouse's aggregation writes `emeters_5min`
-instead, a different bucket. So commenting out the whole of line 39
-breaks four consumers.
+The netter is NOT replaced. It produces `emeters`/`energy`. Since
+Phase 5 no redhouse code reads it; redhouse's aggregation writes
+`emeters_5min` instead. It goes with line 38 in Phase 7.
 
 Two halves, retire separately:
 
@@ -1191,44 +1244,9 @@ cat /home/pi/wibatemp/data/heating_program_*.json | python -m json.tool
 2. Verify EVU-OFF periods look reasonable (threshold 0.40 EUR/kWh)
 3. Verify heating hours match expected curve (12h at -20C, 6h at 0C, 2h at 16C)
 
-**Cutover (do right after 16:05 when fresh program exists):**
-
-```bash
-# 1. Disable wibatemp heating control
-crontab -e
-# Comment out:
-#   Line 33: generate_heating_program (16:05)
-#   Line 34: execute_heating_program (*/15)
-#   Line 35: mlp_cycle_evu_off (*/2 :23)
-#   Line 27: @reboot mlp_control.sh restore
-# Lines 38 and 39 stay. They retire together in roadmap Phase 7.
-
-# 2. Enable redhouse heating control
-sudo systemctl restart redhouse-generate-program.timer
-sudo systemctl restart redhouse-execute-program.timer
-
-# 3. Monitor closely
-journalctl -u redhouse-execute-program.service -f
-journalctl -u redhouse-generate-program.service -f
-```
-
-**Verify within first hour:**
-- Pump command executed at next :00/:15/:30/:45
-- No errors in journal
-- Grafana load_control bucket shows data
-
-**Fallback (if problems):**
-```bash
-# Stop redhouse heating control
-sudo systemctl stop redhouse-execute-program.timer
-sudo systemctl stop redhouse-generate-program.timer
-
-# Restore wibatemp
-crontab /home/pi/crontab_backup_YYYYMMDD.txt
-
-# Restore pump state
-sudo /home/pi/wibatemp/mlp_control.sh restore
-```
+**Cutover and rollback:** superseded by the roadmap's Phase 6 runbook
+above. Do not use the older procedure that stood here: it left the
+redhouse boot restore enabled and restored a stale wibatemp state.
 
 ### Step 5: Health monitoring and backup
 
@@ -1284,18 +1302,9 @@ Both systems write identical formats to InfluxDB:
 
 ## Rollback Plan
 
-At any point, full rollback to wibatemp:
-
-```bash
-# Stop all redhouse services
-sudo systemctl stop redhouse-*.timer
-
-# Restore full wibatemp crontab
-crontab /home/pi/crontab_backup_YYYYMMDD.txt
-
-# Restore pump state
-sudo /home/pi/wibatemp/mlp_control.sh restore
-```
+Heating control: follow the rollback in the roadmap's Phase 6. Do not
+stop all redhouse timers: no wibatemp cron line backs the migrated
+collectors any more, so that would stop data collection too.
 
 ---
 

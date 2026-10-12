@@ -9,9 +9,9 @@ Before=redhouse-execute-program.service
 Type=oneshot
 User=pi
 WorkingDirectory=/opt/redhouse
-# Runs once at boot. --dry-run until the Phase 6 cutover, like the
-# executor: before it, wibatemp restores the pump from cron line 27.
-ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/restore_pump_state.py --dry-run
+# Runs once at boot: the relay board may not keep its state across a
+# reboot, and the next program command can be hours away.
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/restore_pump_state.py
 # Up to 17 min of clock sync waits plus two applies with Shelly retries
 TimeoutStartSec=1500
 StandardOutput=journal

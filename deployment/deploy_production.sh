@@ -444,9 +444,8 @@ TIMERS=(
 )
 
 # Restart only what was running before the deploy, and converge the
-# enabled state onto it so a reboot reproduces exactly that. Starting
-# every timer here would hand redhouse the heat pump while wibatemp
-# still drives it from cron lines 33, 34 and 35.
+# enabled state onto it so a reboot reproduces exactly that. A stopped
+# timer is a deliberate choice, often because wibatemp still owns it.
 was_running() {
     case " $RUNNING_TIMERS " in
         *" $1 "*) return 0 ;;

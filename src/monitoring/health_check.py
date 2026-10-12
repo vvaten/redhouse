@@ -161,8 +161,8 @@ def check_disk_space() -> tuple[list[str], list[str]]:
 def check_systemd_services() -> tuple[list[str], list[str]]:
     """Check that every enabled redhouse timer is running.
 
-    A disabled timer is a deployment choice, not a fault: most stay off
-    until the migration reaches them, and wibatemp still owns those jobs.
+    A disabled timer is a deployment choice, not a fault: it stays off
+    until the migration reaches it.
 
     Returns:
         Tuple of (failures, warnings)

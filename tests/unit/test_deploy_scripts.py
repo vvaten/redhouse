@@ -187,16 +187,16 @@ class TestStagingTimersScript:
 
 
 class TestHeatingControlUnits:
-    """The two units that will eventually drive the heat pump."""
+    """The units that drive the heat pump and generate its program."""
 
     EXECUTE = REPO / "deployment" / "systemd" / "redhouse-execute-program.service"
     GENERATE = REPO / "deployment" / "systemd" / "redhouse-generate-program.timer"
 
-    def test_pump_restore_is_dry_run_until_cutover(self):
-        """Before the cutover, wibatemp's cron line 27 owns the boot restore."""
+    def test_pump_restore_drives_the_pump(self):
+        """Since the cutover, redhouse, not wibatemp's cron line 27, restores at boot."""
         unit = REPO / "deployment" / "systemd" / "redhouse-pump-restore.service"
         exec_start = _values(unit.read_text(encoding="utf-8"), "ExecStart")
-        assert len(exec_start) == 1 and "--dry-run" in exec_start[0]
+        assert len(exec_start) == 1 and "--dry-run" not in exec_start[0]
 
     def test_executor_and_restore_hand_over_together(self):
         """Both units drive the pump: one live and one dry-run is never right."""
@@ -232,17 +232,13 @@ class TestHeatingControlUnits:
         assert 'systemctl restart "$unit' not in text and 'systemctl start "$unit' not in text
         assert "verify_boot_units || STATES_OK=false" in text
 
-    def test_executor_is_dry_run_until_cutover(self):
-        """Removing --dry-run hands pump control to redhouse.
-
-        This test is meant to fail at the Phase 6 cutover, so that the
-        removal is deliberate and lands in the same commit as its
-        justification. Do not delete it to make a deploy pass.
-        """
+    def test_executor_drives_the_pump(self):
+        """Adding --dry-run back hands pump control away from redhouse, so it
+        must be deliberate: change this test in the same commit."""
         text = self.EXECUTE.read_text(encoding="utf-8")
         exec_start = [ln for ln in text.splitlines() if ln.startswith("ExecStart=")]
         assert len(exec_start) == 1, exec_start
-        assert "--dry-run" in exec_start[0]
+        assert "--dry-run" not in exec_start[0]
 
     FALLBACK = REPO / "deployment" / "systemd" / "redhouse-program-fallback.timer"
     SCHEDULE = re.compile(r"^\*-\*-\* (\d{2})\.\.(\d{2}):(\d{2}):00$")
@@ -255,10 +251,9 @@ class TestHeatingControlUnits:
         assert match, f"not an hourly retry range: {schedules[0]}"
         return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
-    def test_generate_does_not_collide_with_wibatemp(self):
-        """wibatemp generates the controlling program at 16:05."""
+    def test_generate_starts_at_16_06(self):
         first, _, minute = self._generate_schedule()
-        assert (first, minute) != (16, 5), "must not run with wibatemp's generator"
+        assert (first, minute) == (16, 6)
 
     def test_generate_retries_until_late_evening_without_catchup(self):
         """A boot-time catch-up before the prices publish only fails."""

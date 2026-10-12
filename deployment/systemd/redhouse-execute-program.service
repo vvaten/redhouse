@@ -7,10 +7,9 @@ Wants=network-online.target
 Type=oneshot
 User=pi
 WorkingDirectory=/opt/redhouse
-# --dry-run until the Phase 6 cutover: logs the commands it would send
-# and skips both the pump command and its own InfluxDB write. Removing
-# it is what hands pump control to redhouse, so remove it deliberately.
-ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/execute_heating_program_v2.py --dry-run
+# Drives the real heat pump. Adding --dry-run hands control back: it
+# logs the commands and skips the pump and its InfluxDB write.
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/execute_heating_program_v2.py
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=redhouse-execute-program

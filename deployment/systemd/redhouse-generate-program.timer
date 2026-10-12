@@ -2,9 +2,8 @@
 Description=RedHouse Heating Program Generation Timer
 
 [Timer]
-# 16:06, not 16:05: wibatemp generates the program that actually
-# controls the house at 16:05, and this one is a shadow until Phase 6.
-# :07 to :09 is a deploy window. Hourly retries end at 23:06.
+# After the day-ahead spot prices publish, clear of the :07 to :09
+# deploy window. Hourly retries end at 23:06.
 OnCalendar=*-*-* 16..23:06:00
 AccuracySec=1s
 
