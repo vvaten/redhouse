@@ -159,15 +159,16 @@ class TestTimerUnitNames:
 class TestCheckSystemdServices:
     """A disabled timer is a deployment choice, not a fault."""
 
-    def _run(self, answers):
+    def _run(self, answers, staging="false"):
         answers = {"is-failed": "inactive", **answers}
 
         def fake(verb, unit):
             return answers[verb]
 
-        with patch.object(health_check.platform, "system", return_value="Linux"):
-            with patch.object(health_check, "_systemctl", side_effect=fake):
-                return health_check.check_systemd_services()
+        with patch.dict("os.environ", {"STAGING_MODE": staging}):
+            with patch.object(health_check.platform, "system", return_value="Linux"):
+                with patch.object(health_check, "_systemctl", side_effect=fake):
+                    return health_check.check_systemd_services()
 
     def test_disabled_timers_are_not_failures(self):
         failures, warnings = self._run({"is-enabled": "disabled", "is-active": "inactive"})
@@ -194,6 +195,14 @@ class TestCheckSystemdServices:
             {"is-enabled": "enabled", "is-active": "active", "is-failed": "failed"}
         )
         assert failures == ["Boot unit redhouse-pump-restore.service failed: check the pump state"]
+
+    def test_staging_checks_its_own_boot_restore(self):
+        failures, _ = self._run(
+            {"is-enabled": "enabled", "is-active": "active", "is-failed": "failed"}, "true"
+        )
+        assert failures == [
+            "Boot unit redhouse-staging-pump-restore.service failed: check the pump state"
+        ]
 
     def test_skipped_off_linux(self):
         with patch.object(health_check.platform, "system", return_value="Windows"):
