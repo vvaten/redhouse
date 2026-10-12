@@ -29,7 +29,8 @@ def install(tmp_path):
         (python, 'echo "ran $*"')
     ]:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"#!/bin/bash\n{body}\n", newline="\n")
+        with open(path, "w", newline="\n") as f:
+            f.write(f"#!/bin/bash\n{body}\n")
         path.chmod(0o755)
     shutil.copy(HELPER, tmp_path / "install" / "pump.sh")
     return tmp_path
