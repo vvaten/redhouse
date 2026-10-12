@@ -3,9 +3,9 @@
 Solar yield prediction for RedHouse heating system.
 
 This script predicts solar panel yield based on:
-- Historical solar production data (emeters bucket)
 - Weather forecast radiation data (weather bucket)
 - Pre-trained hourly conversion ratios
+- Historical solar production (emeters_5min bucket), for the error only
 
 The predictions are written to the emeters bucket as 'solar_yield_avg_prediction' field.
 """
@@ -38,6 +38,9 @@ SNOW_COVER_FACTOR = 1.0
 
 # Model file path (relative to project root)
 SOLAR_MODEL_FILE = Path(__file__).parent / "models" / "solar_yield_model.json"
+
+# The model and its predictions use Wh/s; emeters_5min stores W.
+W_PER_WH_PER_S = 3600.0
 
 
 def load_solar_model():
@@ -85,13 +88,13 @@ def load_solar_model():
 
 def fetch_weather_and_emeters_data(influx_client):
     """
-    Fetch weather forecast and historical emeters data from InfluxDB.
+    Fetch weather forecast and historical solar production from InfluxDB.
 
     Args:
         influx_client: InfluxClient instance
 
     Returns:
-        pandas.DataFrame: Combined weather and emeters data
+        pandas.DataFrame: Combined weather and solar production data
     """
     config = influx_client.config
 
@@ -104,19 +107,20 @@ def fetch_weather_and_emeters_data(influx_client):
       |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
     """
 
-    # Fetch historical solar production
+    # Historical solar production, only to measure the prediction error
     emeters_query = f"""
-    from(bucket: "{config.influxdb_bucket_emeters}")
+    from(bucket: "{config.influxdb_bucket_emeters_5min}")
       |> range(start: -5d, stop: 2d)
       |> filter(fn: (r) => r["_measurement"] == "energy")
-      |> filter(fn: (r) => r["_field"] == "solar_yield_avg" or r["_field"] == "emeter_avg" or r["_field"] == "consumption_avg")
+      |> filter(fn: (r) => r["_field"] == "solar_yield_avg")
       |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+      |> map(fn: (r) => ({{r with _value: r._value / {W_PER_WH_PER_S}}}))
     """
 
     logger.info("Fetching weather forecast data...")
     weather_result = influx_client.query_api.query(weather_query)
 
-    logger.info("Fetching historical emeters data...")
+    logger.info("Fetching historical solar production...")
     emeters_result = influx_client.query_api.query(emeters_query)
 
     # Combine results into a single dictionary
@@ -151,7 +155,7 @@ def predict_solar_yield(df, prediction_ratio, prediction_model):
     Predict solar yield using weather forecast and trained model.
 
     Args:
-        df: DataFrame with weather and emeters data
+        df: DataFrame with weather and solar production data
         prediction_ratio: DataFrame with hourly conversion ratios
         prediction_model: Model parameters dict
 
