@@ -386,6 +386,9 @@ sudo -u pi "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 sudo -u pi "$VENV_DIR/bin/pip" install --quiet -r requirements.txt
 echo "[OK] Dependencies installed"
 
+ln -sfn "$DEPLOY_DIR/pump.sh" /usr/local/bin/redhouse-pump
+echo "[OK] redhouse-pump runs $DEPLOY_DIR/pump.sh"
+
 # --- Validate configuration ---
 
 echo ""

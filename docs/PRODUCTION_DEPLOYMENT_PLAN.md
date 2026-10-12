@@ -255,6 +255,25 @@ program forward at 23:50 when the next one is still missing.
 Checkpoint: a pump command at the next quarter hour, load_control
 getting data, and the physical pump responding.
 
+Manual control. Until the cutover, use wibatemp's
+`sudo /home/pi/wibatemp/mlp_control.sh ON|ALE|EVU`. After it, use
+`redhouse-pump status` and `redhouse-pump ON|ALE|EVU`, which the deploy
+links to /opt/redhouse/pump.sh. It runs control_pump.py as pi.
+
+- It refuses a command while the executor or the boot restore runs,
+  or in the minute before :00, :15, :30 or :45: nothing locks the
+  relays and the state file between them. `status` and `--dry-run`
+  always run.
+- ON from ALE or an unknown state pulses EVU for 30 s first. ALE from
+  ON does not pulse. EVU from ON or ALE turns the circulation pump off.
+- A manual command holds until the next program entry; there is no
+  hold mode. A manual ON gets an EVU pulse at the first quarter-hour
+  check after 103 min of ON, then every 105 min. A reboot keeps a
+  manual command that is newer than the due entry.
+- Never use mlp_control.sh after the cutover. It sets the relays and
+  wibatemp's status file, but not redhouse's state, so redhouse would
+  act on a state the pump is not in.
+
 ### Phase 7: cleanup
 
 Retire live lines 38 (run_energy_to_fissio.sh) and 39
