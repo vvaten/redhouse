@@ -882,6 +882,63 @@
                                 "value": "Spot (no tax)"
                             }
                         ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            }
+                        ]
                     }
                 ]
             },
@@ -916,6 +973,14 @@
                     },
                     "query": "from(bucket: \"spotprice_staging\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"spot\")\n  |> filter(fn: (r) => r[\"_field\"] == \"price\" or r[\"_field\"] == \"price_total\" or r[\"_field\"] == \"price_withtax\" or r[\"_field\"] == \"price_sell\")\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))\n  |> yield(name: \"prices\")",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
                 }
             ],
             "title": "Spot Price",
@@ -1247,6 +1312,63 @@
                                 }
                             }
                         ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            }
+                        ]
                     }
                 ]
             },
@@ -1280,6 +1402,14 @@
                     },
                     "query": "from(bucket: \"weather_staging\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"weather\")\n  |> filter(fn: (r) =>\n    r[\"_field\"] == \"wind_speed\" or r[\"_field\"] == \"Wind speed\" or\n    r[\"_field\"] == \"cloud_cover\" or r[\"_field\"] == \"Cloud cover\" or r[\"_field\"] == \"Total cloud cover\" or\n    r[\"_field\"] == \"solar_radiation\" or r[\"_field\"] == \"Global radiation\" or\n    r[\"_field\"] == \"humidity\" or r[\"_field\"] == \"Humidity\" or\n    r[\"_field\"] == \"precipitation\" or r[\"_field\"] == \"Precipitation amount\" or\n    r[\"_field\"] == \"wind_direction\" or r[\"_field\"] == \"Wind direction\"\n  )\n  |> map(fn: (r) => ({r with _value:\n    if r._field == \"wind_direction\" or r._field == \"Wind direction\" then r._value * 0.1\n    else if r._field == \"solar_radiation\" or r._field == \"Global radiation\" then r._value * 0.1\n    else r._value\n  }))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
                 }
             ],
             "title": "Local Weather Forecast",
@@ -1477,6 +1607,96 @@
                                 "value": "Grid export"
                             }
                         ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "solar_yield_avg_prediction"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Solar prediction"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "super-light-yellow",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        10,
+                                        10
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            }
+                        ]
                     }
                 ]
             },
@@ -1511,6 +1731,22 @@
                     },
                     "query": "windowDuration = int(v: v.timeRangeStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nt1Start = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt1Stop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nfields = (r) => r[\"_field\"] == \"solar_yield_avg\" or r[\"_field\"] == \"consumption_avg\" or r[\"_field\"] == \"emeter_avg\" or r[\"_field\"] == \"battery_charge_avg\" or r[\"_field\"] == \"battery_discharge_avg\" or r[\"_field\"] == \"energy_import_avg\" or r[\"_field\"] == \"energy_export_avg\"\n\nt1 = from(bucket: \"emeters_5min_staging\")\n  |> range(start: t1Start, stop: t1Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy\")\n  |> filter(fn: fields)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min_staging\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: fields)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt3 = from(bucket: \"analytics_1hour_staging\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: fields)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nunion(tables: [t1, t2, t3])\n  |> yield(name: \"mean\")",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"emeters_staging\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy\")\n  |> filter(fn: (r) => r[\"_field\"] == \"solar_yield_avg_prediction\")\n  // Stored in Wh/s; the panel shows watts\n  |> map(fn: (r) => ({r with _value: r._value * 3600.0}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"prediction\")",
+                    "refId": "Prediction"
                 }
             ],
             "title": "Energy Meters",
@@ -1868,6 +2104,63 @@
                                 }
                             }
                         ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            }
+                        ]
                     }
                 ]
             },
@@ -1902,6 +2195,14 @@
                     },
                     "query": "windowDuration = int(v: v.timeRangeStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"checkwatt_staging\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"checkwatt\")\n  |> filter(fn: (r) => r[\"_field\"] == \"SolarYield\" or r[\"_field\"] == \"BatteryCharge\" or r[\"_field\"] == \"BatteryDischarge\" or r[\"_field\"] == \"EnergyImport\" or r[\"_field\"] == \"EnergyExport\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"emeters_5min_staging\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy\")\n  |> filter(fn: (r) => r[\"_field\"] == \"solar_yield_avg\" or r[\"_field\"] == \"battery_charge_avg\" or r[\"_field\"] == \"battery_discharge_avg\" or r[\"_field\"] == \"energy_import_avg\" or r[\"_field\"] == \"energy_export_avg\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: if r._field == \"solar_yield_avg\" then \"SolarYield\" else if r._field == \"battery_charge_avg\" then \"BatteryCharge\" else if r._field == \"battery_discharge_avg\" then \"BatteryDischarge\" else if r._field == \"energy_import_avg\" then \"EnergyImport\" else if r._field == \"energy_export_avg\" then \"EnergyExport\" else r._field}))\n\nt3 = from(bucket: \"analytics_15min_staging\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"solar_yield_avg\" or r[\"_field\"] == \"battery_charge_avg\" or r[\"_field\"] == \"battery_discharge_avg\" or r[\"_field\"] == \"energy_import_avg\" or r[\"_field\"] == \"energy_export_avg\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: if r._field == \"solar_yield_avg\" then \"SolarYield\" else if r._field == \"battery_charge_avg\" then \"BatteryCharge\" else if r._field == \"battery_discharge_avg\" then \"BatteryDischarge\" else if r._field == \"energy_import_avg\" then \"EnergyImport\" else if r._field == \"energy_export_avg\" then \"EnergyExport\" else r._field}))\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
                 }
             ],
             "title": "CheckWatt",
@@ -2515,6 +2816,63 @@
                                 }
                             }
                         ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            }
+                        ]
                     }
                 ]
             },
@@ -2550,6 +2908,14 @@
                     },
                     "query": "windowDuration = int(v: v.timeRangeStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"temperatures\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"temperatures\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /K.ytt.vesi ylh/ or r[\"_field\"] =~ /K.ytt.vesi alh/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min_staging\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /K.ytt.vesi ylh/ or r[\"_field\"] =~ /K.ytt.vesi alh/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt3 = from(bucket: \"analytics_1hour_staging\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /K.ytt.vesi ylh/ or r[\"_field\"] =~ /K.ytt.vesi alh/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
                 }
             ],
             "title": "Water Temperature",
@@ -2976,6 +3342,63 @@
                                 }
                             }
                         ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            }
+                        ]
                     }
                 ]
             },
@@ -3013,6 +3436,14 @@
                     },
                     "query": "from(bucket: \"windpower_staging\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"windpower\")\n  |> filter(fn: (r) => r[\"_field\"] != \"Max capacity\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
                 }
             ],
             "title": "Wind Power (Finland) MW",
@@ -3155,6 +3586,63 @@
                                 "value": 2
                             }
                         ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            }
+                        ]
                     }
                 ]
             },
@@ -3194,6 +3682,14 @@
                     },
                     "query": "from(bucket: \"spotprice_staging\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"spot\")\n  |> filter(fn: (r) => r[\"_field\"] == \"price_withtax\")\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))\n  |> yield(name: \"prices\")",
                     "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
                 }
             ],
             "title": "Heating Schedule (Geothermal Pump)",
