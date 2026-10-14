@@ -32,7 +32,11 @@ class PumpController:
     Commands:
     - ON: Normal heating mode
     - ALE: Lower temperature mode
-    - EVU: EVU-OFF mode (pump off, circulation pump off)
+    - EVU: EVU-OFF mode (pump off)
+
+    The pump commands never switch the house ventilation, the Shelly relay
+    that the hardware layer calls the circulation pump: restarting it while
+    the wood oven fire starts pulls smoke indoors. See docs/AC_CONTROL_SPEC.md.
     """
 
     # Valid pump commands
@@ -50,9 +54,6 @@ class PumpController:
     EVU_CYCLE_THRESHOLD = DIRECT_HEATING_BLOCK - EXECUTOR_INTERVAL - PULSE_MARGIN
     EVU_CYCLE_DURATION = 30  # Cycle EVU-OFF for 30 seconds
 
-    # After a power cut the Shelly can boot later than the Pi
-    SHELLY_ATTEMPTS = 7
-    SHELLY_RETRY_WAIT = 10
     RELAY_ATTEMPTS = 3
     RELAY_RETRY_WAIT = 2
 
@@ -327,18 +328,6 @@ class PumpController:
             "error": None,
         }
 
-    def _handle_circulation_pump_on_transition(self, command: str):
-        """Before the command: EVU -> ON or ALE turns the AC pump on."""
-        if command in ("ON", "ALE") and self.last_command == "EVU":
-            logger.info(f"Transitioning from EVU to {command}: turning on AC pump")
-            self.hardware.control_circulation_pump(turn_on=True)
-
-    def _handle_circulation_pump_off_transition(self, command: str):
-        """After the command: ON or ALE -> EVU turns the AC pump off."""
-        if command == "EVU" and self.last_command in ("ON", "ALE"):
-            logger.info("Transitioning to EVU: turning off AC pump")
-            self.hardware.control_circulation_pump(turn_on=False)
-
     def execute_command(self, command: str, scheduled_time: int, actual_time: int) -> dict:
         """Execute ON, ALE or EVU (epoch times); raises ValueError otherwise.
         Returns success, command, scheduled_time, actual_time, delay_seconds,
@@ -363,9 +352,6 @@ class PumpController:
                 pulse_failed = True
                 logger.warning(f"EVU cycle before {command} failed: {cycle_result.get('error')}")
 
-        # Handle AC pump before command execution
-        self._handle_circulation_pump_on_transition(command)
-
         try:
             logger.info(f"Executing pump command: {command} (delay: {result['delay_seconds']}s)")
 
@@ -389,9 +375,6 @@ class PumpController:
             result["output"] = f"Pump command {command} executed via hardware interface"
             logger.info(f"Pump command '{command}' executed successfully")
 
-            # Handle AC pump after command execution
-            self._handle_circulation_pump_off_transition(command)
-
             # Update state tracking on success. A repeated ON keeps on_since;
             # after a failed pulse the window counts as spent, so it retries.
             if command != "ON":
@@ -412,14 +395,13 @@ class PumpController:
 
     def apply_state(self, command: str, current_time: int, clock_ok: bool = True) -> dict:
         """Set the pump to command from any unknown state, as after a reboot.
-        ON and ALE get an EVU-off pulse first; the circulation pump is set too.
-        An unsynced clock is not recorded as the command time."""
+        ON and ALE get an EVU-off pulse first. An unsynced clock is not
+        recorded as the command time."""
         if command not in self.VALID_COMMANDS:
             raise ValueError(f"Invalid command '{command}'")
 
         stamp = current_time if clock_ok else self.last_command_time
         result: dict[str, Any] = {"success": False, "command": command, "error": None}
-        circulation_ok = True
         if command in ("ON", "ALE"):
             pulse = self._execute_raw_command("EVU")
             if not pulse["success"]:
@@ -427,7 +409,6 @@ class PumpController:
                 return result
             if not self.test_mode:
                 time.sleep(self.EVU_CYCLE_DURATION)
-            circulation_ok = self._set_circulation_with_retry(turn_on=True)
         applied = self._execute_raw_command(command)
         if not applied["success"]:
             if command in ("ON", "ALE"):
@@ -436,8 +417,6 @@ class PumpController:
                 self._save_state()
             result["error"] = f"{command} failed: {applied['error']}"
             return result
-        if command == "EVU":
-            circulation_ok = self._set_circulation_with_retry(turn_on=False)
 
         released = current_time + self.EVU_CYCLE_DURATION
         self.last_command = command
@@ -446,22 +425,9 @@ class PumpController:
             self.last_evu_cycle_time = current_time
         self.on_since = released if command == "ON" else None
         self._save_state()
-        if not circulation_ok:
-            result["error"] = f"{command} applied, but the circulation pump did not answer"
-            logger.error(result["error"])
-            return result
         result["success"] = True
         logger.info(f"Pump state {command} applied from an unknown state")
         return result
-
-    def _set_circulation_with_retry(self, turn_on: bool) -> bool:
-        for attempt in range(1, self.SHELLY_ATTEMPTS + 1):
-            if self.hardware.control_circulation_pump(turn_on=turn_on):
-                return True
-            logger.warning(f"Circulation pump attempt {attempt} of {self.SHELLY_ATTEMPTS} failed")
-            if attempt < self.SHELLY_ATTEMPTS and not self.test_mode:
-                time.sleep(self.SHELLY_RETRY_WAIT)
-        return False
 
     def get_status(self) -> Optional[dict]:
         """

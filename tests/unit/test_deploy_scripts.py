@@ -11,9 +11,7 @@ from src.control import pump_restore
 from src.control.pump_controller import PumpController
 
 REPO = Path(__file__).parents[2]
-# The request timeouts of the Shelly call (connect and read, 5 s each)
-# and the timedatectl call
-SHELLY_HTTP_TIMEOUT = 10
+# The request timeout of the timedatectl call
 TIMEDATECTL_TIMEOUT = 10
 PRODUCTION_DEPLOY = REPO / "deployment" / "deploy_production.sh"
 STAGING_DEPLOY = REPO / "deployment" / "deploy_staging.sh"
@@ -212,11 +210,10 @@ class TestHeatingControlUnits:
         text = restore.read_text(encoding="utf-8")
         assert "redhouse-execute-program.service" in " ".join(_values(text, "Before"))
         pc = PumpController
-        shelly = pc.SHELLY_ATTEMPTS * (SHELLY_HTTP_TIMEOUT + pc.SHELLY_RETRY_WAIT)
         relays = 2 * (pc.RELAY_ATTEMPTS - 1) * pc.RELAY_RETRY_WAIT
         waits = pump_restore.CLOCK_SYNC_TIMEOUT + pump_restore.LATE_SYNC_TIMEOUT
         overshoot = 2 * (pump_restore.CLOCK_SYNC_POLL + TIMEDATECTL_TIMEOUT)
-        budget = waits + overshoot + 2 * (pc.EVU_CYCLE_DURATION + shelly + relays)
+        budget = waits + overshoot + 2 * (pc.EVU_CYCLE_DURATION + relays)
         assert int(_values(text, "TimeoutStartSec")[0]) >= budget
 
     def test_boot_units_follow_the_executor_and_are_never_started(self):

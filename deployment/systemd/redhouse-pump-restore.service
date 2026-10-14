@@ -12,7 +12,7 @@ WorkingDirectory=/opt/redhouse
 # Runs once at boot: the relay board may not keep its state across a
 # reboot, and the next program command can be hours away.
 ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/restore_pump_state.py
-# Up to 17 min of clock sync waits plus two applies with Shelly retries
+# Up to 17 min of clock sync waits plus two applies with relay retries
 TimeoutStartSec=1500
 StandardOutput=journal
 StandardError=journal

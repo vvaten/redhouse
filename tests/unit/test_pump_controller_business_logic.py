@@ -11,7 +11,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src.control.hardware_implementations import MockHardwareInterface
 from src.control.pump_controller import PumpController
@@ -334,38 +334,32 @@ class TestHardwareFailureScenarios(unittest.TestCase):
         assert result["success"] is True
 
 
-class TestCirculationPumpControl(unittest.TestCase):
-    """Test AC circulation pump control logic."""
+class TestPumpCommandsNeverSwitchTheVentilation(unittest.TestCase):
+    """The hardware layer's circulation pump relay is the house ventilation;
+    restarting it while the oven fire starts pulls smoke in."""
 
-    def test_circulation_pump_on_when_transitioning_to_on(self):
-        """Test that circulation pump turns on when going from EVU to ON."""
+    def _controller(self, last_command):
         mock_hw = MockHardwareInterface()
+        mock_hw.control_circulation_pump = Mock(return_value=True)
         controller = PumpController(hardware=mock_hw)
-
-        # Set up state: pump was in EVU mode
-        controller.last_command = "EVU"
+        controller.last_command = last_command
         controller.last_command_time = 1000
+        return controller, mock_hw
 
-        # Execute ON command
-        controller.execute_command("ON", scheduled_time=2000, actual_time=2010)
+    def test_no_command_from_any_state_touches_it(self):
+        for previous in ("ON", "ALE", "EVU", None):
+            for command in ("ON", "ALE", "EVU"):
+                controller, mock_hw = self._controller(previous)
+                controller.execute_command(command, scheduled_time=2000, actual_time=2010)
+                mock_hw.control_circulation_pump.assert_not_called()
 
-        # Circulation pump should have been turned on
-        assert mock_hw.circulation_pump_on is True
-
-    def test_circulation_pump_off_when_transitioning_to_evu(self):
-        """Test that circulation pump turns off when going to EVU."""
-        mock_hw = MockHardwareInterface()
-        controller = PumpController(hardware=mock_hw)
-
-        # Set up state: pump was ON
-        controller.last_command = "ON"
-        controller.last_command_time = 1000
-
-        # Execute EVU command
-        controller.execute_command("EVU", scheduled_time=2000, actual_time=2010)
-
-        # Circulation pump should have been turned off
-        assert mock_hw.circulation_pump_on is False
+    def test_no_periodic_pulse_or_restore_touches_it(self):
+        controller, mock_hw = self._controller("ON")
+        controller.on_since = 1000
+        controller.perform_evu_cycle(current_time=9000)
+        for command in ("ON", "ALE", "EVU"):
+            controller.apply_state(command, 9100)
+        mock_hw.control_circulation_pump.assert_not_called()
 
 
 class TestClockInjection(unittest.TestCase):
@@ -489,21 +483,6 @@ class TestErrorHandling(unittest.TestCase):
         assert result["success"] is True
         assert mock_hw.commands_executed == ["ALE"]
         assert controller.on_since is None
-
-    def test_circulation_pump_on_when_transitioning_from_evu_to_ale(self):
-        """Test that circulation pump turns on when going from EVU to ALE."""
-        mock_hw = MockHardwareInterface()
-        controller = PumpController(hardware=mock_hw)
-
-        # Set up state: pump was in EVU mode
-        controller.last_command = "EVU"
-        controller.last_command_time = 1000
-
-        # Execute ALE command
-        controller.execute_command("ALE", scheduled_time=2000, actual_time=2010)
-
-        # Circulation pump should have been turned on
-        assert mock_hw.circulation_pump_on is True
 
 
 if __name__ == "__main__":

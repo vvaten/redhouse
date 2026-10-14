@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import tempfile
+from unittest.mock import Mock
 
 import pytest
 
@@ -260,12 +261,11 @@ class TestMain:
 
 
 class TestRestore:
-    def test_on_gets_a_pulse_the_circulation_pump_and_a_fresh_window(self, base, controller):
+    def test_on_gets_a_pulse_and_a_fresh_window(self, base, controller):
         _write(base, D12, [(_at(2026, 10, 12, 8), "ON")])
         now = _at(2026, 10, 12, 9)
         assert pr.restore(now, str(base), controller, True) == 0
         assert controller.hardware.commands_executed == ["EVU", "ON"]
-        assert controller.hardware.circulation_pump_on is True
         assert controller.last_command == "ON"
         assert controller.on_since == now + controller.EVU_CYCLE_DURATION
 
@@ -273,15 +273,19 @@ class TestRestore:
         _write(base, D12, [(_at(2026, 10, 12, 8), "ALE")])
         assert pr.restore(_at(2026, 10, 12, 9), str(base), controller, True) == 0
         assert controller.hardware.commands_executed == ["EVU", "ALE"]
-        assert controller.hardware.circulation_pump_on is True
         assert controller.on_since is None
 
-    def test_evu_turns_the_circulation_pump_off(self, base, controller):
-        controller.hardware.circulation_pump_on = True
-        _write(base, D12, [(_at(2026, 10, 12, 8), "EVU")])
-        assert pr.restore(_at(2026, 10, 12, 9), str(base), controller, True) == 0
-        assert controller.hardware.commands_executed == ["EVU"]
-        assert controller.hardware.circulation_pump_on is False
+    def test_no_restore_switches_the_ventilation(self, base):
+        """The hardware layer's circulation pump relay is the house ventilation."""
+        for command, written in (("ON", ["EVU", "ON"]), ("ALE", ["EVU", "ALE"]), ("EVU", ["EVU"])):
+            controller = PumpController(
+                hardware=MockHardwareInterface(), state_file=os.path.join(base, f"{command}.json")
+            )
+            controller.hardware.control_circulation_pump = Mock(return_value=False)
+            _write(base, D12, [(_at(2026, 10, 12, 8), command)])
+            assert pr.restore(_at(2026, 10, 12, 9), str(base), controller, True) == 0, command
+            assert controller.hardware.commands_executed == written, command
+            controller.hardware.control_circulation_pump.assert_not_called()
 
     def test_without_a_program_the_last_known_state_is_reapplied(self, base, controller):
         controller.last_command = "ALE"
@@ -303,19 +307,6 @@ class TestRestore:
         _write(base, D12, [(_at(2026, 10, 12, 8), "ON")])
         assert pr.restore(_at(2026, 10, 12, 9), str(base), controller, True) == 1
         assert controller.last_command == "EVU" and controller.on_since is None
-
-    def test_a_silent_shelly_still_sets_the_mode_but_fails_the_unit(self, base, controller):
-        controller.hardware.control_circulation_pump = lambda turn_on: False
-        _write(base, D12, [(_at(2026, 10, 12, 8), "ON")])
-        assert pr.restore(_at(2026, 10, 12, 9), str(base), controller, True) == 1
-        assert controller.hardware.commands_executed == ["EVU", "ON"]
-        assert controller.last_command == "ON"
-
-    def test_a_shelly_that_answers_late_is_retried(self, base, controller):
-        answers = iter([False, False, True])
-        controller.hardware.control_circulation_pump = lambda turn_on: next(answers)
-        _write(base, D12, [(_at(2026, 10, 12, 8), "ALE")])
-        assert pr.restore(_at(2026, 10, 12, 9), str(base), controller, True) == 0
 
     def test_state_survives_for_the_executor(self, base, controller):
         _write(base, D12, [(_at(2026, 10, 12, 8), "ON")])
