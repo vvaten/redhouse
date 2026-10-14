@@ -415,17 +415,15 @@ class TestWriteExecutionToInflux:
                 "delay_seconds": 10,
             }
 
-            # Point is imported locally in the method, so patch influxdb_client module
-            with patch("influxdb_client.Point") as mock_point:
-                mock_point_instance = Mock()
-                mock_point_instance.tag.return_value = mock_point_instance
-                mock_point_instance.field.return_value = mock_point_instance
-                mock_point_instance.time.return_value = mock_point_instance
-                mock_point.return_value = mock_point_instance
+            executor._write_execution_to_influx("2024-01-15", "pump", entry, result)
 
-                executor._write_execution_to_influx("2024-01-15", "pump", entry, result)
-
-                assert mock_influx_client.return_value.write_with_retry.called
+            write = mock_influx_client.return_value.write_with_retry
+            assert write.called
+            point = write.call_args.kwargs["record"]
+            # The point lands at the epoch of actual_time, not shifted by the offset.
+            # A naive time is shifted only where local time is not UTC, so check that too.
+            assert point.to_line_protocol().endswith(" 1600000010000000000")
+            assert point._time.tzinfo is not None
 
     def test_write_execution_to_influx_dry_run(
         self, mock_config, mock_influx_client, mock_load_controller

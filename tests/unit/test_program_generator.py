@@ -516,6 +516,14 @@ class TestInfluxDBSaving(unittest.TestCase):
         # Should have 2 points (1 schedule + 1 summary)
         self.assertEqual(len(points), 2)
 
+        # Both land at their real epoch, not shifted by the local offset
+        schedule_ns = int(points[0].to_line_protocol().rsplit(" ", 1)[1])
+        summary_ns = int(points[1].to_line_protocol().rsplit(" ", 1)[1])
+        self.assertEqual(schedule_ns, 1736895600 * 10**9)
+        self.assertLess(abs(summary_ns / 1e9 - datetime.datetime.now().timestamp()), 60)
+        # A naive time is shifted only where local time is not UTC, so check the cause too
+        self.assertIsNotNone(points[1]._time.tzinfo)
+
     def test_save_program_influxdb_data_type_tag(self):
         """Test that data_type tag is set correctly."""
         program = {

@@ -445,7 +445,7 @@ class HeatingProgramGenerator:
                 "most_expensive_price", program["planning_results"]["most_expensive_interval_price"]
             )
             .field("average_price", program["planning_results"]["average_heating_price"])
-            .time(datetime.datetime.now())
+            .time(datetime.datetime.now(tz=datetime.timezone.utc))
         )
 
     def _get_bucket_name(self, bucket_key: str, default: str) -> str:

@@ -7,6 +7,8 @@ import os
 import time
 from typing import Optional
 
+from influxdb_client import Point
+
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
@@ -386,23 +388,16 @@ class HeatingProgramExecutor:
     def _write_execution_to_influx(
         self, program_date: str, load_id: str, entry: dict, result: dict
     ):
-        """
-        Write actual execution to InfluxDB.
-
-        Args:
-            program_date: Program date (YYYY-MM-DD)
-            load_id: Load identifier
-            entry: Schedule entry dict
-            result: Execution result dict
-        """
+        """Write an executed command to the load_control bucket as an "actual" point."""
         if self.dry_run:
             logger.debug("DRY-RUN: Skipping InfluxDB write")
             return
 
         try:
-            from influxdb_client import Point
-
-            timestamp = datetime.datetime.fromtimestamp(result["actual_time"])
+            # A naive datetime is read as UTC, which shifts the point by the offset
+            timestamp = datetime.datetime.fromtimestamp(
+                result["actual_time"], tz=datetime.timezone.utc
+            )
             command = entry["command"]
 
             # Determine if load is ON
