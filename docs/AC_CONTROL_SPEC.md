@@ -1,6 +1,7 @@
 # AC (Ventilation) Control Specification
 
-Status: draft for review, 2026-10-12. Nothing in this document is built yet.
+Status: draft for review, 2026-10-12. Only the interim protection
+(section 8) is built, on 2026-10-14.
 
 ## 1. Purpose
 
@@ -91,15 +92,15 @@ a due EVU block, otherwise on only if "off by redhouse". If the clock is
 not synchronized, or no due entry is known, it does not touch the AC. A
 fire window whose end it cannot check counts as active.
 
-R9. Failure. Every AC switch retries like the boot restore (7 attempts,
-10 s apart). A switch that still fails is logged, reported as a failed
-command, and shows in the health check.
+R9. Failure. Every AC switch retries 7 times, 10 s apart. A switch that
+still fails is logged, reported as a failed command, and shows in the
+health check.
 
 R10. Notification. The start of a smoke hold and a refused AC command
 send an email through the existing alert mail, with its repeat
 suppression.
 
-R12. Overpressure in fire mode. The ventilation's "Ylipaine" wall
+R11. Overpressure in fire mode. The ventilation's "Ylipaine" wall
 switch sets more supply than exhaust air, the opposite of the hazard.
 A second Shelly relay, wired in parallel with the wall switch, lets
 redhouse set it: on at the fire mark, off when the fire window ends.
@@ -191,7 +192,7 @@ Each step has its own tests and a fresh review, and is safe to use alone.
 2. The interim protection (section 8).
 3. R2, R3, R6, R7, R9 and the state file, with `redhouse-pump ac`.
 4. R1, the fire window, with `redhouse-pump fire`.
-5. R12, the overpressure relay, once it is wired.
+5. R11, the overpressure relay, once it is wired.
 6. The HTTP API.
 7. The Grafana button and status panel.
 8. The smoke reader and logging, then the smoke rule (R4).
@@ -230,7 +231,7 @@ Each step has its own tests and a fresh review, and is safe to use alone.
     clean at all of them. Their cause is not known: an unlogged manual
     switch, the oven door, a cold chimney, or the steady negative
     pressure of the running ventilation.
-  - A normal firing with the AC running: tonight PM2.5 rose from 1 to
+  - A normal firing with the AC running: on 2026-10-12 PM2.5 rose from 1 to
     11 ug/m3, from about 25 to 60 minutes after lighting.
   - So the fire window (R1) prevents the confirmed cases, but not the
     larger ones. Indoor PM2.5 must be watched in any case (section 6).

@@ -281,7 +281,7 @@ class TestRestore:
             controller = PumpController(
                 hardware=MockHardwareInterface(), state_file=os.path.join(base, f"{command}.json")
             )
-            controller.hardware.control_circulation_pump = Mock(return_value=False)
+            controller.hardware.control_circulation_pump = Mock(return_value=True)
             _write(base, D12, [(_at(2026, 10, 12, 8), command)])
             assert pr.restore(_at(2026, 10, 12, 9), str(base), controller, True) == 0, command
             assert controller.hardware.commands_executed == written, command

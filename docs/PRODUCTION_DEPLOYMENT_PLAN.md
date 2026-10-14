@@ -325,8 +325,8 @@ links to /opt/redhouse/pump.sh. It runs control_pump.py as pi.
   ON does not pulse.
 - Redhouse never switches the ventilation, the Shelly relay that the
   hardware code calls the circulation pump: not by these commands, not
-  in a program EVU block, and not at boot. Use the Shelly UI or app for it. See
-  docs/AC_CONTROL_SPEC.md.
+  in a program EVU block, and not at boot. Use the Shelly UI or app for
+  it. See docs/AC_CONTROL_SPEC.md.
 - A manual command holds until the next program entry; there is no
   hold mode. A manual ON gets an EVU pulse at the first quarter-hour
   check after 103 min of ON, then every 105 min. A reboot keeps a
