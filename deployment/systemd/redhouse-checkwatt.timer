@@ -7,7 +7,8 @@ Description=RedHouse CheckWatt Data Collection Timer
 # the same instant while both run. Must stay AHEAD of
 # redhouse-aggregate-emeters-5min (:03, :08, ...), which reads the window
 # ending at :00 and would otherwise aggregate data not yet written.
-OnCalendar=*:02,07,12,17,22,27,32,37,42,47,52,57:30
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:02,07,12,17,22,27,32,37,42,47,52,57:30 UTC
 AccuracySec=1s
 
 [Install]

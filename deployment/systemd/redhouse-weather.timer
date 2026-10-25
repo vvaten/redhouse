@@ -2,7 +2,8 @@
 Description=RedHouse Weather Forecast Collection Timer
 
 [Timer]
-OnCalendar=*:02:00
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:02:00 UTC
 AccuracySec=1s
 
 [Install]

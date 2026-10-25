@@ -7,7 +7,8 @@ Description=RedHouse 15-Minute Analytics Aggregation Timer
 # Runs after emeters_5min aggregation completes (at :03, :08, :13, ...)
 # Shifted +3min from :01 to :04 to avoid overlap with wibatemp checkwatt_dataloader.
 # TODO: Shift back to :01 once wibatemp is decommissioned.
-OnCalendar=*:04,19,34,49:00
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:04,19,34,49:00 UTC
 AccuracySec=1s
 
 [Install]

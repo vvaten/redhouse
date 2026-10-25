@@ -161,9 +161,9 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
     if data is None:
         return False
 
-    # Parse timestamp string to datetime for handlers that need it.
-    # Log timestamps are naive local time. Convert to naive UTC to match
-    # how write_temperatures_to_influx normally writes (datetime.utcnow()).
+    # Parse timestamp string to datetime for handlers that need it. Newer logs
+    # carry a UTC offset, older ones naive local time. Convert to naive UTC to
+    # match how write_temperatures_to_influx normally writes (datetime.utcnow()).
     log_timestamp = None
     if timestamp:
         try:
@@ -215,7 +215,9 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
 
 def _parse_log_filename_time(log_file: Path) -> Optional[str]:
     """Extract YYYYMMDD_HHMMSS from log filename."""
-    stem = log_file.stem  # e.g. "20260406_145544"
+    stem = log_file.stem  # e.g. "20260406_145544", or "..._031500-2" in a repeated hour
+    if stem.endswith("-2"):
+        stem = stem[:-2]
     if len(stem) == 15 and stem[8] == "_":
         return stem
     return None

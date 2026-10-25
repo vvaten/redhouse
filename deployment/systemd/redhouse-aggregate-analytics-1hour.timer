@@ -9,7 +9,8 @@ After=redhouse-aggregate-analytics-15min.timer
 # Shifted from :02 to :05:30 to avoid overlap with wibatemp energy_to_fissio
 # which starts at :04, reads Shelly EM3 at :05, and writes to emeters shortly after.
 # TODO: Shift back to :02 once wibatemp is decommissioned.
-OnCalendar=*:05:30
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:05:30 UTC
 AccuracySec=1s
 
 [Install]

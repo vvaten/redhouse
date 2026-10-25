@@ -2,7 +2,9 @@
 Description=RedHouse Pi Backup Timer
 
 [Timer]
-OnCalendar=*-*-* 03:00:00
+# Not in 03:00-03:59: that hour is missing on the spring change day,
+# and systemd then skips the whole day
+OnCalendar=*-*-* 04:30:00
 AccuracySec=60s
 Persistent=true
 

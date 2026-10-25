@@ -47,8 +47,10 @@ class JSONDataLogger:
         if timestamp is None:
             timestamp = datetime.datetime.now()
 
-        # Format: YYYYMMDD_HHMMSS.json
-        filename = timestamp.strftime("%Y%m%d_%H%M%S.json")
+        # Format: YYYYMMDD_HHMMSS.json, local time. The second pass of the
+        # repeated autumn hour (fold 1) gets -2, or it would overwrite the first.
+        suffix = "-2" if timestamp.fold else ""
+        filename = timestamp.strftime(f"%Y%m%d_%H%M%S{suffix}.json")
         return self.log_dir / filename
 
     def log_data(self, data: Any, metadata: Optional[dict] = None) -> bool:
@@ -67,7 +69,8 @@ class JSONDataLogger:
             log_file = self._get_log_filename(timestamp)
 
             log_entry = {
-                "timestamp": timestamp.isoformat(),
+                # With its UTC offset, so a replay finds the moment in either pass
+                "timestamp": timestamp.astimezone().isoformat(),
                 "data_source": self.data_source_name,
                 "metadata": metadata or {},
                 "data": data,

@@ -3,7 +3,8 @@ Description=RedHouse Shelly EM3 Energy Meter Data Collection Timer
 
 [Timer]
 # Run every minute at the top of the minute (00 seconds)
-OnCalendar=*:*:00
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:*:00 UTC
 AccuracySec=1s
 
 [Install]

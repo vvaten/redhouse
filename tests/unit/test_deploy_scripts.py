@@ -104,7 +104,7 @@ class TestHealthCheckUnit:
 
 
 def _health_check_minute(timer_text: str) -> int:
-    match = re.search(r"^OnCalendar=\*:(\d{1,2})/15$", timer_text, re.M)
+    match = re.search(r"^OnCalendar=\*:(\d{1,2})/15( UTC)?$", timer_text, re.M)
     assert match, "health check OnCalendar not found"
     return int(match.group(1))
 

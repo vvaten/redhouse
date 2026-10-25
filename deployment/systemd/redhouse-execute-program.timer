@@ -3,7 +3,8 @@ Description=RedHouse Heating Program Execution Timer
 
 [Timer]
 # Run every 15 minutes
-OnCalendar=*:00,15,30,45:00
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:00,15,30,45:00 UTC
 AccuracySec=1s
 
 [Install]
