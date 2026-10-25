@@ -21,6 +21,7 @@ pytest==8.3.4  # Compatible with Python 3.9+
 pytest-asyncio==0.21.0
 pytest-cov==4.1.0
 pytest-env==1.1.3  # Sets TEST_MODE=true to skip 30s delays in unit tests
+freezegun==1.5.1  # Freezes the clock for the daylight saving time tests
 
 # Code quality
 black==24.10.0

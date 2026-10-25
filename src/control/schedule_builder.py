@@ -3,9 +3,14 @@
 
 import datetime
 
+import pytz
+
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+# Labels name Helsinki time whatever the zone of the machine running the code
+HELSINKI = pytz.timezone("Europe/Helsinki")
 
 
 class ScheduleBuilder:
@@ -185,7 +190,7 @@ class ScheduleBuilder:
         """
         entries = []
         for period in evu_off_periods:
-            start_dt = datetime.datetime.fromtimestamp(period["start"]).astimezone()
+            start_dt = datetime.datetime.fromtimestamp(period["start"], HELSINKI)
             duration_minutes = int((period["stop"] - period["start"]) / 60)
 
             entry = {
@@ -219,7 +224,7 @@ class ScheduleBuilder:
 
             if entry["command"] in ["ON", "EVU"]:
                 end_timestamp = entry["timestamp"] + (entry["duration_minutes"] * 60)
-                end_dt = datetime.datetime.fromtimestamp(end_timestamp).astimezone()
+                end_dt = datetime.datetime.fromtimestamp(end_timestamp, HELSINKI)
 
                 next_starts_immediately = False
                 if i + 1 < len(schedule_entries):

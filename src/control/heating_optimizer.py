@@ -10,6 +10,18 @@ from src.common.logger import setup_logger
 logger = setup_logger(__name__)
 
 
+def floor_in_utc(times, freq: pd.Timedelta):
+    """Floor timestamps in UTC and return them in their own zone. A wall-clock
+    floor is ambiguous in the repeated autumn hour; Helsinki's whole-hour
+    offsets make the UTC and local boundaries the same."""
+    accessor = times.dt if hasattr(times, "dt") else times
+    if accessor.tz is None:
+        return accessor.floor(freq)
+    in_utc = accessor.tz_convert("UTC")
+    floored = (in_utc.dt if hasattr(in_utc, "dt") else in_utc).floor(freq)
+    return (floored.dt if hasattr(floored, "dt") else floored).tz_convert(accessor.tz)
+
+
 class HeatingOptimizer:
     """
     Calculate optimal heating times based on electricity costs and solar availability.
@@ -138,15 +150,9 @@ class HeatingOptimizer:
         else:
             time_col = df.index  # type: ignore[assignment]
 
-        if self.resolution_minutes == 15:
-            df["time_resolution"] = (
-                time_col.dt.floor("15T") if hasattr(time_col, "dt") else time_col.floor("15T")  # type: ignore[arg-type]
-            )
-        else:
-            df["time_resolution"] = (
-                time_col.dt.floor("H") if hasattr(time_col, "dt") else time_col.floor("H")  # type: ignore[arg-type]
-            )
-
+        df["time_resolution"] = floor_in_utc(
+            time_col, pd.Timedelta(minutes=self.resolution_minutes)
+        )
         return df
 
     def _prepare_grouped_data(self, df: pd.DataFrame) -> pd.DataFrame:

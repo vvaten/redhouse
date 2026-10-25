@@ -5,6 +5,7 @@ import unittest
 
 import pandas as pd
 
+from src.control.heating_data_fetcher import local_day_hours
 from src.control.heating_optimizer import HeatingOptimizer
 
 
@@ -145,14 +146,13 @@ class TestHeatingOptimizer(unittest.TestCase):
         # Filter for today (offset 0)
         today_data = self.optimizer.filter_day_priorities(df, date_offset=0)
 
-        # Should get 24 hours for today
-        self.assertLessEqual(len(today_data), 24)
+        # Every local hour of today: 23, 24 or 25 of them on a clock change day
+        self.assertEqual(len(today_data), len(local_day_hours(today.date())))
 
         # Filter for tomorrow (offset 1)
         tomorrow_data = self.optimizer.filter_day_priorities(df, date_offset=1)
-
-        # Should get 24 hours for tomorrow
-        self.assertLessEqual(len(tomorrow_data), 24)
+        tomorrow = today.date() + datetime.timedelta(days=1)
+        self.assertLessEqual(len(tomorrow_data), len(local_day_hours(tomorrow)))
 
     def test_select_cheapest_hours(self):
         """Test selecting cheapest hours to heat."""
