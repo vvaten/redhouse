@@ -2,6 +2,7 @@
 """Electricity spot price data collection from spot-hinta.fi API."""
 
 import asyncio
+import collections
 import datetime
 import json
 import os
@@ -205,10 +206,14 @@ def process_spot_prices(spot_prices_raw: list[dict], config: Any) -> list[dict]:
             logger.error(f"Error processing entry {hour_entry}: {e}")
             continue
 
-    epochs = [entry["epoch_timestamp"] for entry in processed_spot_prices]
-    if len(set(epochs)) != len(epochs):
-        # InfluxDB would keep only one of the prices for the same instant
-        raise ValueError("Spot price response names the same instant twice")
+    # InfluxDB would keep only one of the prices for the same instant
+    counts = collections.Counter(entry["epoch_timestamp"] for entry in processed_spot_prices)
+    duplicated = {epoch for epoch, count in counts.items() if count > 1}
+    if duplicated:
+        logger.error(f"Dropping {len(duplicated)} instants the response names twice")
+        processed_spot_prices = [
+            entry for entry in processed_spot_prices if entry["epoch_timestamp"] not in duplicated
+        ]
 
     logger.info(f"Processed {len(processed_spot_prices)} spot price entries")
     return processed_spot_prices

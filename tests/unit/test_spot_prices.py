@@ -176,15 +176,17 @@ class TestSpotPriceCollection(unittest.TestCase):
 
         self.assertEqual([entry["datetime_local"] for entry in result], [raw_prices[1]["DateTime"]])
 
-    def test_process_spot_prices_refuses_the_same_instant_twice(self):
+    def test_process_spot_prices_drops_an_instant_named_twice(self):
         """Two labels of one instant would overwrite each other in InfluxDB."""
         raw_prices = [
             {"DateTime": "2026-10-25T03:00:00+02:00", "PriceNoTax": 0.002},
             {"DateTime": "2026-10-25T01:00:00+00:00", "PriceNoTax": 0.003},
+            {"DateTime": "2026-10-25T03:15:00+02:00", "PriceNoTax": 0.004},
         ]
 
-        with self.assertRaises(ValueError):
-            process_spot_prices(raw_prices, self.mock_config)
+        result = process_spot_prices(raw_prices, self.mock_config)
+
+        self.assertEqual([entry["datetime_local"] for entry in result], [raw_prices[2]["DateTime"]])
 
     def test_process_spot_prices_error_handling(self):
         """Test that processing continues on individual entry errors."""
