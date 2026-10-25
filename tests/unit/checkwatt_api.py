@@ -20,9 +20,11 @@ def _meter(minutes: list, end_offset: datetime.timedelta, values: Optional[list]
     """Measurements dated by wall time; a Date already given is left out, as
     the API does with the second pass of a repeated hour."""
     measurements: list[dict] = []
+    given: set[str] = set()
     for minute in minutes:
         date = _wall(minute + end_offset)
-        if all(m["Date"] != date for m in measurements):
+        if date not in given:
+            given.add(date)
             measurements.append({"Date": date, "Value": float(minute.timestamp())})
     for measurement, value in zip(measurements, values or []):
         measurement["Value"] = value

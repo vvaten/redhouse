@@ -52,16 +52,22 @@ def _utc(text):
 @pytest.mark.parametrize(
     "first, last, lost",
     [
-        ("2026-10-24 21:00", "2026-10-25 04:00", ["2026-10-25 00:59"]),
-        ("2027-03-27 21:00", "2027-03-28 04:00", []),
+        ("2026-10-24 22:30", "2026-10-25 03:30", ["2026-10-25 00:59"]),
+        ("2027-03-27 22:30", "2027-03-28 03:30", []),
     ],
     ids=["autumn", "spring"],
 )
 def test_the_runs_write_every_minute_at_its_own_moment(first, last, lost):
+    runs = _runs(first, last)
+    # One frozen clock, moved run by run: each new freeze rescans every module
+    with freeze_time(runs[0].to_pydatetime()) as clock:
+        starts = []
+        for run in runs:
+            clock.move_to(run.to_pydatetime())
+            starts.append(_compute_date_range(True, None, None)[0])
+
     written: dict = {column: set() for column in CHECKWATT_COLUMNS}
-    for run in _runs(first, last):
-        with freeze_time(run.to_pydatetime()):
-            start, _ = _compute_date_range(True, None, None)
+    for run, start in zip(runs, starts):
         now = run.to_pydatetime().replace(second=0)
         for point in _points(_api_instant(start), now):
             for column in CHECKWATT_COLUMNS:

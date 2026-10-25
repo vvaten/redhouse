@@ -157,6 +157,10 @@ async def fetch_checkwatt_data(
 
 def _next_instant(wall: datetime.datetime, after: datetime.datetime) -> datetime.datetime:
     """The earliest instant after the given one that has this Helsinki wall time."""
+    # Usually the next whole minute; checking it is much cheaper than localize()
+    guess = after.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1)
+    if guess.astimezone(HELSINKI).replace(tzinfo=None) == wall:
+        return guess
     try:
         candidates = [HELSINKI.localize(wall, is_dst=None)]
     except pytz.AmbiguousTimeError:
