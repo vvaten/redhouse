@@ -144,6 +144,17 @@ REPLAY_HANDLERS = {
 }
 
 
+def _local_log_time(naive: datetime.datetime, log_file: Path) -> datetime.datetime:
+    """A naive Helsinki log time; in the repeated autumn hour, the pass nearer
+    to the time the file was written."""
+    try:
+        return HELSINKI.localize(naive, is_dst=None)
+    except pytz.AmbiguousTimeError:
+        written = log_file.stat().st_mtime
+        passes = [HELSINKI.localize(naive, is_dst=is_dst) for is_dst in (True, False)]
+        return min(passes, key=lambda moment: abs(moment.timestamp() - written))
+
+
 async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = False) -> bool:
     """
     Replay a single JSON log file to InfluxDB.
@@ -171,10 +182,10 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
             log_timestamp = datetime.datetime.fromisoformat(timestamp)
             if log_timestamp.tzinfo is None:
                 # Naive timestamp = local time on Pi
-                log_timestamp = HELSINKI.localize(log_timestamp)
+                log_timestamp = _local_log_time(log_timestamp, log_file)
             # Convert to naive UTC (matching utcnow() format)
             log_timestamp = log_timestamp.astimezone(pytz.utc).replace(tzinfo=None)
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError, pytz.NonExistentTimeError) as e:
             logger.warning(f"Could not parse timestamp: {timestamp}: {e}")
 
     if dry_run:

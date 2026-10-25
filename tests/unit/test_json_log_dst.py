@@ -60,3 +60,19 @@ async def test_each_pass_replays_at_its_own_moment(tmp_path, logged, utc):
             write.return_value = True
             assert await replay.replay_log_file(tmp_path / "x.json", "temperature", dry_run=False)
     assert write.call_args.kwargs["timestamp"] == datetime.datetime(2026, 10, 25, *utc)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("utc_hour", [0, 1], ids=["summer-pass", "winter-pass"])
+async def test_a_naive_time_in_the_repeated_hour_takes_the_pass_of_its_file(tmp_path, utc_hour):
+    log_file = tmp_path / "20261025_031500.json"
+    log_file.write_text("{}")
+    written = datetime.datetime(2026, 10, 25, utc_hour, 15, tzinfo=datetime.timezone.utc)
+    os.utime(log_file, (written.timestamp(), written.timestamp()))
+    entry = {"timestamp": "2026-10-25T03:15:00", "data": {"s": 1.0}, "metadata": {}}
+    with patch("src.tools.replay_json_logs.JSONDataLogger") as logger_class:
+        logger_class.return_value = Mock(load_log=Mock(return_value=entry))
+        with patch("src.data_collection.temperature.write_temperatures_to_influx") as write:
+            write.return_value = True
+            assert await replay.replay_log_file(log_file, "temperature", dry_run=False)
+    assert write.call_args.kwargs["timestamp"] == datetime.datetime(2026, 10, 25, utc_hour, 15)
