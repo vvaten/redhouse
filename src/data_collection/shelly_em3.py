@@ -12,6 +12,7 @@ from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
+from src.common.trusted_http import trusted_session
 
 logger = setup_logger(__name__, "shelly_em3.log")
 
@@ -30,7 +31,7 @@ async def fetch_shelly_em3_status(device_url: str) -> Optional[dict]:
     logger.info(f"Fetching Shelly EM3 status from {status_url}")
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with trusted_session() as session:
             async with session.get(status_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
                     json_data = await response.json()

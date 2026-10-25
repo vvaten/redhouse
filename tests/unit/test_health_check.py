@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.common.trusted_http import SSL_CONTEXT
 from src.monitoring import health_check
 from src.monitoring.email_sender import format_alert_body, send_alert_email
 from src.monitoring.health_check import (
@@ -123,6 +124,8 @@ class TestSendAlertEmail:
             body="Test body",
         )
         assert result is True
+        # The alert path must not depend on the old system store of the Pi
+        assert mock_urlopen.call_args.kwargs["context"] is SSL_CONTEXT
 
     @patch("src.monitoring.email_sender.urllib.request.urlopen")
     def test_send_failure(self, mock_urlopen):

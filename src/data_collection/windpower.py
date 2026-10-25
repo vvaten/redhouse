@@ -13,6 +13,7 @@ from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
+from src.common.trusted_http import trusted_session
 
 logger = setup_logger(__name__, "windpower.log")
 
@@ -70,7 +71,7 @@ async def fetch_fingrid_data(
     while tries_left > 0 and status != 200:
         try:
             timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession() as session:
+            async with trusted_session() as session:
                 async with session.get(url, headers=headers, timeout=timeout) as response:
                     status = response.status
 
@@ -124,7 +125,7 @@ async def fetch_fmi_windpower_forecast() -> Optional[dict]:
 
     try:
         timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession() as session:
+        async with trusted_session() as session:
             async with session.get(FMI_WINDPOWER_URL, headers=headers, timeout=timeout) as response:
                 if response.status == 200:
                     response_json = await response.json()

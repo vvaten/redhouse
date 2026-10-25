@@ -8,13 +8,13 @@ import json
 import os
 from typing import Any, Optional
 
-import aiohttp
 import pytz
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
+from src.common.trusted_http import trusted_session
 
 logger = setup_logger(__name__, "spot_prices.log")
 
@@ -35,7 +35,7 @@ async def fetch_spot_prices_from_api() -> Optional[list[dict]]:
     logger.info(f"Fetching spot prices from {SPOT_PRICE_API_URL}")
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with trusted_session() as session:
             async with session.get(SPOT_PRICE_API_URL) as response:
                 if response.status == 200:
                     response_text = await response.text()

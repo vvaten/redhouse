@@ -6,6 +6,7 @@ import urllib.request
 from typing import Optional
 
 from src.common.logger import setup_logger
+from src.common.trusted_http import SSL_CONTEXT
 
 logger = setup_logger(__name__, "health_check.log")
 
@@ -52,7 +53,7 @@ def send_alert_email(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=SSL_CONTEXT) as resp:
             if 200 <= resp.status < 300:
                 logger.info("Alert email sent (HTTP %d): %s", resp.status, subject)
                 return True

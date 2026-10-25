@@ -15,6 +15,7 @@ from src.common.influx_client import InfluxClient
 from src.common.json_logger import JSONDataLogger
 from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
+from src.common.trusted_http import trusted_session
 
 logger = setup_logger(__name__, "checkwatt.log")
 
@@ -63,7 +64,7 @@ async def get_auth_token(username: str, password: str) -> Optional[str]:
 
     try:
         timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession() as session:
+        async with trusted_session() as session:
             async with session.post(
                 AUTH_URL, data=payload, headers=headers, timeout=timeout
             ) as response:
@@ -136,7 +137,7 @@ async def fetch_checkwatt_data(
 
     try:
         timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession() as session:
+        async with trusted_session() as session:
             async with session.get(url, headers=headers, timeout=timeout) as response:
                 if response.status == 200:
                     json_data = await response.json()
