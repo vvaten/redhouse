@@ -1,10 +1,12 @@
 """JSON backup logs keep both passes of the repeated autumn hour apart."""
 
 import datetime
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from freezegun import freeze_time
 
 from src.common.json_logger import JSONDataLogger
 from src.tools import replay_json_logs as replay
@@ -22,6 +24,21 @@ def test_a_logged_time_carries_its_utc_offset(tmp_path):
     assert logger.log_data({"x": 1})
     entry = logger.load_log(next(Path(logger.log_dir).glob("*.json")))
     assert datetime.datetime.fromisoformat(entry["timestamp"]).tzinfo is not None
+
+
+def test_recent_logs_keep_their_real_order_through_the_repeated_hour(tmp_path):
+    logger = JSONDataLogger("shelly_em3", log_dir=str(tmp_path))
+    names = ["20261025_035000.json", "20261025_031000-2.json"]  # 00:50 and 01:10 UTC
+    for name, utc_minute in zip(names, (50, 70)):
+        path = Path(logger.log_dir) / name
+        path.write_text("{}")
+        moment = datetime.datetime(2026, 10, 25, tzinfo=datetime.timezone.utc).timestamp()
+        os.utime(path, (moment + 60 * utc_minute, moment + 60 * utc_minute))
+
+    with freeze_time("2026-10-25 02:00:00"):
+        recent = logger.get_recent_logs(days=1)
+
+    assert [path.name for path in recent] == list(reversed(names))
 
 
 def test_the_name_filter_reads_a_second_pass_name():

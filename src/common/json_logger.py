@@ -131,12 +131,13 @@ class JSONDataLogger:
             List of log file paths, sorted by modification time (newest first)
         """
         try:
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
+            # Epoch seconds, which keep their order through the repeated autumn hour
+            cutoff_time = (datetime.datetime.now() - datetime.timedelta(days=days)).timestamp()
             recent_logs = []
 
             for log_file in self.log_dir.glob("*.json"):
                 try:
-                    mtime = datetime.datetime.fromtimestamp(log_file.stat().st_mtime)
+                    mtime = log_file.stat().st_mtime
                     if mtime >= cutoff_time:
                         recent_logs.append((mtime, log_file))
                 except Exception as e:

@@ -14,6 +14,7 @@ from typing import Optional
 import pytz
 
 from src.common.json_logger import JSONDataLogger
+from src.common.local_time import HELSINKI
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -167,11 +168,10 @@ async def replay_log_file(log_file: Path, data_source: str, dry_run: bool = Fals
     log_timestamp = None
     if timestamp:
         try:
-            local_tz = pytz.timezone("Europe/Helsinki")
             log_timestamp = datetime.datetime.fromisoformat(timestamp)
             if log_timestamp.tzinfo is None:
                 # Naive timestamp = local time on Pi
-                log_timestamp = local_tz.localize(log_timestamp)
+                log_timestamp = HELSINKI.localize(log_timestamp)
             # Convert to naive UTC (matching utcnow() format)
             log_timestamp = log_timestamp.astimezone(pytz.utc).replace(tzinfo=None)
         except (ValueError, TypeError) as e:

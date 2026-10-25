@@ -34,7 +34,7 @@ from typing import Optional
 
 import pytz
 
-HELSINKI = pytz.timezone("Europe/Helsinki")
+from src.common.local_time import HELSINKI, helsinki_date
 
 
 def find_program_file(target: str) -> Optional[Path]:
@@ -47,7 +47,7 @@ def find_program_file(target: str) -> Optional[Path]:
     Returns:
         Path to program file, or None if not found
     """
-    today = datetime.now(HELSINKI).date()
+    today = helsinki_date()
     if target == "today":
         date = today.isoformat()
     elif target == "tomorrow":
