@@ -15,6 +15,7 @@ REPO = Path(__file__).parents[2]
 TIMEDATECTL_TIMEOUT = 10
 PRODUCTION_DEPLOY = REPO / "deployment" / "deploy_production.sh"
 STAGING_DEPLOY = REPO / "deployment" / "deploy_staging.sh"
+INSTALL = REPO / "deployment" / "deploy_install.sh"
 WAS_RUNNING_TEST = REPO / "tests" / "shell" / "was_running.sh"
 ALWAYS_ON_TEST = REPO / "tests" / "shell" / "is_always_on.sh"
 
@@ -82,13 +83,13 @@ def _timezone_gate(script: Path) -> tuple[str, int]:
 class TestTimezoneGate:
     """The local-time timers are only right on a host on Helsinki time."""
 
-    @pytest.mark.parametrize("script", [PRODUCTION_DEPLOY, STAGING_DEPLOY])
-    def test_gate_runs_before_the_timers_stop(self, script):
+    @pytest.mark.parametrize("script", [PRODUCTION_DEPLOY, STAGING_DEPLOY, INSTALL])
+    def test_gate_runs_before_any_timer_is_touched(self, script):
         _, start = _timezone_gate(script)
-        assert start < script.read_text(encoding="utf-8").index("RUNNING_TIMERS=")
+        assert start < script.read_text(encoding="utf-8").index("systemctl")
 
     @pytest.mark.skipif(BASH is None, reason="bash not available")
-    @pytest.mark.parametrize("script", [PRODUCTION_DEPLOY, STAGING_DEPLOY])
+    @pytest.mark.parametrize("script", [PRODUCTION_DEPLOY, STAGING_DEPLOY, INSTALL])
     @pytest.mark.parametrize("zone, code", [("Europe/Helsinki", 0), ("UTC", 1), ("", 1)])
     def test_gate_refuses_any_other_zone(self, script, zone, code):
         gate, _ = _timezone_gate(script)
