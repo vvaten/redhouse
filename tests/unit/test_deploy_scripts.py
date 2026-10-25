@@ -72,6 +72,31 @@ class TestScriptsParse:
         assert result.returncode == 0, result.stderr
 
 
+def _timezone_gate(script: Path) -> tuple[str, int]:
+    text = script.read_text(encoding="utf-8")
+    match = re.search(r"HOST_TIMEZONE=.*?\nfi\n", text, re.S)
+    assert match, f"no timezone gate in {script.name}"
+    return match.group(0), match.start()
+
+
+class TestTimezoneGate:
+    """The local-time timers are only right on a host on Helsinki time."""
+
+    @pytest.mark.parametrize("script", [PRODUCTION_DEPLOY, STAGING_DEPLOY])
+    def test_gate_runs_before_the_timers_stop(self, script):
+        _, start = _timezone_gate(script)
+        assert start < script.read_text(encoding="utf-8").index("RUNNING_TIMERS=")
+
+    @pytest.mark.skipif(BASH is None, reason="bash not available")
+    @pytest.mark.parametrize("script", [PRODUCTION_DEPLOY, STAGING_DEPLOY])
+    @pytest.mark.parametrize("zone, code", [("Europe/Helsinki", 0), ("UTC", 1), ("", 1)])
+    def test_gate_refuses_any_other_zone(self, script, zone, code):
+        gate, _ = _timezone_gate(script)
+        stub = f"timedatectl() {{ echo '{zone}'; }}\n"
+        result = subprocess.run([BASH, "-c", stub + gate], capture_output=True, timeout=60)
+        assert result.returncode == code
+
+
 class TestBothScriptsRestoreOnExit:
     """A failed deploy must not leave an environment stopped."""
 

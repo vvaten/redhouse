@@ -29,6 +29,13 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# The timers on local time fire by the host zone
+HOST_TIMEZONE=$(timedatectl show -p Timezone --value)
+if [ "$HOST_TIMEZONE" != "Europe/Helsinki" ]; then
+    echo "ERROR: Host timezone is '$HOST_TIMEZONE', expected Europe/Helsinki"
+    exit 1
+fi
+
 # --- Stop any running staging timers for the duration ---
 # A timer firing during git reset imports half-updated code. Restore
 # on any exit, so a failed test run does not leave staging stopped.

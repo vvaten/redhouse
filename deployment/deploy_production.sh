@@ -42,6 +42,13 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# The timers on local time fire by the host zone
+HOST_TIMEZONE=$(timedatectl show -p Timezone --value)
+if [ "$HOST_TIMEZONE" != "Europe/Helsinki" ]; then
+    echo "ERROR: Host timezone is '$HOST_TIMEZONE', expected Europe/Helsinki"
+    exit 1
+fi
+
 # --- Smart deploy window functions ---
 
 in_optimal_window() {
