@@ -14,7 +14,7 @@ The goal is a fully automated backup system with a tested restoration process, s
 Two independent backup jobs, each running where the data lives:
 
 ```
-Pi (03:00 daily, systemd timer)
+Pi (04:30 daily, systemd timer)
     run_backup_pi.py --> /tmp/redhouse-backup/ --> rsync --> NAS:/share/Backups/redhouse/pi/
                                                                 +-- YYYY-MM-DD_HHMMSS/
                                                                 |     +-- .env, config.yaml, pump_state.json
@@ -44,7 +44,7 @@ files to NAS via rsync (no fragile mounts).
 | Pi -> NAS transfer | rsync over SSH | No fragile mounts; resumes on failure; rsync server already enabled on NAS |
 | Pi NAS account | Dedicated `redhouse-backup` | Least privilege (write only to backup dir); SSH key auth (no passwords in scripts) |
 | NAS backup target | Local NAS directory | Data already on NAS; no network needed |
-| Backup schedule | Pi at 03:00, NAS at 03:30 | Low-activity window; staggered to avoid overlap |
+| Backup schedule | Pi at 04:30 local, NAS at 03:30 by the NAS clock | Low-activity window; the jobs are independent; 03:xx local repeats or is skipped at clock changes |
 | InfluxDB full vs incremental | Weekly full + daily incremental (`--since`) | `influx backup --since` supports incremental; balances speed vs coverage |
 | Backup retention | 30 daily + 12 weekly | ~3 months of recovery points |
 | NAS scheduler | Asustor admin panel scheduled job | Native NAS scheduling; no cron hacks needed |
@@ -194,7 +194,7 @@ scripts/backup/nas/
 
 deployment/systemd/
     redhouse-backup.service        # Pi: systemd oneshot service
-    redhouse-backup.timer          # Pi: daily at 03:00
+    redhouse-backup.timer          # Pi: daily at 04:30
 
 docs/
     BACKUP.md                      # Setup guide + restoration runbook
@@ -219,7 +219,7 @@ docs/
 - Uses `shutil.copy2` (preserves timestamps)
 
 #### 3. Systemd Timer
-- Daily at 03:00, `Persistent=true` (catches up after reboot)
+- Daily at 04:30 local, `Persistent=true` (catches up after reboot)
 - `TimeoutStartSec=300` (5 minutes -- Pi files are small)
 
 ### NAS Side

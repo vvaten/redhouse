@@ -6,7 +6,7 @@ Two independent backup jobs run daily:
 
 | Job | Runs on | Schedule | What | Size | Duration |
 |-----|---------|----------|------|------|----------|
-| Pi backup | Raspberry Pi (systemd timer) | 03:00 UTC | .env, pump_state.json, systemd units | ~40 KB | <1s |
+| Pi backup | Raspberry Pi (systemd timer) | 04:30 local | .env, pump_state.json, systemd units | ~40 KB | <1s |
 | NAS backup | Asustor NAS (crontab) | 03:30 UTC | InfluxDB (native backup) + Grafana (API export) | ~300 MB | ~2.5 min |
 
 Backups are stored on the NAS at `/share/Backups/redhouse/`.
