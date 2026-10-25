@@ -167,12 +167,12 @@ chown pi:pi /var/log/redhouse
 echo ""
 "$DEPLOY_DIR/deployment/generate_staging_systemd.sh"
 
-# --- Copy latest production data to staging buckets ---
+# --- Fill gaps in the staging buckets from production ---
 
 echo ""
-echo "Copying latest production data to staging buckets..."
+echo "Filling gaps in the staging data of the last 2 days from production..."
 if sudo -u pi "$VENV_DIR/bin/python" -u deployment/copy_production_to_staging.py --days 2; then
-    echo "[OK] Staging data refreshed"
+    echo "[OK] Staging data gaps filled"
 else
     echo "[WARN] Data copy failed (non-fatal, staging may have stale data)"
 fi
@@ -196,5 +196,6 @@ echo "  sudo deployment/staging_timers.sh start temperature  # Start one"
 echo "  sudo deployment/staging_timers.sh stop               # Stop all"
 echo "  sudo deployment/staging_timers.sh status             # Show active"
 echo ""
-echo "Staging data is from production (last 2 days)."
-echo "To refresh: python deployment/copy_production_to_staging.py --days 1"
+echo "Staging data gaps of the last 2 days are filled from production."
+echo "To fill again: python deployment/copy_production_to_staging.py --days 1"
+echo "To overwrite:  python deployment/copy_production_to_staging.py --days 2 --overwrite"
