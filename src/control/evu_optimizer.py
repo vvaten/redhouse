@@ -54,13 +54,14 @@ class EvuOptimizer:
         Returns:
             List of EVU-OFF period dicts with start/stop timestamps
         """
-        evu_off_max_hours = 24 - math.ceil(hours_to_heat) - 2
+        day_priorities = self.optimizer.filter_day_priorities(priorities_df, date_offset)
+
+        # One row per hour; the day has 23, 24 or 25 hours
+        evu_off_max_hours = len(day_priorities) - math.ceil(hours_to_heat) - 2
 
         if evu_off_max_hours <= 0:
             logger.info("No room for EVU-OFF periods (heating all day)")
             return []
-
-        day_priorities = self.optimizer.filter_day_priorities(priorities_df, date_offset)
 
         expensive_hours = day_priorities[
             day_priorities["price_total"] > self.EVU_OFF_THRESHOLD_PRICE

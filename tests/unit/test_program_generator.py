@@ -899,6 +899,24 @@ class TestGenerateEvuOffPeriods(unittest.TestCase):
         self.assertIn("start", result[0])
         self.assertIn("stop", result[0])
 
+    def test_evu_off_budget_follows_the_hours_of_the_day(self):
+        """The EVU-OFF budget uses the 23 or 25 hours of a clock change day."""
+        days = [("2027-03-27 22:00", 23, 20.0), ("2026-10-24 21:00", 25, 22.0)]
+        for local_midnight_utc, hours, hours_to_heat in days:
+            with self.subTest(hours=hours):
+                timestamps = pd.date_range(
+                    start=local_midnight_utc, periods=hours, freq="h", tz="UTC"
+                ).tz_convert("Europe/Helsinki")
+                priorities_df = pd.DataFrame({"price_total": [0.60] * hours}, index=timestamps)
+                self.mock_optimizer.filter_day_priorities.return_value = priorities_df
+
+                result = self.evu_optimizer.generate_evu_off_periods(
+                    pd.DataFrame(index=timestamps), priorities_df, hours_to_heat, 0
+                )
+
+                evu_off_seconds = sum(period["stop"] - period["start"] for period in result)
+                self.assertEqual(evu_off_seconds, 3600)
+
 
 class TestGenerateLoadSchedules(unittest.TestCase):
     """Test generate_load_schedules method."""
