@@ -154,16 +154,35 @@ async def fetch_checkwatt_data(
         return None
 
 
+def _next_instant(wall: datetime.datetime, after: datetime.datetime) -> datetime.datetime:
+    """The earliest instant after the given one that has this Helsinki wall time."""
+    try:
+        candidates = [HELSINKI.localize(wall, is_dst=None)]
+    except pytz.AmbiguousTimeError:
+        candidates = [HELSINKI.localize(wall, is_dst=True), HELSINKI.localize(wall, is_dst=False)]
+    later = [instant for instant in candidates if instant > after]
+    if not later:
+        raise ValueError(f"Wall time {wall} does not follow {after}")
+    return min(later)
+
+
+def _meter_instants(meter: dict, shift: int) -> list[datetime.datetime]:
+    """The instant of each measurement, by its own wall time counted from the
+    UTC start of the meter. The first one must be shift seconds after it."""
+    start = datetime.datetime.fromisoformat(meter["DateFromUTC"])
+    previous = start.replace(tzinfo=datetime.timezone.utc) - datetime.timedelta(seconds=1)
+    instants = []
+    for measurement in meter["Measurements"]:
+        previous = _next_instant(datetime.datetime.fromisoformat(measurement["Date"]), previous)
+        instants.append(previous)
+    first = start.replace(tzinfo=datetime.timezone.utc) + datetime.timedelta(seconds=shift)
+    if instants and instants[0] != first:
+        raise ValueError(f"First minute is not at DateFromUTC {meter['DateFromUTC']}")
+    return instants
+
+
 def process_checkwatt_data(json_data: dict) -> list[dict]:
-    """
-    Process CheckWatt JSON data into InfluxDB format.
-
-    Args:
-        json_data: Raw JSON data from CheckWatt API
-
-    Returns:
-        List of data points ready for InfluxDB
-    """
+    """Data points ready for InfluxDB from a raw CheckWatt API response."""
     logger.info("Processing CheckWatt data")
 
     # Validate data format
@@ -175,32 +194,22 @@ def process_checkwatt_data(json_data: dict) -> list[dict]:
             f"Expected {len(CHECKWATT_COLUMNS)} meters, " f"got {len(json_data.get('Meters', []))}"
         )
 
-    # A wall time naming two instants, or none, raises instead of mislabelling
-    dt = HELSINKI.localize(datetime.datetime.fromisoformat(json_data["DateFrom"]), is_dst=None)
-    start_timestamp = int(dt.timestamp())
-
-    # Initialize data points with timestamps (1-minute intervals)
-    measurements_soc = json_data["Meters"][0]["Measurements"]
-    data_points: list[dict[str, Any]] = []
-
-    for i in range(len(measurements_soc)):
-        data_points.append({"epoch_timestamp": start_timestamp + i * 60})
-
-    # Add measurements from each meter
+    points: dict[int, dict[str, Any]] = {}
     for col_idx, column_name in enumerate(CHECKWATT_COLUMNS):
-        measurements = json_data["Meters"][col_idx]["Measurements"]
+        meter = json_data["Meters"][col_idx]
+        # The SoC is dated by the start of its minute, a delta by the end
+        shift = 0 if col_idx == 0 else 60
+        for instant, measurement in zip(_meter_instants(meter, shift), meter["Measurements"]):
+            epoch = int(instant.timestamp()) - shift
+            points.setdefault(epoch, {"epoch_timestamp": epoch})[column_name] = measurement["Value"]
 
-        for i in range(len(measurements_soc)):
-            if i < len(measurements):
-                data_points[i][column_name] = measurements[i]["Value"]
-            else:
-                data_points[i][column_name] = 0.0
-
-    # Remove all values from last record except Battery_SoC
-    # (last record is incomplete delta)
-    if len(data_points) > 0:
-        for column_name in CHECKWATT_COLUMNS[1:]:  # Skip Battery_SoC
-            data_points[-1].pop(column_name, None)
+    epochs = sorted(points)
+    data_points = [points[epoch] for epoch in epochs]
+    for a, b in zip(epochs, epochs[1:]):
+        if b - a > 60:
+            # A range that starts before a repeated hour gets no second pass
+            gap_start = datetime.datetime.fromtimestamp(a + 60, datetime.timezone.utc)
+            logger.warning(f"CheckWatt gave no data for {(b - a) // 60 - 1} min from {gap_start}")
 
     logger.info(f"Processed {len(data_points)} CheckWatt data points")
     return data_points
@@ -285,8 +294,7 @@ def _load_and_validate_credentials(config: Any) -> tuple[str, str, list[str]]:
     return username, password, meter_ids
 
 
-# The API speaks Helsinki wall time. On 2026-10-25 it read an ambiguous
-# 03:00 as the second pass, so ambiguous and missing times are never sent.
+# The API speaks Helsinki wall time and reads an ambiguous one as the second pass
 def _single_wall_time(wall: datetime.datetime, step: datetime.timedelta) -> datetime.datetime:
     """Move a Helsinki wall time by step until it names exactly one instant."""
     while True:
@@ -306,9 +314,13 @@ def _compute_date_range(
         now = datetime.datetime.now(HELSINKI)
         hour = datetime.timedelta(hours=1)
         start = HELSINKI.normalize(now - hour).replace(minute=0, second=0, microsecond=0)
+        start_wall = start.replace(tzinfo=None)
+        # An ambiguous start is right as it is only when it is in the second pass
+        if start.dst():
+            start_wall = _single_wall_time(start_wall, -hour)
         end = HELSINKI.normalize(now + hour)
         return (
-            _single_wall_time(start.replace(tzinfo=None), -hour).isoformat()[:19],
+            start_wall.isoformat()[:19],
             _single_wall_time(end.replace(tzinfo=None), hour).isoformat()[:19],
         )
     else:
@@ -341,19 +353,7 @@ def _backup_raw_data(json_data: dict, start_date: str, end_date: str) -> None:
 
 
 def _validate_and_process_response(json_data: dict, min_data_points: int = 10) -> list[dict]:
-    """
-    Validate response structure and process data.
-
-    Args:
-        json_data: Raw JSON data from API
-        min_data_points: Minimum required data points
-
-    Returns:
-        Processed data points
-
-    Raises:
-        ValueError: If response format is invalid or insufficient data
-    """
+    """Processed data points; ValueError if the response is malformed or too short."""
     if len(json_data) != 4:
         raise ValueError(f"Unexpected response format (expected 4 fields, got {len(json_data)})")
 

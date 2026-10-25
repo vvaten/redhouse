@@ -1,5 +1,6 @@
 """Extended unit tests for CheckWatt data collection - pytest style."""
 
+import datetime
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -10,6 +11,7 @@ from src.data_collection.checkwatt import (
     main,
     write_checkwatt_to_influx,
 )
+from tests.unit.checkwatt_api import checkwatt_response
 
 
 @pytest.fixture
@@ -44,24 +46,20 @@ def sample_checkwatt_data():
 @pytest.fixture
 def sample_api_response():
     """Sample API response from CheckWatt with 12 measurements."""
-    # Create 12 measurements (enough to pass the 10 point minimum)
-    measurements = []
-    for i in range(12):
-        measurements.append({"Value": 50.0 + i})
-
-    return {
-        "Grouping": "delta",
-        "DateFrom": "2024-01-15T10:00:00",
-        "DateTo": "2024-01-15T10:12:00",
-        "Meters": [
-            {"Measurements": [{"Value": 50.0 + i} for i in range(12)]},  # Battery_SoC
-            {"Measurements": [{"Value": 100.0 + i * 10} for i in range(12)]},  # BatteryCharge
-            {"Measurements": [{"Value": 0.0} for i in range(12)]},  # BatteryDischarge
-            {"Measurements": [{"Value": 200.0 + i * 10} for i in range(12)]},  # EnergyImport
-            {"Measurements": [{"Value": 50.0 + i * 5} for i in range(12)]},  # EnergyExport
-            {"Measurements": [{"Value": 300.0 + i * 10} for i in range(12)]},  # SolarYield
+    # 12 measurements, enough to pass the 10 point minimum
+    start = datetime.datetime(2024, 1, 15, 8, 0, tzinfo=datetime.timezone.utc)  # 10:00 local
+    return checkwatt_response(
+        start,
+        start + datetime.timedelta(minutes=12),
+        [
+            [50.0 + i for i in range(12)],  # Battery_SoC
+            [100.0 + i * 10 for i in range(12)],  # BatteryCharge
+            [0.0 for i in range(12)],  # BatteryDischarge
+            [200.0 + i * 10 for i in range(12)],  # EnergyImport
+            [50.0 + i * 5 for i in range(12)],  # EnergyExport
+            [300.0 + i * 10 for i in range(12)],  # SolarYield
         ],
-    }
+    )
 
 
 class TestFetchCheckwattData:

@@ -15,6 +15,19 @@ from src.data_collection.checkwatt import (
     get_auth_token,
     process_checkwatt_data,
 )
+from tests.unit.checkwatt_api import checkwatt_response
+
+START_UTC = datetime.datetime(2025, 10, 18, 11, 0, tzinfo=datetime.timezone.utc)  # 14:00 local
+
+
+def _response(values: list) -> dict:
+    """A response from START_UTC, one minute per SoC value."""
+    end = START_UTC + datetime.timedelta(minutes=len(values[0]))
+    return checkwatt_response(START_UTC, end, values)
+
+
+def _constant_meters(minutes: int) -> list:
+    return [[value] * minutes for value in (50.0, 100.0, 0.0, 200.0, 50.0, 300.0)]
 
 
 class TestCheckWattCollection(unittest.TestCase):
@@ -75,30 +88,16 @@ class TestCheckWattCollection(unittest.TestCase):
 
     def test_process_checkwatt_data_success(self):
         """Test processing of CheckWatt JSON data."""
-        json_data = {
-            "Grouping": "delta",
-            "DateFrom": "2025-10-18T14:00:00",
-            "Meters": [
-                {  # Battery_SoC
-                    "Measurements": [{"Value": 50.0}, {"Value": 51.0}, {"Value": 52.0}]
-                },
-                {  # BatteryCharge
-                    "Measurements": [{"Value": 100.0}, {"Value": 110.0}, {"Value": 120.0}]
-                },
-                {  # BatteryDischarge
-                    "Measurements": [{"Value": 0.0}, {"Value": 0.0}, {"Value": 0.0}]
-                },
-                {  # EnergyImport
-                    "Measurements": [{"Value": 200.0}, {"Value": 210.0}, {"Value": 220.0}]
-                },
-                {  # EnergyExport
-                    "Measurements": [{"Value": 50.0}, {"Value": 55.0}, {"Value": 60.0}]
-                },
-                {  # SolarYield
-                    "Measurements": [{"Value": 300.0}, {"Value": 310.0}, {"Value": 320.0}]
-                },
+        json_data = _response(
+            [
+                [50.0, 51.0, 52.0],  # Battery_SoC
+                [100.0, 110.0, 120.0],  # BatteryCharge
+                [0.0, 0.0, 0.0],  # BatteryDischarge
+                [200.0, 210.0, 220.0],  # EnergyImport
+                [50.0, 55.0, 60.0],  # EnergyExport
+                [300.0, 310.0, 320.0],  # SolarYield
             ],
-        }
+        )
 
         result = process_checkwatt_data(json_data)
 
@@ -225,19 +224,7 @@ class TestCheckWattCollection(unittest.TestCase):
 
     def test_validate_and_process_response_success(self):
         """Test successful response validation and processing."""
-        json_data = {
-            "Grouping": "delta",
-            "DateFrom": "2025-10-18T14:00:00",
-            "DateTo": "2025-10-18T15:00:00",
-            "Meters": [
-                {"Measurements": [{"Value": 50.0}] * 15},
-                {"Measurements": [{"Value": 100.0}] * 15},
-                {"Measurements": [{"Value": 0.0}] * 15},
-                {"Measurements": [{"Value": 200.0}] * 15},
-                {"Measurements": [{"Value": 50.0}] * 15},
-                {"Measurements": [{"Value": 300.0}] * 15},
-            ],
-        }
+        json_data = _response(_constant_meters(15))
 
         result = _validate_and_process_response(json_data)
 
@@ -255,19 +242,7 @@ class TestCheckWattCollection(unittest.TestCase):
 
     def test_validate_and_process_response_insufficient_data(self):
         """Test error on insufficient data points."""
-        json_data = {
-            "Grouping": "delta",
-            "DateFrom": "2025-10-18T14:00:00",
-            "DateTo": "2025-10-18T15:00:00",
-            "Meters": [
-                {"Measurements": [{"Value": 50.0}] * 5},
-                {"Measurements": [{"Value": 100.0}] * 5},
-                {"Measurements": [{"Value": 0.0}] * 5},
-                {"Measurements": [{"Value": 200.0}] * 5},
-                {"Measurements": [{"Value": 50.0}] * 5},
-                {"Measurements": [{"Value": 300.0}] * 5},
-            ],
-        }
+        json_data = _response(_constant_meters(5))
 
         with self.assertRaises(ValueError) as ctx:
             _validate_and_process_response(json_data)
@@ -291,19 +266,7 @@ class TestCheckWattCollection(unittest.TestCase):
         mock_get_config.return_value = mock_config
         mock_get_auth.return_value = "test_token"
 
-        json_data = {
-            "Grouping": "delta",
-            "DateFrom": "2025-10-18T14:00:00",
-            "DateTo": "2025-10-18T15:00:00",
-            "Meters": [
-                {"Measurements": [{"Value": 50.0}] * 15},
-                {"Measurements": [{"Value": 100.0}] * 15},
-                {"Measurements": [{"Value": 0.0}] * 15},
-                {"Measurements": [{"Value": 200.0}] * 15},
-                {"Measurements": [{"Value": 50.0}] * 15},
-                {"Measurements": [{"Value": 300.0}] * 15},
-            ],
-        }
+        json_data = _response(_constant_meters(15))
         mock_fetch.return_value = json_data
         mock_write.return_value = True
 
