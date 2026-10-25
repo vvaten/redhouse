@@ -28,9 +28,13 @@ Examples:
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+
+import pytz
+
+HELSINKI = pytz.timezone("Europe/Helsinki")
 
 
 def find_program_file(target: str) -> Optional[Path]:
@@ -43,10 +47,11 @@ def find_program_file(target: str) -> Optional[Path]:
     Returns:
         Path to program file, or None if not found
     """
+    today = datetime.now(HELSINKI).date()
     if target == "today":
-        date = datetime.now().strftime("%Y-%m-%d")
+        date = today.isoformat()
     elif target == "tomorrow":
-        date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        date = (today + timedelta(days=1)).isoformat()
     else:  # latest
         # Find most recent program file
         pattern = "heating_program_schedule_*.json"
@@ -121,15 +126,24 @@ def list_program(program: dict):
     print("=" * 70)
 
 
+def _helsinki_instant(program_date, wall_time: str):
+    """Place an HH:MM wall time of the program date in Helsinki time."""
+    hour, minute = map(int, wall_time.split(":"))
+    wall = program_date.replace(hour=hour, minute=minute, second=0)
+    try:
+        return HELSINKI.localize(wall, is_dst=None)
+    except pytz.AmbiguousTimeError:
+        raise ValueError(f"{wall_time} occurs twice on {program_date.date()}") from None
+    except pytz.NonExistentTimeError:
+        raise ValueError(f"{wall_time} does not exist on {program_date.date()}") from None
+
+
 def _parse_time_and_validate(program_date, start_time: str, end_time: str):
     """Parse start/end times and validate duration."""
-    start_hour, start_min = map(int, start_time.split(":"))
-    end_hour, end_min = map(int, end_time.split(":"))
+    start_dt = _helsinki_instant(program_date, start_time)
+    end_dt = _helsinki_instant(program_date, end_time)
 
-    start_dt = program_date.replace(hour=start_hour, minute=start_min, second=0)
-    end_dt = program_date.replace(hour=end_hour, minute=end_min, second=0)
-
-    duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+    duration_minutes = int((end_dt.timestamp() - start_dt.timestamp()) / 60)
 
     if duration_minutes <= 0:
         raise ValueError("End time must be after start time")
@@ -141,7 +155,7 @@ def _create_schedule_entry(start_dt, duration_minutes: int, mode: str):
     """Create a new schedule entry with all required fields."""
     return {
         "timestamp": int(start_dt.timestamp()),
-        "utc_time": start_dt.astimezone(None).isoformat(),
+        "utc_time": start_dt.astimezone(timezone.utc).isoformat(),
         "local_time": start_dt.isoformat(),
         "command": mode,
         "duration_minutes": duration_minutes,

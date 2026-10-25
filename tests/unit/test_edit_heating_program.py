@@ -4,9 +4,12 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+from freezegun import freeze_time
+
 # Import functions from the editor script
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from edit_heating_program import add_entry, list_program  # noqa: E402
+from edit_heating_program import add_entry, find_program_file, list_program  # noqa: E402
 
 
 class TestEditHeatingProgram(unittest.TestCase):
@@ -238,6 +241,52 @@ class TestEditHeatingProgram(unittest.TestCase):
             list_program(self.sample_program)
         except Exception as e:
             self.fail(f"list_program raised exception: {e}")
+
+
+def _empty_program(day: str) -> dict:
+    return {"program_date": day, "loads": {"geothermal_pump": {"schedule": []}}}
+
+
+def _added(day: str, start: str, end: str) -> dict:
+    program = add_entry(_empty_program(day), start, end, "ON")
+    return program["loads"]["geothermal_pump"]["schedule"][0]
+
+
+@pytest.mark.parametrize(
+    "day, minutes, utc_time, local_time",
+    [
+        ("2026-10-25", 240, "2026-10-24T23:00:00+00:00", "2026-10-25T02:00:00+03:00"),
+        ("2027-03-28", 120, "2027-03-28T00:00:00+00:00", "2027-03-28T02:00:00+02:00"),
+        ("2024-11-06", 180, "2024-11-06T00:00:00+00:00", "2024-11-06T02:00:00+02:00"),
+    ],
+    ids=["autumn", "spring", "normal"],
+)
+def test_entry_across_a_clock_change_has_its_real_length(day, minutes, utc_time, local_time):
+    entry = _added(day, "02:00", "05:00")
+    assert entry["duration_minutes"] == minutes
+    assert entry["utc_time"] == utc_time
+    assert entry["local_time"] == local_time
+
+
+@pytest.mark.parametrize(
+    "day, message",
+    [("2026-10-25", "occurs twice"), ("2027-03-28", "does not exist")],
+    ids=["repeated hour", "skipped hour"],
+)
+def test_a_wall_time_in_the_clock_change_hour_is_refused(day, message):
+    with pytest.raises(ValueError, match=message):
+        _added(day, "03:30", "05:00")
+
+
+@freeze_time("2026-10-24 22:30:00")  # 01:30 in Helsinki on a host on UTC
+def test_today_is_the_helsinki_date(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "2026-10").mkdir()
+    for day in ("2026-10-24", "2026-10-25", "2026-10-26"):
+        (tmp_path / "2026-10" / f"heating_program_schedule_{day}.json").write_text("{}")
+
+    assert find_program_file("today").name == "heating_program_schedule_2026-10-25.json"
+    assert find_program_file("tomorrow").name == "heating_program_schedule_2026-10-26.json"
 
 
 if __name__ == "__main__":
