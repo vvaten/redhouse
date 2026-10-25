@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 """Calculate heating priorities based on electricity prices and solar production."""
 
+import datetime
 from typing import Optional, Union
 
 import pandas as pd
 
+from src.common.local_time import helsinki_date
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -239,13 +241,11 @@ class HeatingOptimizer:
         Returns:
             Filtered DataFrame for the specified day
         """
-        import datetime
-
-        target_day = datetime.datetime.now() + datetime.timedelta(days=date_offset)
+        target_day = helsinki_date(date_offset)
         next_day = target_day + datetime.timedelta(days=1)
 
-        target_str = target_day.strftime("%Y-%m-%d")
-        next_str = next_day.strftime("%Y-%m-%d")
+        target_str = target_day.isoformat()
+        next_str = next_day.isoformat()
 
         day_data = df[(df.index >= target_str) & (df.index < next_str)].copy()
 

@@ -12,19 +12,14 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-import pytz
-
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
+from src.common.local_time import HELSINKI
 from src.common.logger import setup_logger
 from src.monitoring.email_sender import send_alert_email
 from src.monitoring.health_check import _is_staging
 
 logger = setup_logger(__name__, "program_check.log")
-
-# Local, not UTC: "tomorrow" is a local day and Finland has DST, so a
-# fixed offset is right for half the year only.
-HELSINKI = pytz.timezone("Europe/Helsinki")
 
 # Must equal program_executor.load_program's base_dir default. Both
 # resolve against the unit's WorkingDirectory, and neither unit passes

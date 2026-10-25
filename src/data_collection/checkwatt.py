@@ -13,13 +13,10 @@ import pytz
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.json_logger import JSONDataLogger
+from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__, "checkwatt.log")
-
-# The API speaks Helsinki wall time. On 2026-10-25 it read an ambiguous
-# 03:00 as the second pass, so ambiguous and missing times are never sent.
-HELSINKI = pytz.timezone("Europe/Helsinki")
 
 # CheckWatt API endpoints
 AUTH_URL = "https://api.checkwatt.se/user/Login?audience=eib"
@@ -288,6 +285,8 @@ def _load_and_validate_credentials(config: Any) -> tuple[str, str, list[str]]:
     return username, password, meter_ids
 
 
+# The API speaks Helsinki wall time. On 2026-10-25 it read an ambiguous
+# 03:00 as the second pass, so ambiguous and missing times are never sent.
 def _single_wall_time(wall: datetime.datetime, step: datetime.timedelta) -> datetime.datetime:
     """Move a Helsinki wall time by step until it names exactly one instant."""
     while True:
@@ -314,11 +313,9 @@ def _compute_date_range(
         )
     else:
         if start_date is None:
-            start_date = datetime.date.today().isoformat() + "T00:00:00"
+            start_date = helsinki_date().isoformat() + "T00:00:00"
         if end_date is None:
-            end_date = (
-                datetime.date.today() + datetime.timedelta(days=1)
-            ).isoformat() + "T00:00:00"
+            end_date = helsinki_date(1).isoformat() + "T00:00:00"
         return start_date, end_date
 
 

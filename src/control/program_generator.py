@@ -8,6 +8,7 @@ from typing import Optional
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
+from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
 from src.control.evu_optimizer import EvuOptimizer
 from src.control.heating_curve import HeatingCurve
@@ -131,7 +132,7 @@ class HeatingProgramGenerator:
                 days=date_offset
             )
         else:
-            program_date = datetime.datetime.now() + datetime.timedelta(days=date_offset)
+            program_date = datetime.datetime.combine(helsinki_date(date_offset), datetime.time.min)
 
         program_date_str = program_date.strftime("%Y-%m-%d")
         logger.info(f"Program date: {program_date_str}")
@@ -234,7 +235,7 @@ class HeatingProgramGenerator:
         """
         return {
             "version": self.VERSION,
-            "generated_at": datetime.datetime.now().astimezone().isoformat(),
+            "generated_at": datetime.datetime.now(HELSINKI).isoformat(),
             "generator_version": f"redhouse-{self.VERSION}",
             "program_date": program_date_str,
             "input_parameters": {

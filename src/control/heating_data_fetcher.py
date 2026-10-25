@@ -5,15 +5,13 @@ import datetime
 from typing import Any
 
 import pandas as pd
-import pytz
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
+from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__)
-
-HELSINKI = pytz.timezone("Europe/Helsinki")
 
 # (column, label, per clock hour): inputs the program cannot be planned
 # without. The repeated October hour was stored once in 2025, so prices
@@ -326,11 +324,11 @@ class HeatingDataFetcher:
         Returns:
             Average temperature in Celsius
         """
-        target_day = datetime.datetime.now() + datetime.timedelta(days=date_offset)
+        target_day = helsinki_date(date_offset)
         next_day = target_day + datetime.timedelta(days=1)
 
-        target_str = target_day.strftime("%Y-%m-%d")
-        next_str = next_day.strftime("%Y-%m-%d")
+        target_str = target_day.isoformat()
+        next_str = next_day.isoformat()
 
         day_data = df[(df["time_floor_local"] >= target_str) & (df["time_floor_local"] < next_str)]
 

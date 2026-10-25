@@ -3,14 +3,10 @@
 
 import datetime
 
-import pytz
-
+from src.common.local_time import HELSINKI
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__)
-
-# Labels name Helsinki time whatever the zone of the machine running the code
-HELSINKI = pytz.timezone("Europe/Helsinki")
 
 
 class ScheduleBuilder:

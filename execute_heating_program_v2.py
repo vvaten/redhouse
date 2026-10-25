@@ -36,6 +36,7 @@ import argparse
 import datetime
 import sys
 
+from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
 from src.control.program_executor import HeatingProgramExecutor
 from src.control.program_fallback import load_valid_program
@@ -111,7 +112,7 @@ def _load_previous_program(program_date: str, base_dir: str):
 
 def _handle_day_transition_if_needed(executor, program, previous_program):
     """Handle day transition if in the first 15 minutes of the day."""
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(HELSINKI)
     if now.hour == 0 and now.minute < 15 and previous_program is not None:
         program = executor.handle_day_transition(program, previous_program)
         logger.info("Day transition handled")
@@ -128,7 +129,7 @@ def _print_execution_summary(summary: dict, program_date: str, dry_run: bool):
     print(f"Failed:   {summary['failed_count']} commands")
 
     if summary["next_execution_time"]:
-        next_time = datetime.datetime.fromtimestamp(summary["next_execution_time"])
+        next_time = datetime.datetime.fromtimestamp(summary["next_execution_time"], HELSINKI)
         time_until = summary["next_execution_time"] - int(datetime.datetime.now().timestamp())
         print(f"\nNext execution: {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Time until next: {time_until // 60} minutes")
@@ -156,7 +157,7 @@ def main():
         executor = HeatingProgramExecutor(dry_run=args.dry_run)
 
         # Determine date
-        program_date = args.date if args.date else datetime.date.today().strftime("%Y-%m-%d")
+        program_date = args.date if args.date else helsinki_date().isoformat()
         logger.info(f"Executing program for {'specified date' if args.date else 'today'}: {program_date}")
 
         # Load programs. Without one the pump keeps its state, so it still

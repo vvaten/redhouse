@@ -11,6 +11,7 @@ from influxdb_client import Point
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
+from src.common.local_time import helsinki_date
 from src.common.logger import setup_logger
 from src.control.multi_load_controller import MultiLoadController
 from src.control.program_shape import PUMP_LOAD, program_is_well_formed
@@ -73,7 +74,7 @@ class HeatingProgramExecutor:
             ValueError: If program file is invalid
         """
         if program_date is None:
-            program_date = datetime.date.today().strftime("%Y-%m-%d")
+            program_date = helsinki_date().isoformat()
 
         year_month = program_date[:7]  # YYYY-MM
         filename = f"heating_program_schedule_{program_date}.json"

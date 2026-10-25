@@ -33,9 +33,9 @@ Examples:
 """
 
 import argparse
-import datetime
 import sys
 
+from src.common.local_time import helsinki_date
 from src.common.logger import setup_logger
 from src.control.program_fallback import is_fallback_copy, load_valid_program
 from src.control.program_generator import HeatingProgramGenerator
@@ -106,7 +106,7 @@ PLAN_NOT_IN_INFLUX_KEY = "plan_not_in_influx"
 def generated_program_exists(date_offset: int, output_dir: str) -> bool:
     """Whether a complete generated program is there. A fallback copy, an
     unusable file or a plan missing from InfluxDB counts as not there."""
-    program_date = (datetime.datetime.now() + datetime.timedelta(days=date_offset)).date()
+    program_date = helsinki_date(date_offset)
     program = load_valid_program(program_path(program_date, output_dir))
     if program is None:
         return False

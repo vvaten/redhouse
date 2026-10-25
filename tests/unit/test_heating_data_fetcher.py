@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import pandas as pd
+from freezegun import freeze_time
 
 from src.control.heating_data_fetcher import (
     HeatingDataFetcher,
@@ -442,20 +443,13 @@ class TestHeatingDataFetcher(unittest.TestCase):
         mock_weather.assert_called_once_with(0, 5)
         mock_merge.assert_called_once()
 
-    @patch("src.control.heating_data_fetcher.datetime")
+    @freeze_time("2025-01-15 08:00:00")  # 10:00 in Helsinki
     @patch("src.control.heating_data_fetcher.InfluxClient")
     @patch("src.control.heating_data_fetcher.get_config")
-    def test_get_day_average_temperature_success(
-        self, mock_config, mock_influx_class, mock_datetime
-    ):
+    def test_get_day_average_temperature_success(self, mock_config, mock_influx_class):
         """Test getting average temperature for a specific day."""
         mock_config.return_value = self.mock_config
         mock_influx_class.return_value = self.mock_influx
-
-        # Mock datetime.datetime.now()
-        mock_now = datetime.datetime(2025, 1, 15, 10, 0, 0)
-        mock_datetime.datetime.now.return_value = mock_now
-        mock_datetime.timedelta = datetime.timedelta
 
         fetcher = HeatingDataFetcher()
 
@@ -480,19 +474,13 @@ class TestHeatingDataFetcher(unittest.TestCase):
         self.assertIsInstance(result, float)
         self.assertAlmostEqual(result, -5.0, places=1)
 
-    @patch("src.control.heating_data_fetcher.datetime")
+    @freeze_time("2025-01-15 08:00:00")  # 10:00 in Helsinki
     @patch("src.control.heating_data_fetcher.InfluxClient")
     @patch("src.control.heating_data_fetcher.get_config")
-    def test_get_day_average_temperature_no_data(
-        self, mock_config, mock_influx_class, mock_datetime
-    ):
+    def test_get_day_average_temperature_no_data(self, mock_config, mock_influx_class):
         """Test getting average temperature when no data available."""
         mock_config.return_value = self.mock_config
         mock_influx_class.return_value = self.mock_influx
-
-        mock_now = datetime.datetime(2025, 1, 15, 10, 0, 0)
-        mock_datetime.datetime.now.return_value = mock_now
-        mock_datetime.timedelta = datetime.timedelta
 
         fetcher = HeatingDataFetcher()
 
@@ -504,19 +492,13 @@ class TestHeatingDataFetcher(unittest.TestCase):
         # Verify returns 0.0 for missing data
         self.assertEqual(result, 0.0)
 
-    @patch("src.control.heating_data_fetcher.datetime")
+    @freeze_time("2025-01-15 08:00:00")  # 10:00 in Helsinki
     @patch("src.control.heating_data_fetcher.InfluxClient")
     @patch("src.control.heating_data_fetcher.get_config")
-    def test_get_day_average_temperature_missing_column(
-        self, mock_config, mock_influx_class, mock_datetime
-    ):
+    def test_get_day_average_temperature_missing_column(self, mock_config, mock_influx_class):
         """Test getting average temperature when column is missing."""
         mock_config.return_value = self.mock_config
         mock_influx_class.return_value = self.mock_influx
-
-        mock_now = datetime.datetime(2025, 1, 15, 10, 0, 0)
-        mock_datetime.datetime.now.return_value = mock_now
-        mock_datetime.timedelta = datetime.timedelta
 
         fetcher = HeatingDataFetcher()
 
