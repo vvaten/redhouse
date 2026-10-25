@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, Mock, mock_open, patch
 
 import pytest
+import pytz
 
 from src.data_collection.spot_prices import (
     collect_spot_prices,
@@ -123,19 +124,67 @@ class TestSpotPriceCollection(unittest.TestCase):
             expected_total = round(price_withtax + 0.01 * (0.50 + 2.59 + 2.79372), 6)
             self.assertEqual(result[i]["price_total"], expected_total)
 
-    def test_process_spot_prices_dst_transition(self):
-        """Test DST transition handling for 2022-10-30."""
+    def test_process_spot_prices_repeated_autumn_hour(self):
+        """The API labels of 2026-10-25 name the two passes of 03:00 apart."""
+        labels = [
+            "2026-10-25T03:45:00+03:00",
+            "2026-10-25T03:00:00+02:00",
+            "2026-10-25T03:15:00+02:00",
+            "2026-10-25T03:30:00+02:00",
+            "2026-10-25T03:45:00+02:00",
+            "2026-10-25T04:00:00+02:00",
+        ]
+        raw_prices = [{"DateTime": label, "PriceNoTax": 0.002} for label in labels]
+
+        result = process_spot_prices(raw_prices, self.mock_config)
+
+        first = datetime.datetime(2026, 10, 25, 0, 45, tzinfo=datetime.timezone.utc)
+        expected = [int(first.timestamp()) + 900 * i for i in range(len(labels))]
+        self.assertEqual([entry["epoch_timestamp"] for entry in result], expected)
+        self.assertEqual([entry["datetime_local"] for entry in result], labels)
+
+    def test_process_spot_prices_whole_clock_change_days(self):
+        """A 23- and a 25-hour day give 92 and 100 quarters 15 minutes apart."""
+        helsinki = pytz.timezone("Europe/Helsinki")
+        days = [("2027-03-27 22:00", 92), ("2026-10-24 21:00", 100)]
+        for local_midnight_utc, quarters in days:
+            with self.subTest(quarters=quarters):
+                start = datetime.datetime.fromisoformat(local_midnight_utc).replace(tzinfo=pytz.utc)
+                instants = [start + datetime.timedelta(minutes=15 * i) for i in range(quarters)]
+                raw_prices = [
+                    {"DateTime": t.astimezone(helsinki).isoformat(), "PriceNoTax": 0.05}
+                    for t in instants
+                ]
+
+                result = process_spot_prices(raw_prices, self.mock_config)
+
+                epochs = [entry["epoch_timestamp"] for entry in result]
+                self.assertEqual(epochs, [int(t.timestamp()) for t in instants])
+                # Every quarter of a clock change night is at the night tariff
+                night_total = round(0.05 * 1.24 + 0.01 * (0.50 + 1.35 + 2.79372), 6)
+                for entry in result[:24]:
+                    self.assertEqual(entry["price_total"], night_total)
+
+    def test_process_spot_prices_refuses_a_time_without_offset(self):
+        """A naive DateTime would take the host zone, so it is skipped."""
         raw_prices = [
-            {"DateTime": "2022-10-30T03:00:00+02:00", "PriceNoTax": 10.0},
-            {"DateTime": "2022-10-30T04:00:00+02:00", "PriceNoTax": 11.0},
+            {"DateTime": "2026-10-25T03:00:00", "PriceNoTax": 0.002},
+            {"DateTime": "2026-10-25T04:00:00+02:00", "PriceNoTax": 0.002},
         ]
 
         result = process_spot_prices(raw_prices, self.mock_config)
 
-        # First entry has special offset
-        # Second entry should be 3600 seconds later (1 hour) plus the DST offset
-        self.assertEqual(len(result), 2)
-        self.assertIn("epoch_timestamp", result[0])
+        self.assertEqual([entry["datetime_local"] for entry in result], [raw_prices[1]["DateTime"]])
+
+    def test_process_spot_prices_refuses_the_same_instant_twice(self):
+        """Two labels of one instant would overwrite each other in InfluxDB."""
+        raw_prices = [
+            {"DateTime": "2026-10-25T03:00:00+02:00", "PriceNoTax": 0.002},
+            {"DateTime": "2026-10-25T01:00:00+00:00", "PriceNoTax": 0.003},
+        ]
+
+        with self.assertRaises(ValueError):
+            process_spot_prices(raw_prices, self.mock_config)
 
     def test_process_spot_prices_error_handling(self):
         """Test that processing continues on individual entry errors."""

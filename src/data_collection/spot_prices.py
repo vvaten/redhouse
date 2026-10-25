@@ -69,25 +69,15 @@ def _validate_config_parameters(config: Any) -> dict:
     return config.spot_prices_config
 
 
-def _parse_entry_datetime(entry: dict) -> tuple[datetime.datetime, int]:
+def _parse_entry_datetime(entry: dict) -> datetime.datetime:
     """
-    Parse datetime from entry and handle DST edge cases.
-
-    Args:
-        entry: Entry dictionary with DateTime field
-
-    Returns:
-        Tuple of (datetime object, offset in seconds)
+    Parse the DateTime of an entry. Its UTC offset tells the two passes of
+    the repeated autumn hour apart, so a time without one is refused.
     """
     entry_datetime = datetime.datetime.fromisoformat(entry["DateTime"])
-
-    # Handle DST transition (2022-10-30 specific fix from original code)
-    if entry_datetime.isoformat() == "2022-10-30T03:00:00+02:00":
-        offset = 3600
-    else:
-        offset = 0
-
-    return entry_datetime, offset
+    if entry_datetime.utcoffset() is None:
+        raise ValueError(f"DateTime has no UTC offset: {entry['DateTime']}")
+    return entry_datetime
 
 
 def _format_datetime_fields(dt: datetime.datetime, epoch_timestamp: int) -> dict:
@@ -199,9 +189,8 @@ def process_spot_prices(spot_prices_raw: list[dict], config: Any) -> list[dict]:
 
     for hour_entry in spot_prices_raw:
         try:
-            # Parse datetime and handle DST edge cases
-            entry_datetime, offset = _parse_entry_datetime(hour_entry)
-            epoch_timestamp = int(entry_datetime.timestamp()) + offset
+            entry_datetime = _parse_entry_datetime(hour_entry)
+            epoch_timestamp = int(entry_datetime.timestamp())
 
             # Build data entry with datetime fields
             data = _format_datetime_fields(entry_datetime, epoch_timestamp)
@@ -215,6 +204,11 @@ def process_spot_prices(spot_prices_raw: list[dict], config: Any) -> list[dict]:
         except Exception as e:
             logger.error(f"Error processing entry {hour_entry}: {e}")
             continue
+
+    epochs = [entry["epoch_timestamp"] for entry in processed_spot_prices]
+    if len(set(epochs)) != len(epochs):
+        # InfluxDB would keep only one of the prices for the same instant
+        raise ValueError("Spot price response names the same instant twice")
 
     logger.info(f"Processed {len(processed_spot_prices)} spot price entries")
     return processed_spot_prices
