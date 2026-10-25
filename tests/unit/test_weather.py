@@ -102,6 +102,20 @@ class TestWeatherCollection(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("weather_data", result)
 
+    @patch("builtins.open", create=True)
+    @patch("os.makedirs")
+    @patch("json.dump")
+    def test_save_weather_to_file_reads_fmi_times_as_utc(
+        self, mock_json_dump, mock_makedirs, mock_open
+    ):
+        """The naive FMI valid times are UTC, whatever the host zone."""
+        weather_data = {datetime.datetime(2026, 10, 25, 1, 0): {"Temperature": 5.0}}
+
+        save_weather_to_file(weather_data, base_dir="/tmp/test")
+
+        utc = datetime.datetime(2026, 10, 25, 1, 0, tzinfo=datetime.timezone.utc)
+        self.assertEqual(list(mock_json_dump.call_args[0][0]), [int(utc.timestamp())])
+
     @patch("src.data_collection.weather.get_config")
     @patch("src.data_collection.weather.InfluxClient")
     def test_write_weather_to_influx_dry_run(self, mock_influx_class, mock_config):

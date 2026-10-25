@@ -116,8 +116,10 @@ def save_weather_to_file(
         # Convert datetime keys to epoch timestamps for JSON serialization
         json_data = {}
         for timestamp, fields in weather_data.items():
-            epoch = int(timestamp.timestamp())
-            json_data[epoch] = fields
+            # FMI gives naive valid times in UTC
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
+            json_data[int(timestamp.timestamp())] = fields
 
         # Write to file
         with open(filepath, "w") as f:
