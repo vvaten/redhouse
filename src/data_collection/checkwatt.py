@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 import aiohttp
 import influxdb_client
+import pytz
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
@@ -15,6 +16,10 @@ from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__, "checkwatt.log")
+
+# The API speaks Helsinki wall time. On 2026-10-25 it read an ambiguous
+# 03:00 as the second pass, so ambiguous and missing times are never sent.
+HELSINKI = pytz.timezone("Europe/Helsinki")
 
 # CheckWatt API endpoints
 AUTH_URL = "https://api.checkwatt.se/user/Login?audience=eib"
@@ -173,8 +178,8 @@ def process_checkwatt_data(json_data: dict) -> list[dict]:
             f"Expected {len(CHECKWATT_COLUMNS)} meters, " f"got {len(json_data.get('Meters', []))}"
         )
 
-    # Parse start time
-    dt = datetime.datetime.fromisoformat(json_data["DateFrom"])
+    # A wall time naming two instants, or none, raises instead of mislabelling
+    dt = HELSINKI.localize(datetime.datetime.fromisoformat(json_data["DateFrom"]), is_dst=None)
     start_timestamp = int(dt.timestamp())
 
     # Initialize data points with timestamps (1-minute intervals)
@@ -268,18 +273,7 @@ async def write_checkwatt_to_influx(data_points: list[dict], dry_run: bool = Fal
 
 
 def _load_and_validate_credentials(config: Any) -> tuple[str, str, list[str]]:
-    """
-    Load username, password, and meter IDs from config.
-
-    Args:
-        config: Configuration object
-
-    Returns:
-        Tuple of (username, password, meter_ids)
-
-    Raises:
-        ValueError: If required credentials are missing
-    """
+    """Username, password and meter IDs from config; ValueError if missing."""
     username = config.get("checkwatt_username")
     password = config.get("checkwatt_password")
     meter_ids_str = config.get("checkwatt_meter_ids")
@@ -294,27 +288,30 @@ def _load_and_validate_credentials(config: Any) -> tuple[str, str, list[str]]:
     return username, password, meter_ids
 
 
+def _single_wall_time(wall: datetime.datetime, step: datetime.timedelta) -> datetime.datetime:
+    """Move a Helsinki wall time by step until it names exactly one instant."""
+    while True:
+        try:
+            HELSINKI.localize(wall, is_dst=None)
+            return wall
+        except (pytz.AmbiguousTimeError, pytz.NonExistentTimeError):
+            wall += step
+
+
 def _compute_date_range(
     last_hour_only: bool, start_date: Optional[str], end_date: Optional[str]
 ) -> tuple[str, str]:
-    """
-    Compute date range for data fetching.
-
-    Args:
-        last_hour_only: If True, compute range for last hour
-        start_date: Optional start date override
-        end_date: Optional end date override
-
-    Returns:
-        Tuple of (start_date, end_date) in ISO format
-    """
+    """(start, end) as Helsinki wall times in ISO format: from the start of
+    the previous hour to an hour ahead, or the given dates, or today."""
     if last_hour_only:
-        now = datetime.datetime.now()
-        computed_start = (
-            (now - datetime.timedelta(hours=1)).replace(minute=0, second=0).isoformat()[:19]
+        now = datetime.datetime.now(HELSINKI)
+        hour = datetime.timedelta(hours=1)
+        start = HELSINKI.normalize(now - hour).replace(minute=0, second=0, microsecond=0)
+        end = HELSINKI.normalize(now + hour)
+        return (
+            _single_wall_time(start.replace(tzinfo=None), -hour).isoformat()[:19],
+            _single_wall_time(end.replace(tzinfo=None), hour).isoformat()[:19],
         )
-        computed_end = (now + datetime.timedelta(hours=1)).isoformat()[:19]
-        return computed_start, computed_end
     else:
         if start_date is None:
             start_date = datetime.date.today().isoformat() + "T00:00:00"
