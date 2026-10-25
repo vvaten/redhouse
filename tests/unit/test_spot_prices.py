@@ -470,7 +470,8 @@ async def test_collect_spot_prices_success():
 
                                 # Latest timestamp is tomorrow
                                 future_timestamp = (
-                                    int(datetime.datetime.utcnow().timestamp()) + 100000
+                                    int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+                                    + 100000
                                 )
                                 mock_write.return_value = future_timestamp
 
@@ -612,7 +613,8 @@ async def test_collect_spot_prices_dry_run():
                                 mock_fetch.return_value = sample_raw
 
                                 future_timestamp = (
-                                    int(datetime.datetime.utcnow().timestamp()) + 100000
+                                    int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+                                    + 100000
                                 )
                                 mock_write.return_value = future_timestamp
 

@@ -1,6 +1,5 @@
 """Unit tests for heating program executor."""
 
-import datetime
 import json
 import os
 import sys
@@ -12,6 +11,7 @@ import pytest
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from src.common.local_time import helsinki_date
 from src.control.program_executor import HeatingProgramExecutor
 
 
@@ -161,7 +161,7 @@ class TestLoadProgram:
         """Test load_program defaults to today's date."""
         executor = HeatingProgramExecutor(config=mock_config)
 
-        today = datetime.date.today()
+        today = helsinki_date()
         year_month = today.strftime("%Y-%m")
         date_str = today.strftime("%Y-%m-%d")
 

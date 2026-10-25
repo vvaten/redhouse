@@ -5,6 +5,7 @@ import unittest
 
 import pandas as pd
 
+from src.common.local_time import helsinki_date
 from src.control.heating_data_fetcher import local_day_hours
 from src.control.heating_optimizer import HeatingOptimizer
 
@@ -128,7 +129,7 @@ class TestHeatingOptimizer(unittest.TestCase):
     def test_filter_day_priorities(self):
         """Test filtering priorities for a specific day."""
         # Use today's data
-        today = datetime.datetime.now()
+        today = datetime.datetime.combine(helsinki_date(), datetime.time.min)
         timestamps = pd.date_range(
             start=today.replace(hour=0, minute=0, second=0),
             periods=48,

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.common.local_time import helsinki_date
 from src.control import program_fallback as pf
 
 HELSINKI = pf.HELSINKI
@@ -335,7 +336,7 @@ class TestGeneratorSkipsWhatItMade:
         return module
 
     def _tomorrow(self):
-        return (datetime.datetime.now() + datetime.timedelta(days=1)).date()
+        return helsinki_date(1)
 
     def _write(self, base, program):
         path = pf.program_path(self._tomorrow(), str(base))

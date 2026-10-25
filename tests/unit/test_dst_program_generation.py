@@ -19,7 +19,7 @@ HELSINKI = pytz.timezone("Europe/Helsinki")
 DAYS = [
     "2026-10-24",  # its look-ahead reaches the 2026 autumn change
     "2026-10-25",  # 25 hours
-    "2026-10-26",  # its look-back holds the repeated hour
+    "2026-10-26",  # the first day after the autumn change
     "2027-03-27",
     "2027-03-28",  # 23 hours
     "2027-03-29",
