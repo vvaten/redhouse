@@ -35,10 +35,12 @@ Steps 1-3 and 5 below were done on 2026-04-06. Since then:
   Closed since: see Roadmap: Done.
 - CheckWatt uses a NEW bucket `checkwatt` in redhouse (old system:
   `checkwatt_full_data`). See "CheckWatt Bucket Migration" below.
-- redhouse-temperature reads Shelly HT values from
-  /home/pi/wibatemp/temperature_status.json, written by
+- redhouse-temperature reads Shelly HT values from both status files and
+  keeps each sensor's newest: /opt/redhouse/data/shelly_ht_status.json
+  from the redhouse-shelly-ht receiver, and
+  /home/pi/wibatemp/temperature_status.json from wibatemp's
   shelly_ht_to_fissio_rest_api.py (cron lines 43 and 45). Those lines
-  must stay until Shelly HT reading is ported to redhouse.
+  stay until the receiver cutover in Phase 7.
 - 2026-09-10: CheckWatt history copy into `checkwatt` COMPLETE and
   verified. 560 of 560 days, 4821978 records, 4.5 hours, 62 write
   retries all recovered. Both buckets now hold 803833 points over the
@@ -206,9 +208,10 @@ The solar predictor and heating_data_fetcher read emeters/energy
 until Phase 5. Commenting it here stopped emeters for 25 minutes on
 2026-09-17. Line 38 retires in Phase 7, together with line 39.
 
-Lines 43 and 45 (shelly_ht_to_fissio_rest_api) MUST STAY at every
-phase: redhouse's temperature collector reads temperature_status.json
-for the four Shelly HT sensors.
+Lines 43 and 45 (shelly_ht_to_fissio_rest_api) stay until the
+redhouse-shelly-ht cutover in Phase 7: until then redhouse's
+temperature collector reads wibatemp's temperature_status.json for the
+Shelly HT sensors.
 
 Checkpoint: shelly_em3_emeters_raw gets 1440 points/day. Measured
 2026-09-17, the 5-min aggregator accepts a window with zero Shelly
@@ -349,6 +352,58 @@ heating program runs from redhouse. It is the largest bucket in the
 instance at 230 MB, over half of all storage, and still runs from
 wibatemp with hardcoded credentials.
 
+Status 2026-11-01: lines 38 and 39 commented out, and the [Wibatemp]
+Grafana rules paused. The ping logger (redhouse-pinglogger.timer) and
+the Shelly H&T receiver (redhouse-shelly-ht.service) are ported. A
+deploy installs both and leaves them off until their cutover. Do not
+deploy with --start-all before both cutovers: it enables both, and a
+deploy keeps an enabled receiver running, into wibatemp's port.
+
+Ping logger cutover:
+
+```bash
+cd /opt/redhouse
+sudo -u pi venv/bin/python -m src.data_collection.pinglogger --dry-run
+sudo crontab -l > /home/pi/crontab.list.backup_pinglogger
+# 1. Add to /opt/redhouse/.env: INFLUXDB_BUCKET_NETWORK=network
+# 2. sudo crontab -e: comment out line 29 (run_pinglogger.sh)
+sudo systemctl enable --now redhouse-pinglogger.timer
+sleep 90; journalctl -u redhouse-pinglogger.service --since "2 min ago"
+# 3. The stale-data alert appears only for running timers
+sudo -u pi venv/bin/python -u deployment/setup_grafana_alerts.py --env production
+```
+
+Rollback: `sudo systemctl disable --now redhouse-pinglogger.timer`,
+then uncomment line 29.
+
+Shelly H&T receiver cutover. Only one process can hold port 8008, so
+wibatemp's receiver must be gone before redhouse's starts. Sensor
+reports in the seconds between are lost; each sensor sends again at
+its next change. The receiver and the temperature collector both
+merge the two status files, keeping each sensor's newest reading, so
+no sensor drops out at the switch or at a rollback.
+
+```bash
+sudo crontab -l > /home/pi/crontab.list.backup_shelly_ht
+# 1. sudo crontab -e: comment out lines 43 and 45 (start_shelly_ht_...)
+sudo pkill -f shelly_ht_to_fissio_rest_api.py
+sleep 2   # until the old receiver has let go of the port
+# Clears a start limit left by an earlier failed attempt
+sudo systemctl reset-failed redhouse-shelly-ht.service
+sudo systemctl enable --now redhouse-shelly-ht.service
+# A failed start shows only after a few seconds: active with 0 restarts
+sleep 15; systemctl show redhouse-shelly-ht.service -p ActiveState -p NRestarts
+tail -f /var/log/redhouse/shelly_ht.log   # a line per sensor report
+```
+
+Rollback: `sudo systemctl disable --now redhouse-shelly-ht.service`,
+uncomment lines 43 and 45, then start wibatemp's receiver detached
+from the SSH session:
+`sudo setsid /home/pi/start_shelly_ht_to_fissio_rest_api.sh < /dev/null > /dev/null 2>&1`.
+Check that python3 now holds the port, and that wibatemp's file is
+written again at the next sensor report:
+`sudo ss -ltnp 'sport = :8008'; ls -l /home/pi/wibatemp/temperature_status.json`.
+
 ### Pump control test: DONE
 
 2026-04-06 and 2026-04-08, against the real hardware, all commands
@@ -481,8 +536,9 @@ Monitoring:
 Staging isolation, added 2026-10-10:
 
 - The guard that refuses a staging write to a production bucket,
-  ConfigValidator.validate_write, runs only in InfluxClient.write_point:
-  temperature (with humidity), Shelly EM3 and emeters_5min. CheckWatt,
+  ConfigValidator.validate_write, runs only in InfluxClient.write_point
+  (temperature with humidity, Shelly EM3, emeters_5min) and in the ping
+  logger, which calls it before its own write. CheckWatt,
   windpower, solar prediction, the analytics tiers, program_generator
   and program_executor call write_with_retry directly. Weather and spot
   prices use helpers that skip the guard too, and so do the unused
@@ -1209,8 +1265,8 @@ Additive. Start the collector and change no cron line here.
 # also writes emeters/energy, which the solar predictor and
 # heating_data_fetcher read until Phase 5. Doing it here stopped
 # emeters for 25 minutes on 2026-09-17.
-# Do NOT comment lines 43 and 45 (shelly_ht_to_fissio_rest_api):
-# redhouse-temperature reads Shelly HT values from its status file.
+# Do NOT comment lines 43 and 45 (shelly_ht_to_fissio_rest_api) before
+# the receiver cutover in Phase 7: redhouse-temperature reads its file.
 
 # Enable redhouse
 sudo systemctl restart redhouse-shelly-em3.timer
@@ -1280,11 +1336,13 @@ These wibatemp cron entries are NOT replaced by redhouse and must stay:
 
 | Line | Entry | Reason |
 |------|-------|--------|
-| 29 | pinglogger | Not ported yet (TODO in PLAN.md) |
+| 29 | pinglogger | Until the redhouse-pinglogger cutover (Phase 7) |
 | 44 | @reboot set_i2c_wire_configuration.sh | Hardware setup, still needed |
-| 38 | energy_to_fissio | Writes emeters/energy Shelly fields, keep until Phase 7 |
-| 39 | checkwatt_dataloader | Nets emeters/energy, needs line 38, keep until Phase 7 |
-| 43, 45 | shelly_ht_to_fissio_rest_api | redhouse-temperature reads its status file |
+| 43, 45 | shelly_ht_to_fissio_rest_api | Until the redhouse-shelly-ht cutover (Phase 7) |
+
+Lines 38 (energy_to_fissio) and 39 (checkwatt_dataloader) were
+commented out on 2026-11-01, with the five [Wibatemp] Grafana alert
+rules paused.
 
 ---
 
