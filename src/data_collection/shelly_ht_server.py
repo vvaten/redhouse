@@ -5,8 +5,10 @@ Each sensor calls GET /?id=<id>&temp=<C>&hum=<%> when its reading changes.
 The temperature collector reads the file every minute.
 """
 
+import errno
 import json
 import os
+import sys
 import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -77,6 +79,7 @@ def write_state(state: dict, status_file: Path = STATUS_FILE) -> None:
             json.dump(state, f)
             f.flush()
             os.fsync(f.fileno())
+        os.chmod(tmp_name, 0o644)
         os.replace(tmp_name, status_file)
     except BaseException:
         os.unlink(tmp_name)
@@ -88,6 +91,9 @@ class ReportHandler(BaseHTTPRequestHandler):
 
     state: dict
     status_file: Path
+    # One request at a time: a sensor that drops off mid-request must not
+    # hold the receiver for good
+    timeout = 10
 
     def do_GET(self):
         try:
@@ -116,10 +122,16 @@ def make_handler(state: dict, status_file: Path) -> type:
     )
 
 
-def main() -> int:
+def main(port: int = PORT) -> int:
     state = load_state()
-    server = HTTPServer(("", PORT), make_handler(state, STATUS_FILE))
-    logger.info(f"Shelly HT server listening on port {PORT}, writing {STATUS_FILE}")
+    try:
+        server = HTTPServer(("", port), make_handler(state, STATUS_FILE))
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            logger.error(f"Port {port} is taken: is wibatemp's Shelly HT receiver still running?")
+            return 1
+        raise
+    logger.info(f"Shelly HT server listening on port {port}, writing {STATUS_FILE}")
     try:
         server.serve_forever()
     finally:
@@ -128,6 +140,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import sys
-
     sys.exit(main())

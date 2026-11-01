@@ -271,8 +271,12 @@ SHELLY_HT_MAX_AGE_SECONDS = 86400
 
 
 def _shelly_ht_status_file() -> str:
-    """The redhouse server's file once it runs, wibatemp's until then."""
-    return str(SHELLY_HT_STATUS_FILE if SHELLY_HT_STATUS_FILE.exists() else LEGACY_STATUS_FILE)
+    """The receiver's file written last: redhouse's after its cutover, and
+    wibatemp's again after a rollback, rather than a file nobody updates."""
+    existing = [path for path in (SHELLY_HT_STATUS_FILE, LEGACY_STATUS_FILE) if path.exists()]
+    if not existing:
+        return str(SHELLY_HT_STATUS_FILE)
+    return str(max(existing, key=lambda path: path.stat().st_mtime))
 
 
 def load_shelly_ht_data(status_file: Optional[str] = None) -> dict[str, dict]:

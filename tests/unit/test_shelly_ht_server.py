@@ -1,6 +1,9 @@
 """The Shelly H&T receiver keeps wibatemp's format, and forgets nothing on restart."""
 
+import errno
 import json
+import os
+import stat
 import threading
 import time
 import urllib.request
@@ -97,6 +100,44 @@ def test_the_collector_reads_wibatemps_file_until_ours_exists(tmp_path):
         patch.object(temperature, "SHELLY_HT_STATUS_FILE", ours),
         patch.object(temperature, "LEGACY_STATUS_FILE", legacy),
     ):
+        assert temperature._shelly_ht_status_file() == str(ours)
+        legacy.write_text("{}")
+        os.utime(legacy, (1000, 1000))
         assert temperature._shelly_ht_status_file() == str(legacy)
         ours.write_text("{}")
+        os.utime(ours, (2000, 2000))
         assert temperature._shelly_ht_status_file() == str(ours)
+
+
+def test_after_a_rollback_the_collector_reads_wibatemps_file_again(tmp_path):
+    ours, legacy = tmp_path / "ours.json", tmp_path / "legacy.json"
+    ours.write_text("{}")
+    legacy.write_text("{}")
+    os.utime(ours, (2000, 2000))
+    os.utime(legacy, (3000, 3000))
+    with (
+        patch.object(temperature, "SHELLY_HT_STATUS_FILE", ours),
+        patch.object(temperature, "LEGACY_STATUS_FILE", legacy),
+    ):
+        assert temperature._shelly_ht_status_file() == str(legacy)
+
+
+def test_a_taken_port_ends_the_receiver_with_a_clear_error():
+    # Windows lets a second server bind a taken port, so the bind is made to fail
+    taken = OSError(errno.EADDRINUSE, "Address already in use")
+    with (
+        patch.object(server, "load_state", return_value={}),
+        patch.object(server, "HTTPServer", side_effect=taken),
+    ):
+        assert server.main() == 1
+
+
+def test_a_stalled_connection_times_out():
+    assert server.ReportHandler.timeout == 10
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no 0644 file mode")
+def test_the_file_is_readable_by_everyone_like_wibatemps(tmp_path):
+    status = tmp_path / "status.json"
+    server.write_state({}, status)
+    assert stat.S_IMODE(status.stat().st_mode) == 0o644

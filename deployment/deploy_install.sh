@@ -142,7 +142,7 @@ for timer in "${TIMERS[@]}"; do
     echo "[OK] Enabled $timer.timer"
 done
 
-# Long running; on a fresh install no other receiver holds its port
+# Long running; it needs port 8008, so wibatemp's receiver must be stopped
 systemctl enable redhouse-shelly-ht.service
 systemctl restart redhouse-shelly-ht.service
 echo "[OK] Started redhouse-shelly-ht.service"

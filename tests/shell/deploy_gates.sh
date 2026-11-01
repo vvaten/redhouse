@@ -44,13 +44,14 @@ ci_gate green > /dev/null; expect "empty checker refuses" 1 $?
 echo "case: timer verification"
 TIMERS=("redhouse-a" "redhouse-b")
 should_run() { [ "$1" = "redhouse-a" ]; }
-declare -A ENABLED ACTIVE
+declare -A ENABLED ACTIVE RESTARTS
 systemctl() {
     local name="${2%.timer}"
     name="${name%.service}"
     case "$1" in
         is-enabled) echo "${ENABLED[$name]}" ;;
         is-active) echo "${ACTIVE[$name]}" ;;
+        show) echo "${RESTARTS[$name]:-0}" ;;
     esac
     [ "$1" = is-enabled ] && [ "${ENABLED[$name]}" = enabled ] && return 0
     [ "$1" = is-active ] && [ "${ACTIVE[$name]}" = active ] && return 0
@@ -87,6 +88,9 @@ RUNNING_SERVICES=" redhouse-ht "
 ENABLED[redhouse-ht]=enabled
 ACTIVE[redhouse-ht]=active
 verify_long_running > /dev/null; expect "running again after it ran before passes" 0 $?
+RESTARTS[redhouse-ht]=2
+verify_long_running > /dev/null; expect "active but restarting since its start fails" 1 $?
+RESTARTS[redhouse-ht]=0
 ACTIVE[redhouse-ht]=inactive
 verify_long_running > /dev/null; expect "stopped after it ran before fails" 1 $?
 RUNNING_SERVICES=""

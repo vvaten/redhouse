@@ -179,9 +179,10 @@ service_should_run() {
 }
 
 # Exit 0 only if each long-running service is enabled/active or
-# disabled/inactive, as service_should_run chose for it.
+# disabled/inactive, as service_should_run chose for it. One that systemd
+# had to restart since the deploy started it failed on the way up.
 verify_long_running() {
-    local service want got failed=0
+    local service want got restarts failed=0
     for service in "${LONG_RUNNING[@]}"; do
         if service_should_run "$service"; then
             want="enabled/active"
@@ -190,8 +191,12 @@ verify_long_running() {
         fi
         got="$(systemctl is-enabled "$service.service" 2>/dev/null || true)"
         got="$got/$(systemctl is-active "$service.service" 2>/dev/null || true)"
+        restarts="$(systemctl show "$service.service" -p NRestarts --value 2>/dev/null || true)"
         if [ "$got" != "$want" ]; then
             echo "  [FAIL] $service.service is $got, expected $want"
+            failed=1
+        elif [ "$want" = "enabled/active" ] && [ "${restarts:-0}" != "0" ]; then
+            echo "  [FAIL] $service.service restarted $restarts times: see its journal"
             failed=1
         fi
     done
@@ -542,16 +547,22 @@ fi
 
 # Until its cutover the Shelly H&T port belongs to wibatemp's receiver,
 # so starting ours then would only fail and restart in a loop
+RESTARTED_SERVICES=0
 for service in "${LONG_RUNNING[@]}"; do
     if service_should_run "$service"; then
         systemctl enable "$service.service" 2>/dev/null
         systemctl restart "$service.service"
         echo "  [OK] $service.service"
+        RESTARTED_SERVICES=$((RESTARTED_SERVICES + 1))
     else
         systemctl disable "$service.service" 2>/dev/null || true
         echo "  [SKIP] $service.service (not migrated, left stopped and disabled)"
     fi
 done
+# Long enough for a start that fails to show as a restart in the check
+if [ "$RESTARTED_SERVICES" -gt 0 ]; then
+    sleep 10
+fi
 
 BOOT_UNITS=(
     "redhouse-pump-restore"

@@ -594,6 +594,8 @@ class TestLongRunningServices:
             text = (self.UNITS / f"{name}.service").read_text(encoding="utf-8")
             assert _values(text, "Type") == ["simple"], name
             assert _values(text, "Restart") == ["always"], name
+            # Without a start limit a taken port restarts it forever, never "failed"
+            assert _values(text, "StartLimitBurst") and _values(text, "StartLimitIntervalSec"), name
 
     def test_a_deploy_restarts_only_what_ran_before(self):
         assert 'if systemctl is-active -q "$service.service"; then' in self.TEXT
