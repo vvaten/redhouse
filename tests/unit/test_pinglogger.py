@@ -4,7 +4,9 @@ import datetime
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
+from src.common.config_validator import ConfigValidationError
 from src.data_collection import pinglogger
 
 # Field names of a point wibatemp's pinglogger wrote on 2026-11-01
@@ -28,6 +30,75 @@ WIBATEMP_FIELDS = {
     "rtt_p95_ms",
     "rtt_max_ms",
 }
+
+
+# A run of iputils 20210202 on the Pi as user pi, 2026-11-01
+PI_OUTPUT = """PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=118 time=2.10 ms
+64 bytes from 8.8.8.8: icmp_seq=2 ttl=118 time=2.05 ms
+64 bytes from 8.8.8.8: icmp_seq=3 ttl=118 time=1.87 ms
+64 bytes from 8.8.8.8: icmp_seq=4 ttl=118 time=2.15 ms
+64 bytes from 8.8.8.8: icmp_seq=5 ttl=118 time=1.83 ms
+64 bytes from 8.8.8.8: icmp_seq=6 ttl=118 time=1.61 ms
+64 bytes from 8.8.8.8: icmp_seq=7 ttl=118 time=2.12 ms
+64 bytes from 8.8.8.8: icmp_seq=8 ttl=118 time=1.76 ms
+64 bytes from 8.8.8.8: icmp_seq=9 ttl=118 time=1.96 ms
+64 bytes from 8.8.8.8: icmp_seq=10 ttl=118 time=1.64 ms
+64 bytes from 8.8.8.8: icmp_seq=11 ttl=118 time=1.84 ms
+64 bytes from 8.8.8.8: icmp_seq=12 ttl=118 time=1.90 ms
+64 bytes from 8.8.8.8: icmp_seq=13 ttl=118 time=2.16 ms
+64 bytes from 8.8.8.8: icmp_seq=14 ttl=118 time=1.93 ms
+64 bytes from 8.8.8.8: icmp_seq=15 ttl=118 time=1.77 ms
+64 bytes from 8.8.8.8: icmp_seq=16 ttl=118 time=2.04 ms
+64 bytes from 8.8.8.8: icmp_seq=17 ttl=118 time=1.71 ms
+64 bytes from 8.8.8.8: icmp_seq=18 ttl=118 time=2.03 ms
+64 bytes from 8.8.8.8: icmp_seq=19 ttl=118 time=2.23 ms
+64 bytes from 8.8.8.8: icmp_seq=20 ttl=118 time=1.99 ms
+
+--- 8.8.8.8 ping statistics ---
+20 packets transmitted, 20 received, 0% packet loss, time 9519ms
+rtt min/avg/max/mdev = 1.607/1.933/2.232/0.174 ms
+"""
+
+
+def test_real_output_from_the_pi_gives_every_field():
+    fields = pinglogger.parse_ping(PI_OUTPUT)
+    assert set(fields) == WIBATEMP_FIELDS
+    assert (fields["stats_packets_sent"], fields["stats_packets_returned"]) == (20, 20)
+    assert (fields["rtt_min_ms"], fields["rtt_max_ms"]) == (1.61, 2.23)
+    # ping prints each reply to 0.01 ms, so the mean is near its own summary
+    assert abs(fields["rtt_avg_ms"] - 1.933) < 0.01
+
+
+def test_the_summary_is_read_with_duplicates_and_errors():
+    duplicates = PI_OUTPUT.replace("20 received,", "20 received, +1 duplicates,")
+    assert pinglogger.parse_ping(duplicates)["stats_packets_returned"] == 20
+    errors = (
+        "From 192.168.1.1 icmp_seq=1 Destination Net Unreachable\n\n"
+        "--- 8.8.8.8 ping statistics ---\n"
+        "20 packets transmitted, 0 received, +20 errors, 100% packet loss, time 19015ms\n"
+    )
+    assert pinglogger.parse_ping(errors)["stats_success_ratio"] == 0.0
+
+
+def test_ping_runs_in_the_c_locale():
+    """A Finnish locale prints 2,10 ms, which the reply pattern would miss."""
+    with patch.object(pinglogger.subprocess, "run") as run:
+        run.return_value = MagicMock(stdout=PI_OUTPUT, stderr="")
+        assert pinglogger.run_ping() == PI_OUTPUT
+    assert run.call_args.kwargs["env"]["LC_ALL"] == "C"
+
+
+def test_staging_cannot_write_to_the_production_bucket(monkeypatch):
+    monkeypatch.setenv("STAGING_MODE", "true")
+    with (
+        patch.object(pinglogger, "get_config") as config,
+        patch.object(pinglogger, "InfluxClient") as client,
+    ):
+        config.return_value = MagicMock(influxdb_bucket_network="network", influxdb_org="area51")
+        with pytest.raises(ConfigValidationError):
+            pinglogger.write_point(pinglogger.parse_ping(PI_OUTPUT), datetime.datetime.now())
+    client.return_value.write_with_retry.assert_not_called()
 
 
 def _output(rtts, sent=20, extra=""):

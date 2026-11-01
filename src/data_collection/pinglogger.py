@@ -7,6 +7,7 @@ of measurement network, with the field names and types wibatemp wrote.
 
 import argparse
 import datetime
+import os
 import re
 import subprocess
 import sys
@@ -16,6 +17,7 @@ import influxdb_client
 import numpy as np
 
 from src.common.config import get_config
+from src.common.config_validator import ConfigValidator
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
 
@@ -24,6 +26,8 @@ logger = setup_logger(__name__, "pinglogger.log")
 HOST = "8.8.8.8"
 COUNT = 20
 INTERVAL_SECONDS = 0.5
+# Seconds to wait for a reply, pythonping's default
+REPLY_WAIT = 2
 # A reply faster than 1 ms is a measuring error, as wibatemp counted it
 MIN_RTT_MS = 1.0
 RTT_PERCENTILES = (5, 10, 25, 50, 75, 90, 95)
@@ -33,12 +37,14 @@ SUMMARY = re.compile(r"(\d+) packets transmitted, (\d+) received")
 
 
 def run_ping() -> str:
-    """The output of ping. It exits 1 when replies are lost, which is data."""
+    """The output of ping. It exits 1 when replies are lost, which is data.
+    The C locale keeps a decimal point in its times and its messages in English."""
     result = subprocess.run(
-        ["ping", "-n", "-c", str(COUNT), "-i", str(INTERVAL_SECONDS), "-W", "1", HOST],
+        ["ping", "-n", "-c", str(COUNT), "-i", str(INTERVAL_SECONDS), "-W", str(REPLY_WAIT), HOST],
         capture_output=True,
         text=True,
-        timeout=COUNT * INTERVAL_SECONDS + 15,
+        timeout=COUNT * INTERVAL_SECONDS + REPLY_WAIT + 15,
+        env={**os.environ, "LC_ALL": "C"},
     )
     return result.stdout + result.stderr
 
@@ -77,8 +83,16 @@ def parse_ping(output: str) -> Optional[dict]:
 
 
 def write_point(fields: dict, timestamp: datetime.datetime) -> None:
-    """Write without InfluxClient.write_point, which would make the counts floats."""
+    """Write without InfluxClient.write_point, which would make the counts
+    floats, but with its guard against staging writing to production."""
     config = get_config()
+    warning = ConfigValidator.validate_write(
+        bucket=config.influxdb_bucket_network,
+        fields=fields,
+        strict_mode=ConfigValidator.get_strict_mode(),
+    )
+    if warning:
+        logger.debug(warning)
     point = influxdb_client.Point("network").time(timestamp)
     for name, value in fields.items():
         point = point.field(name, value)
