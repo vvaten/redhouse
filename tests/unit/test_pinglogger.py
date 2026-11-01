@@ -97,11 +97,21 @@ def test_main_writes_a_run_and_refuses_one_without_statistics():
         patch.object(pinglogger, "run_ping", return_value=_output([2.0] * 20)),
         patch.object(pinglogger, "write_point") as write,
     ):
-        assert pinglogger.main() == 0
+        assert pinglogger.main([]) == 0
     assert write.call_count == 1
     with (
         patch.object(pinglogger, "run_ping", return_value="ping: unknown host\n"),
         patch.object(pinglogger, "write_point") as write,
     ):
-        assert pinglogger.main() == 1
+        assert pinglogger.main([]) == 1
+    assert write.call_count == 0
+
+
+def test_a_dry_run_pings_but_writes_nothing():
+    with (
+        patch.object(pinglogger, "run_ping", return_value=_output([2.0] * 20)) as ping,
+        patch.object(pinglogger, "write_point") as write,
+    ):
+        assert pinglogger.main(["--dry-run"]) == 0
+    assert ping.call_count == 1
     assert write.call_count == 0

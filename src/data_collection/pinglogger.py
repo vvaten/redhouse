@@ -5,6 +5,7 @@ Each run sends 20 pings to 8.8.8.8 half a second apart and writes one point
 of measurement network, with the field names and types wibatemp wrote.
 """
 
+import argparse
 import datetime
 import re
 import subprocess
@@ -86,7 +87,11 @@ def write_point(fields: dict, timestamp: datetime.datetime) -> None:
     )
 
 
-def main() -> int:
+def main(argv: Optional[list] = None) -> int:
+    parser = argparse.ArgumentParser(description="Ping 8.8.8.8 and log the result to InfluxDB")
+    parser.add_argument("--dry-run", action="store_true", help="Ping, but do not write")
+    args = parser.parse_args(argv)
+
     timestamp = datetime.datetime.now(datetime.timezone.utc)
     try:
         output = run_ping()
@@ -98,6 +103,10 @@ def main() -> int:
     if fields is None:
         logger.error(f"ping gave no statistics: {output.strip()[-300:]}")
         return 1
+
+    if args.dry_run:
+        logger.info(f"DRY RUN: would write network point at {timestamp.isoformat()}: {fields}")
+        return 0
 
     try:
         write_point(fields, timestamp)
