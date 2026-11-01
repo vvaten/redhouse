@@ -571,6 +571,48 @@ class TestEveryTimerIsDeployed:
         assert staged == self.NAMES
 
 
+class TestLongRunningServices:
+    """A service with no timer is a boot unit or runs all the time."""
+
+    UNITS = REPO / "deployment" / "systemd"
+    TEXT = PRODUCTION_DEPLOY.read_text(encoding="utf-8")
+
+    def test_every_service_without_a_timer_is_listed_once(self):
+        lone = sorted(
+            p.stem for p in self.UNITS.glob("*.service") if not p.with_suffix(".timer").exists()
+        )
+        listed = sorted(_list(self.TEXT, "LONG_RUNNING") + _list(self.TEXT, "BOOT_UNITS"))
+        assert lone == listed
+
+    def test_the_health_check_watches_the_same_services(self):
+        from src.monitoring import health_check
+
+        assert health_check.LONG_RUNNING_SERVICES == _list(self.TEXT, "LONG_RUNNING")
+
+    def test_each_one_restarts_itself(self):
+        for name in _list(self.TEXT, "LONG_RUNNING"):
+            text = (self.UNITS / f"{name}.service").read_text(encoding="utf-8")
+            assert _values(text, "Type") == ["simple"], name
+            assert _values(text, "Restart") == ["always"], name
+
+    def test_a_deploy_restarts_only_what_ran_before(self):
+        assert 'if systemctl is-active -q "$service.service"; then' in self.TEXT
+        assert 'if service_should_run "$service"; then' in self.TEXT
+        assert self.TEXT.index("RUNNING_SERVICES=") < self.TEXT.index(
+            'git merge --ff-only "$DEPLOY_SHA"'
+        )
+        assert "verify_long_running || STATES_OK=false" in self.TEXT
+
+    def test_a_fresh_install_starts_the_receiver(self):
+        text = (REPO / "deployment" / "deploy_install.sh").read_text(encoding="utf-8")
+        assert "systemctl restart redhouse-shelly-ht.service" in text
+
+    def test_staging_never_gets_the_receiver(self):
+        """The sensors report to one port, which production's receiver holds."""
+        text = (REPO / "deployment" / "generate_staging_systemd.sh").read_text(encoding="utf-8")
+        assert 'if [ "$filename" = "redhouse-shelly-ht.service" ]; then\n        continue' in text
+
+
 class TestDeployGates:
     """The order of the gates matters: each must act before any change."""
 

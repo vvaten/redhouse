@@ -141,6 +141,11 @@ for timer in "${TIMERS[@]}"; do
     echo "[OK] Enabled $timer.timer"
 done
 
+# Long running; on a fresh install no other receiver holds its port
+systemctl enable redhouse-shelly-ht.service
+systemctl restart redhouse-shelly-ht.service
+echo "[OK] Started redhouse-shelly-ht.service"
+
 # Runs once at boot; enabled, never started here
 systemctl enable redhouse-pump-restore.service
 echo "[OK] Enabled redhouse-pump-restore.service for boot"

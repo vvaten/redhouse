@@ -9,7 +9,8 @@ FAILED=0
 extract() {
     sed -n "/^$1() {/,/^}/p" "$SCRIPT"
 }
-for fn in ci_gate verify_timer_states verify_boot_units epoch_of verify_no_offschedule_runs; do
+for fn in ci_gate verify_timer_states verify_boot_units epoch_of verify_no_offschedule_runs \
+    service_should_run verify_long_running; do
     eval "$(extract "$fn")"
     if ! declare -F "$fn" > /dev/null; then
         echo "  FAIL  could not extract $fn from $SCRIPT"
@@ -78,6 +79,24 @@ should_run() { false; }
 verify_boot_units > /dev/null; expect "disabled while the executor is stopped passes" 0 $?
 ENABLED[redhouse-boot]=enabled
 verify_boot_units > /dev/null; expect "enabled while the executor is stopped fails" 1 $?
+
+echo "case: long-running services follow what ran before the deploy"
+LONG_RUNNING=("redhouse-ht")
+START_ALL=false
+RUNNING_SERVICES=" redhouse-ht "
+ENABLED[redhouse-ht]=enabled
+ACTIVE[redhouse-ht]=active
+verify_long_running > /dev/null; expect "running again after it ran before passes" 0 $?
+ACTIVE[redhouse-ht]=inactive
+verify_long_running > /dev/null; expect "stopped after it ran before fails" 1 $?
+RUNNING_SERVICES=""
+ENABLED[redhouse-ht]=disabled
+verify_long_running > /dev/null; expect "left off before its cutover passes" 0 $?
+ENABLED[redhouse-ht]=enabled
+verify_long_running > /dev/null; expect "enabled before its cutover fails" 1 $?
+START_ALL=true
+ACTIVE[redhouse-ht]=active
+verify_long_running > /dev/null; expect "--start-all starts it" 0 $?
 
 echo "case: no job ran off schedule"
 TIMERS=("redhouse-a" "redhouse-b" "redhouse-temperature")

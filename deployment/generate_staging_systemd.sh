@@ -27,6 +27,10 @@ for src_file in "$SOURCE_DIR"/redhouse-*.service "$SOURCE_DIR"/redhouse-*.timer;
     [ -f "$src_file" ] || continue
 
     filename=$(basename "$src_file")
+    # The sensors report to one port, which production's receiver holds
+    if [ "$filename" = "redhouse-shelly-ht.service" ]; then
+        continue
+    fi
     # redhouse-temperature.service -> redhouse-staging-temperature.service
     staging_name="${filename/redhouse-/redhouse-staging-}"
 

@@ -1,0 +1,20 @@
+[Unit]
+Description=RedHouse Shelly H&T Report Receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Long running: the sensors report to it whenever a reading changes
+Type=simple
+User=pi
+WorkingDirectory=/opt/redhouse
+EnvironmentFile=/opt/redhouse/.env
+ExecStart=/opt/redhouse/venv/bin/python -m src.data_collection.shelly_ht_server
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-shelly-ht
+
+[Install]
+WantedBy=multi-user.target

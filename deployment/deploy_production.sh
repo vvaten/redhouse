@@ -174,6 +174,30 @@ verify_boot_units() {
     return "$failed"
 }
 
+service_should_run() {
+    [ "$START_ALL" = true ] || case " $RUNNING_SERVICES " in *" $1 "*) true ;; *) false ;; esac
+}
+
+# Exit 0 only if each long-running service is enabled/active or
+# disabled/inactive, as service_should_run chose for it.
+verify_long_running() {
+    local service want got failed=0
+    for service in "${LONG_RUNNING[@]}"; do
+        if service_should_run "$service"; then
+            want="enabled/active"
+        else
+            want="disabled/inactive"
+        fi
+        got="$(systemctl is-enabled "$service.service" 2>/dev/null || true)"
+        got="$got/$(systemctl is-active "$service.service" 2>/dev/null || true)"
+        if [ "$got" != "$want" ]; then
+            echo "  [FAIL] $service.service is $got, expected $want"
+            failed=1
+        fi
+    done
+    return "$failed"
+}
+
 # A fresh install has no earlier commit to go back to.
 rollback_hint() {
     if [ "$PRE_DEPLOY_COMMIT" != "(fresh install)" ]; then
@@ -254,6 +278,18 @@ done
 # Space separated, not newline: was_running matches on surrounding spaces.
 RUNNING_TIMERS=$(systemctl list-units --state=active --plain --no-legend \
     'redhouse-*.timer' 2>/dev/null | awk '{print $1}' | grep -v staging | tr '\n' ' ' || true)
+
+# Long-running services keep their old code until restarted, so they are
+# not stopped here. Each restarts after the update only if it ran before.
+LONG_RUNNING=(
+    "redhouse-shelly-ht"
+)
+RUNNING_SERVICES=""
+for service in "${LONG_RUNNING[@]}"; do
+    if systemctl is-active -q "$service.service"; then
+        RUNNING_SERVICES="$RUNNING_SERVICES $service "
+    fi
+done
 
 restore_timers() {
     if [ -z "$RUNNING_TIMERS" ]; then
@@ -503,6 +539,19 @@ if [ "$STOPPED" -gt 0 ]; then
     echo "Disable its wibatemp cron line in the same step."
 fi
 
+# Until its cutover the Shelly H&T port belongs to wibatemp's receiver,
+# so starting ours then would only fail and restart in a loop
+for service in "${LONG_RUNNING[@]}"; do
+    if service_should_run "$service"; then
+        systemctl enable "$service.service" 2>/dev/null
+        systemctl restart "$service.service"
+        echo "  [OK] $service.service"
+    else
+        systemctl disable "$service.service" 2>/dev/null || true
+        echo "  [SKIP] $service.service (not migrated, left stopped and disabled)"
+    fi
+done
+
 BOOT_UNITS=(
     "redhouse-pump-restore"
 )
@@ -527,6 +576,7 @@ echo "Verifying timer states..."
 STATES_OK=true
 verify_timer_states || STATES_OK=false
 verify_boot_units || STATES_OK=false
+verify_long_running || STATES_OK=false
 if [ "$STATES_OK" != true ]; then
     echo "[FAIL] Deploy finished with timers or boot units in the wrong state"
     rollback_hint

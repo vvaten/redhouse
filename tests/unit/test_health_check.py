@@ -180,8 +180,18 @@ class TestCheckSystemdServices:
 
     def test_enabled_but_inactive_is_a_failure(self):
         failures, _ = self._run({"is-enabled": "enabled", "is-active": "inactive"})
-        assert len(failures) == len(health_check.REDHOUSE_SERVICES)
+        expected = len(health_check.REDHOUSE_SERVICES) + len(health_check.LONG_RUNNING_SERVICES)
+        assert len(failures) == expected
         assert "enabled but inactive" in failures[0]
+
+    def test_a_stopped_long_running_service_is_a_failure(self):
+        failures, _ = self._run({"is-enabled": "enabled", "is-active": "failed"})
+        assert "Service redhouse-shelly-ht.service is enabled but failed" in failures
+
+    def test_staging_does_not_check_long_running_services(self):
+        """Staging installs none: the sensors report to production's port."""
+        failures, _ = self._run({"is-enabled": "enabled", "is-active": "failed"}, "true")
+        assert not [f for f in failures if f.startswith("Service ")]
 
     def test_enabled_and_active_is_clean(self):
         failures, warnings = self._run({"is-enabled": "enabled", "is-active": "active"})

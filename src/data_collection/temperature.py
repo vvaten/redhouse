@@ -13,6 +13,8 @@ from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
+from src.data_collection.shelly_ht_server import LEGACY_STATUS_FILE
+from src.data_collection.shelly_ht_server import STATUS_FILE as SHELLY_HT_STATUS_FILE
 
 logger = setup_logger(__name__, "temperature.log")
 
@@ -40,11 +42,7 @@ def is_sensor_id(name: str) -> bool:
 
 
 def get_temperature_meter_ids() -> list[str]:
-    """Get list of available 1-wire temperature sensor IDs.
-
-    Returns:
-        List of sensor device IDs from /sys/bus/w1/devices/
-    """
+    """IDs of the 1-wire temperature sensors in /sys/bus/w1/devices/."""
     try:
         result = os.popen("ls /sys/bus/w1/devices 2> /dev/null").read()
         return [name for name in result.split() if is_sensor_id(name)]
@@ -54,15 +52,7 @@ def get_temperature_meter_ids() -> list[str]:
 
 
 def _read_sensor_once(device_path: str, upper_threshold: float) -> Optional[str]:
-    """Read sensor value once and return raw value string if valid.
-
-    Args:
-        device_path: Path to sensor device file
-        upper_threshold: Upper temperature threshold to reject readings
-
-    Returns:
-        Raw temperature value string from sensor, or None if invalid
-    """
+    """The raw value string of one read, or None if invalid or above upper_threshold."""
     try:
         with open(device_path) as f:
             file_contents = f.read()
@@ -278,12 +268,17 @@ def convert_internal_id_to_influxid(internal_id: str) -> Optional[str]:
 
 # Shelly HT: max 24h stale (energy saving mode only updates on value change)
 SHELLY_HT_MAX_AGE_SECONDS = 86400
-# Path to Shelly HT status file (written by shelly_ht_to_fissio_rest_api.py)
-SHELLY_HT_STATUS_FILE = "/home/pi/wibatemp/temperature_status.json"
 
 
-def load_shelly_ht_data(status_file: str = SHELLY_HT_STATUS_FILE) -> dict[str, dict]:
-    """Load Shelly HT sensor data from temperature_status.json."""
+def _shelly_ht_status_file() -> str:
+    """The redhouse server's file once it runs, wibatemp's until then."""
+    return str(SHELLY_HT_STATUS_FILE if SHELLY_HT_STATUS_FILE.exists() else LEGACY_STATUS_FILE)
+
+
+def load_shelly_ht_data(status_file: Optional[str] = None) -> dict[str, dict]:
+    """Load Shelly HT sensor data from the Shelly HT server's status file."""
+    if status_file is None:
+        status_file = _shelly_ht_status_file()
     if not os.path.exists(status_file):
         logger.debug(f"Shelly HT status file not found: {status_file}")
         return {}

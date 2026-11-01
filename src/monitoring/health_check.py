@@ -44,6 +44,8 @@ REDHOUSE_SERVICES = [
 
 # Oneshot services that run at boot, with no timer to watch
 BOOT_SERVICES = ["redhouse-pump-restore"]
+# Long-running services, not installed in staging
+LONG_RUNNING_SERVICES = ["redhouse-shelly-ht"]
 
 # A repeating problem must not mail on every run. 96 runs a day once
 # exhausted the Resend daily quota and buried the real alerts.
@@ -129,11 +131,7 @@ def record_alert_sent(
 
 
 def check_disk_space() -> tuple[list[str], list[str]]:
-    """Check disk space on root partition.
-
-    Returns:
-        Tuple of (failures, warnings)
-    """
+    """(failures, warnings) about the disk space of the root partition."""
     failures: list[str] = []
     warnings: list[str] = []
 
@@ -159,14 +157,9 @@ def check_disk_space() -> tuple[list[str], list[str]]:
 
 
 def check_systemd_services() -> tuple[list[str], list[str]]:
-    """Check that every enabled redhouse timer is running.
-
-    A disabled timer is a deployment choice, not a fault: it stays off
-    until the migration reaches it.
-
-    Returns:
-        Tuple of (failures, warnings)
-    """
+    """(failures, warnings) unless every enabled redhouse timer and service
+    runs. A disabled one is a deployment choice, not a fault: it stays off
+    until the migration reaches it."""
     failures: list[str] = []
     warnings: list[str] = []
 
@@ -195,8 +188,16 @@ def check_systemd_services() -> tuple[list[str], list[str]]:
         if _systemctl("is-failed", unit) == "failed":
             failures.append(f"Boot unit {unit} failed: check the pump state")
 
+    long_running = [] if _is_staging() else LONG_RUNNING_SERVICES
+    for unit in (f"{service}.service" for service in long_running):
+        if _systemctl("is-enabled", unit) == "enabled":
+            checked += 1
+            active = _systemctl("is-active", unit)
+            if active != "active":
+                failures.append(f"Service {unit} is enabled but {active}")
+
     if not failures:
-        logger.info("All %d enabled systemd timers are active", checked)
+        logger.info("All %d enabled systemd timers and services are active", checked)
 
     return failures, warnings
 
