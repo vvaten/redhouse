@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Internet Connection Ping Logger Timer
+
+[Timer]
+# Every minute, as wibatemp's cron line did; a run takes about 10 s
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:*:00 UTC
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse Internet Connection Ping Logger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+EnvironmentFile=/opt/redhouse/.env
+ExecStart=/opt/redhouse/venv/bin/python -m src.data_collection.pinglogger
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-pinglogger
+
+[Install]
+WantedBy=multi-user.target

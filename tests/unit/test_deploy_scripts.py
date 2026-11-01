@@ -193,7 +193,7 @@ class TestStagingTimersScript:
     SCRIPT = REPO / "deployment" / "staging_timers.sh"
 
     @pytest.mark.parametrize(
-        "timer", ["temperature", "health-check", "program-check", "program-fallback"]
+        "timer", ["temperature", "health-check", "program-check", "program-fallback", "pinglogger"]
     )
     def test_is_not_auto_started(self, timer):
         """These do nothing useful in staging, three of them by email."""

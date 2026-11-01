@@ -32,6 +32,7 @@ REDHOUSE_SERVICES = [
     "redhouse-checkwatt",
     "redhouse-shelly-em3",
     "redhouse-windpower",
+    "redhouse-pinglogger",
     "redhouse-aggregate-emeters-5min",
     "redhouse-aggregate-analytics-15min",
     "redhouse-aggregate-analytics-1hour",

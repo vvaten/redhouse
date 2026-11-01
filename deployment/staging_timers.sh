@@ -26,6 +26,7 @@ TIMERS=(
     "checkwatt"
     "shelly-em3"
     "windpower"
+    "pinglogger"
     "aggregate-emeters-5min"
     "aggregate-analytics-15min"
     "aggregate-analytics-1hour"
@@ -48,6 +49,8 @@ NO_AUTO_START=(
     # Would mail about staging programs, which nobody acts on.
     "program-check"
     "program-fallback"
+    # Pings from the same Pi as production's, into no staging bucket
+    "pinglogger"
 )
 
 skips_auto_start() {

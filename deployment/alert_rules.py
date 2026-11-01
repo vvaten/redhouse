@@ -52,6 +52,15 @@ ALERT_RULES = [
         "eval_interval_seconds": 1800,
     },
     {
+        "name": "Network ping data stale",
+        "timer": "redhouse-pinglogger",
+        "bucket": "network",
+        "measurement": "network",
+        "max_age_minutes": 10,
+        "eval_interval_seconds": 300,
+        "skip_envs": ["staging", "wibatemp"],
+    },
+    {
         "name": "5min aggregation stale",
         "timer": "redhouse-aggregate-emeters-5min",
         "bucket": "emeters_5min",

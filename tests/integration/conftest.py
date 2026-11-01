@@ -32,6 +32,7 @@ TEST_BUCKETS = {
     "INFLUXDB_BUCKET_ANALYTICS_1HOUR": "analytics_1hour_test",
     "INFLUXDB_BUCKET_WINDPOWER": "windpower_test",
     "INFLUXDB_BUCKET_LOAD_CONTROL": "load_control_test",
+    "INFLUXDB_BUCKET_NETWORK": "network_test",
 }
 
 

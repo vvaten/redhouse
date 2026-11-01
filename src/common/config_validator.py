@@ -26,6 +26,7 @@ class ConfigValidator:
         "checkwatt_full_data",
         "shelly_em3_emeters_raw",
         "windpower",
+        "network",
         "load_control",
         "emeters_5min",
         "analytics_15min",
