@@ -1,23 +1,18 @@
 #!/bin/bash
-# Regression test for the is_always_on matcher in deploy_production.sh.
-# The bug it guards: the deploy disables any timer that was not already
-# running, so it installed redhouse-program-check and then disabled it.
+# Tests is_always_on, taken verbatim from the deploy script given as $1:
+# it matches whole names in ALWAYS_ON only, and leaves its caller's
+# $timer unchanged.
 
 set -u
+SCRIPT="$1"
 FAILED=0
 
-ALWAYS_ON=(
-    "redhouse-program-check"
-)
-
-is_always_on() {
-    for timer in "${ALWAYS_ON[@]}"; do
-        if [ "$timer" = "$1" ]; then
-            return 0
-        fi
-    done
-    return 1
-}
+eval "$(sed -n '/^ALWAYS_ON=(/,/^)/p' "$SCRIPT")"
+eval "$(sed -n '/^is_always_on() {/,/^}/p' "$SCRIPT")"
+if ! declare -F is_always_on > /dev/null; then
+    echo "  FAIL  could not extract is_always_on from $SCRIPT"
+    exit 1
+fi
 
 check() {
     local label="$1" expect="$2" name="$3"
@@ -49,6 +44,16 @@ check "longer not found"      no  redhouse-program-check-extra
 
 echo "case: empty argument"
 check "empty not found"       no  ""
+
+echo "case: the caller's loop variable is left alone"
+timer="redhouse-pinglogger"
+is_always_on "$timer" || true
+if [ "$timer" = "redhouse-pinglogger" ]; then
+    echo "  PASS  \$timer kept"
+else
+    echo "  FAIL  \$timer became $timer"
+    FAILED=$((FAILED + 1))
+fi
 
 echo
 if [ "$FAILED" -eq 0 ]; then

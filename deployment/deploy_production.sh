@@ -512,8 +512,9 @@ ALWAYS_ON=(
 )
 
 is_always_on() {
-    for timer in "${ALWAYS_ON[@]}"; do
-        if [ "$timer" = "$1" ]; then
+    local name
+    for name in "${ALWAYS_ON[@]}"; do
+        if [ "$name" = "$1" ]; then
             return 0
         fi
     done

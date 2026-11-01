@@ -43,7 +43,10 @@ class TestWasRunningMatcher:
     def test_always_on_matcher_executes(self):
         """The matcher that keeps the watchdog enabled through a deploy."""
         result = subprocess.run(
-            [BASH, str(ALWAYS_ON_TEST)], capture_output=True, text=True, timeout=60
+            [BASH, str(ALWAYS_ON_TEST), str(PRODUCTION_DEPLOY)],
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "FAIL" not in result.stdout

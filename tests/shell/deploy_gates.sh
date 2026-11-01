@@ -117,6 +117,29 @@ expect "an enabled, failing service is restarted" 0 "$got"
 case " $MIGRATED_SERVICES " in *" redhouse-off "*) got=1 ;; *) got=0 ;; esac
 expect "a disabled service is left alone" 0 "$got"
 
+echo "case: a stopped timer does not make the check judge another one"
+for fn in was_running is_always_on should_run; do
+    eval "$(extract "$fn")"
+    if ! declare -F "$fn" > /dev/null; then
+        echo "  FAIL  could not extract $fn from $SCRIPT"
+        exit 1
+    fi
+done
+eval "$(sed -n '/^ALWAYS_ON=(/,/^)/p' "$SCRIPT")"
+START_ALL=false
+RUNNING_TIMERS=" redhouse-program-check.timer redhouse-program-fallback.timer "
+TIMERS=("redhouse-pinglogger" "redhouse-program-fallback")
+systemctl() {
+    local name="${2%.timer}"
+    case "$1" in
+        is-enabled) echo "${ENABLED[$name]}" ;;
+        is-active) echo "${ACTIVE[$name]}" ;;
+    esac
+}
+ENABLED=([redhouse-pinglogger]=disabled [redhouse-program-fallback]=enabled)
+ACTIVE=([redhouse-pinglogger]=inactive [redhouse-program-fallback]=active)
+verify_timer_states > /dev/null; expect "a new stopped timer beside an always-on one passes" 0 $?
+
 echo "case: no job ran off schedule"
 TIMERS=("redhouse-a" "redhouse-b" "redhouse-temperature")
 declare -A STARTED
