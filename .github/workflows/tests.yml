@@ -8,8 +8,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: setup-python has no Python 3.9, the Pi's version, for 26.04
+    runs-on: ubuntu-24.04
     strategy:
+      # One failing version must not cancel the others' results
+      fail-fast: false
       matrix:
         python-version: ['3.9', '3.10', '3.11']
 
@@ -31,7 +34,7 @@ jobs:
         pytest tests/unit/ -v --tb=short
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v4
