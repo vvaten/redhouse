@@ -81,19 +81,19 @@ verify_boot_units > /dev/null; expect "disabled while the executor is stopped pa
 ENABLED[redhouse-boot]=enabled
 verify_boot_units > /dev/null; expect "enabled while the executor is stopped fails" 1 $?
 
-echo "case: long-running services follow what ran before the deploy"
+echo "case: long-running services follow their cutover"
 LONG_RUNNING=("redhouse-ht")
 START_ALL=false
-RUNNING_SERVICES=" redhouse-ht "
+MIGRATED_SERVICES=" redhouse-ht "
 ENABLED[redhouse-ht]=enabled
 ACTIVE[redhouse-ht]=active
-verify_long_running > /dev/null; expect "running again after it ran before passes" 0 $?
+verify_long_running > /dev/null; expect "running again after its cutover passes" 0 $?
 RESTARTS[redhouse-ht]=2
 verify_long_running > /dev/null; expect "active but restarting since its start fails" 1 $?
 RESTARTS[redhouse-ht]=0
 ACTIVE[redhouse-ht]=inactive
-verify_long_running > /dev/null; expect "stopped after it ran before fails" 1 $?
-RUNNING_SERVICES=""
+verify_long_running > /dev/null; expect "stopped after its cutover fails" 1 $?
+MIGRATED_SERVICES=""
 ENABLED[redhouse-ht]=disabled
 verify_long_running > /dev/null; expect "left off before its cutover passes" 0 $?
 ENABLED[redhouse-ht]=enabled
@@ -101,6 +101,21 @@ verify_long_running > /dev/null; expect "enabled before its cutover fails" 1 $?
 START_ALL=true
 ACTIVE[redhouse-ht]=active
 verify_long_running > /dev/null; expect "--start-all starts it" 0 $?
+
+echo "case: an enabled service counts as cut over, even while it fails"
+capture="$(sed -n '/^MIGRATED_SERVICES=""/,/^done/p' "$SCRIPT")"
+if [ -z "$capture" ]; then
+    echo "  FAIL  could not extract the capture loop from $SCRIPT"
+    FAILED=$((FAILED + 1))
+fi
+LONG_RUNNING=("redhouse-ht" "redhouse-off")
+# Enabled but not active, as a crashing receiver is; the other is disabled
+systemctl() { [ "$1" = is-enabled ] && [ "$3" = "redhouse-ht.service" ]; }
+eval "$capture"
+case " $MIGRATED_SERVICES " in *" redhouse-ht "*) got=0 ;; *) got=1 ;; esac
+expect "an enabled, failing service is restarted" 0 "$got"
+case " $MIGRATED_SERVICES " in *" redhouse-off "*) got=1 ;; *) got=0 ;; esac
+expect "a disabled service is left alone" 0 "$got"
 
 echo "case: no job ran off schedule"
 TIMERS=("redhouse-a" "redhouse-b" "redhouse-temperature")

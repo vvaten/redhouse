@@ -26,7 +26,7 @@ logger = setup_logger(__name__, "pinglogger.log")
 HOST = "8.8.8.8"
 COUNT = 20
 INTERVAL_SECONDS = 0.5
-# Seconds to wait for a reply, pythonping's default
+# Seconds to wait for each reply
 REPLY_WAIT = 2
 # A reply faster than 1 ms is a measuring error, as wibatemp counted it
 MIN_RTT_MS = 1.0

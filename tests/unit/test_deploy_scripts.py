@@ -597,10 +597,18 @@ class TestLongRunningServices:
             # Without a start limit a taken port restarts it forever, never "failed"
             assert _values(text, "StartLimitBurst") and _values(text, "StartLimitIntervalSec"), name
 
-    def test_a_deploy_restarts_only_what_ran_before(self):
-        assert 'if systemctl is-active -q "$service.service"; then' in self.TEXT
+    def test_the_start_limit_is_cleared_right_before_the_restart(self):
+        """A restart does not clear it, so a quick redeploy after a failure stopped there."""
+        reset = self.TEXT.index('systemctl reset-failed "$service.service"')
+        restart = self.TEXT.index('systemctl restart "$service.service"')
+        # The next line: nothing in between can fail first
+        assert reset < restart and self.TEXT[reset:restart].count("\n") == 1
+
+    def test_a_deploy_restarts_only_what_was_cut_over(self):
+        """Enabled, not running: a deploy meant to fix a failing one must not disable it."""
+        assert 'if systemctl is-enabled -q "$service.service"; then' in self.TEXT
         assert 'if service_should_run "$service"; then' in self.TEXT
-        assert self.TEXT.index("RUNNING_SERVICES=") < self.TEXT.index(
+        assert self.TEXT.index("MIGRATED_SERVICES=") < self.TEXT.index(
             'git merge --ff-only "$DEPLOY_SHA"'
         )
         assert "verify_long_running || STATES_OK=false" in self.TEXT

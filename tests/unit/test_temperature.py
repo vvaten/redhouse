@@ -1,8 +1,10 @@
 """Unit tests for temperature data collection."""
 
 import json
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
 from src.data_collection.temperature import (
@@ -391,7 +393,15 @@ class TestWriteToInflux(unittest.TestCase):
 
 
 class TestLoadShellyHtData(unittest.TestCase):
-    """Test Shelly HT data loading from temperature_status.json."""
+    """Test Shelly HT data loading from a receiver's status file."""
+
+    def _load(self, content):
+        """load_shelly_ht_data on a real file holding content, or on no file."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "status.json"
+            if content is not None:
+                path.write_text(content)
+            return load_shelly_ht_data(str(path))
 
     def test_load_shelly_ht_data_success(self):
         """Test loading valid Shelly HT data."""
@@ -401,11 +411,7 @@ class TestLoadShellyHtData(unittest.TestCase):
             "MasterBedroom-190": {"temp": 19.3, "hum": 35.0, "updated": now - 120},
             "28-00000de4d34a": {"temp": 20.75, "updated": now - 10},
         }
-        json_str = json.dumps(status_data)
-
-        with patch("os.path.exists", return_value=True):
-            with patch("builtins.open", mock_open(read_data=json_str)):
-                result = load_shelly_ht_data("/fake/path.json")
+        result = self._load(json.dumps(status_data))
 
         self.assertEqual(len(result), 2)
         self.assertIn("shellyht-02D824-180", result)
@@ -419,28 +425,17 @@ class TestLoadShellyHtData(unittest.TestCase):
         status_data = {
             "shellyht-02D824-180": {"temp": 6.12, "hum": 72.0, "updated": old_time},
         }
-        json_str = json.dumps(status_data)
-
-        with patch("os.path.exists", return_value=True):
-            with patch("builtins.open", mock_open(read_data=json_str)):
-                result = load_shelly_ht_data("/fake/path.json")
+        result = self._load(json.dumps(status_data))
 
         self.assertEqual(len(result), 0)
 
     def test_load_shelly_ht_data_file_missing(self):
         """Test graceful handling when status file doesn't exist."""
-        with patch("os.path.exists", return_value=False):
-            result = load_shelly_ht_data("/fake/path.json")
-
-        self.assertEqual(result, {})
+        self.assertEqual(self._load(None), {})
 
     def test_load_shelly_ht_data_invalid_json(self):
         """Test graceful handling of corrupt JSON file."""
-        with patch("os.path.exists", return_value=True):
-            with patch("builtins.open", mock_open(read_data="not valid json{")):
-                result = load_shelly_ht_data("/fake/path.json")
-
-        self.assertEqual(result, {})
+        self.assertEqual(self._load("not valid json{"), {})
 
     def test_load_shelly_ht_data_skips_no_temp(self):
         """Test that entries without temp are skipped."""
@@ -448,11 +443,7 @@ class TestLoadShellyHtData(unittest.TestCase):
         status_data = {
             "shellyht-02D824-180": {"hum": 72.0, "updated": now - 60},
         }
-        json_str = json.dumps(status_data)
-
-        with patch("os.path.exists", return_value=True):
-            with patch("builtins.open", mock_open(read_data=json_str)):
-                result = load_shelly_ht_data("/fake/path.json")
+        result = self._load(json.dumps(status_data))
 
         self.assertEqual(len(result), 0)
 

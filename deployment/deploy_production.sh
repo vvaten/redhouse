@@ -175,7 +175,7 @@ verify_boot_units() {
 }
 
 service_should_run() {
-    [ "$START_ALL" = true ] || case " $RUNNING_SERVICES " in *" $1 "*) true ;; *) false ;; esac
+    [ "$START_ALL" = true ] || case " $MIGRATED_SERVICES " in *" $1 "*) true ;; *) false ;; esac
 }
 
 # Exit 0 only if each long-running service is enabled/active or
@@ -285,14 +285,15 @@ RUNNING_TIMERS=$(systemctl list-units --state=active --plain --no-legend \
     'redhouse-*.timer' 2>/dev/null | awk '{print $1}' | grep -v staging | tr '\n' ' ' || true)
 
 # Long-running services keep their old code until restarted, so they are
-# not stopped here. Each restarts after the update only if it ran before.
+# not stopped here. One enabled at its cutover restarts after the update,
+# even one failing now: a deploy may be its fix.
 LONG_RUNNING=(
     "redhouse-shelly-ht"
 )
-RUNNING_SERVICES=""
+MIGRATED_SERVICES=""
 for service in "${LONG_RUNNING[@]}"; do
-    if systemctl is-active -q "$service.service"; then
-        RUNNING_SERVICES="$RUNNING_SERVICES $service "
+    if systemctl is-enabled -q "$service.service"; then
+        MIGRATED_SERVICES="$MIGRATED_SERVICES $service "
     fi
 done
 
@@ -551,6 +552,8 @@ RESTARTED_SERVICES=0
 for service in "${LONG_RUNNING[@]}"; do
     if service_should_run "$service"; then
         systemctl enable "$service.service" 2>/dev/null
+        # A restart does not clear a start limit hit by an earlier attempt
+        systemctl reset-failed "$service.service" 2>/dev/null || true
         systemctl restart "$service.service"
         echo "  [OK] $service.service"
         RESTARTED_SERVICES=$((RESTARTED_SERVICES + 1))

@@ -2,10 +2,10 @@
 """Temperature data collection from 1-wire DS18B20 and Shelly HT sensors."""
 
 import datetime
-import json
 import os
 import re
 import time
+from pathlib import Path
 from statistics import median
 from typing import Optional
 
@@ -13,7 +13,7 @@ from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.json_logger import JSONDataLogger
 from src.common.logger import setup_logger
-from src.data_collection.shelly_ht_server import LEGACY_STATUS_FILE
+from src.data_collection.shelly_ht_server import LEGACY_STATUS_FILE, read_states
 from src.data_collection.shelly_ht_server import STATUS_FILE as SHELLY_HT_STATUS_FILE
 
 logger = setup_logger(__name__, "temperature.log")
@@ -270,30 +270,11 @@ def convert_internal_id_to_influxid(internal_id: str) -> Optional[str]:
 SHELLY_HT_MAX_AGE_SECONDS = 86400
 
 
-def _shelly_ht_status_file() -> str:
-    """The receiver's file written last: redhouse's after its cutover, and
-    wibatemp's again after a rollback, rather than a file nobody updates."""
-    existing = [path for path in (SHELLY_HT_STATUS_FILE, LEGACY_STATUS_FILE) if path.exists()]
-    if not existing:
-        return str(SHELLY_HT_STATUS_FILE)
-    return str(max(existing, key=lambda path: path.stat().st_mtime))
-
-
 def load_shelly_ht_data(status_file: Optional[str] = None) -> dict[str, dict]:
-    """Load Shelly HT sensor data from the Shelly HT server's status file."""
-    if status_file is None:
-        status_file = _shelly_ht_status_file()
-    if not os.path.exists(status_file):
-        logger.debug(f"Shelly HT status file not found: {status_file}")
-        return {}
-
-    try:
-        with open(status_file) as f:
-            all_data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Failed to read Shelly HT status file: {e}")
-        return {}
-
+    """Shelly HT readings, the newest of each sensor from both receivers'
+    files, so a cutover or a rollback loses no sensor. Or from one file."""
+    paths = [Path(status_file)] if status_file else [SHELLY_HT_STATUS_FILE, LEGACY_STATUS_FILE]
+    all_data = read_states(*paths)
     now = time.time()
     shelly_data = {}
 
@@ -319,7 +300,7 @@ def load_shelly_ht_data(status_file: Optional[str] = None) -> dict[str, dict]:
             )
 
     if shelly_data:
-        logger.info(f"Loaded {len(shelly_data)} Shelly HT sensors from {status_file}")
+        logger.info(f"Loaded {len(shelly_data)} Shelly HT sensors")
 
     return shelly_data
 

@@ -23,8 +23,8 @@ logger = setup_logger(__name__, "shelly_ht.log")
 # The sensors are configured to report to this port on the Pi
 PORT = 8008
 STATUS_FILE = Path(__file__).resolve().parents[2] / "data" / "shelly_ht_status.json"
-# Written by wibatemp's service; read when ours is missing, so a cutover
-# keeps the last value of every sensor
+# Written by wibatemp's receiver; merged with ours, so a cutover or a
+# rollback keeps the last value of every sensor
 LEGACY_STATUS_FILE = Path("/home/pi/wibatemp/temperature_status.json")
 
 
@@ -55,19 +55,37 @@ def record(state: dict, sensor_id: str, values: dict, now: float) -> bool:
     return True
 
 
-def load_state(status_file: Path = STATUS_FILE, legacy_file: Path = LEGACY_STATUS_FILE) -> dict:
-    """The last values of every sensor, from our file or else from wibatemp's."""
-    for path in (status_file, legacy_file):
+def read_states(*paths: Path) -> dict:
+    """The newest entry of every sensor across the files. wibatemp's receiver
+    starts empty, so its file can lack sensors ours still has. A missing,
+    unreadable or half-written file adds nothing."""
+    state: dict = {}
+    for path in paths:
         if not path.exists():
             continue
         try:
-            state = json.loads(path.read_text())
+            entries = json.loads(path.read_text())
         except (OSError, ValueError) as e:
             logger.warning(f"Cannot read Shelly HT state from {path}: {e}")
-            return {}
-        logger.info(f"Loaded {len(state)} Shelly HT sensors from {path}")
-        return state
-    return {}
+            continue
+        if not isinstance(entries, dict):
+            logger.warning(f"Shelly HT state in {path} is not a sensor table")
+            continue
+        for sensor_id, entry in entries.items():
+            if not isinstance(entry, dict) or "updated" not in entry:
+                continue
+            if not isinstance(entry["updated"], (int, float)):
+                continue
+            if sensor_id not in state or entry["updated"] > state[sensor_id]["updated"]:
+                state[sensor_id] = entry
+    return state
+
+
+def load_state(status_file: Path = STATUS_FILE, legacy_file: Path = LEGACY_STATUS_FILE) -> dict:
+    """The last values of every sensor, from both receivers' files."""
+    state = read_states(status_file, legacy_file)
+    logger.info(f"Loaded {len(state)} Shelly HT sensors")
+    return state
 
 
 def write_state(state: dict, status_file: Path = STATUS_FILE) -> None:
