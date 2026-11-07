@@ -1,5 +1,5 @@
 - Never add all files to git. Always only add modified and added files one by one.
-- IMPORTANT: Do not ever use unicode characters.
+- IMPORTANT: Never use emojis. Non-ASCII such as umlauts (the Finnish sensor names) is fine.
 - ALWAYS activate the virtual environment before running any Python commands:
   - On Windows (Git Bash): source venv/Scripts/activate
   - On Linux/Raspberry Pi: source venv/bin/activate
