@@ -455,7 +455,9 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
    deploy staging and production, wait for the first hourly run, then
    copy the history from `emeters` once, from 2023-05-12 up to that
    run. A copy that reached past it would put older forecasts over the
-   newer ones.
+   newer ones. Done 2026-11-07: 31482 points from 2023-05-12 to the
+   first new run (2026-11-02 18:30Z); source and copy counts match
+   month by month.
 4. `network_1hour` (forever, 365-day shards). A new hourly aggregator
    and timer: the hourly mean of the average and percentile fields,
    the minimum of `rtt_min_ms`, the maximum of `rtt_max_ms`, the
