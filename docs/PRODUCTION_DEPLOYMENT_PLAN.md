@@ -479,7 +479,9 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
    `sudo -u pi venv/bin/python -m src.aggregation.network_1hour --start 2023-09-13 --end <today>`.
    A dry run of the whole history gave 27602 hours with stable field
    types. Only after the hourly sums match the raw ones, set the 30-day
-   retention on `network`.
+   retention on `network`. Done 2026-11-07: staging first, then
+   production; all 27603 hours since 2023-09-13 match the raw sums, and
+   `network` keeps 30 days.
 5. A mapper from the old `emeters`/`energy` fields to the aggregator
    input, then `backfill_aggregation.py --skip-5min` from 2022-11-02 to
    2026-09-17. History goes to `analytics_15min` (1825 days) and
