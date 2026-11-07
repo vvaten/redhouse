@@ -658,6 +658,22 @@ class TestDeployGates:
         assert pin < gate < reexec < merge
         assert 'REDHOUSE_DEPLOY_SHA="$DEPLOY_SHA"' in self.TEXT
 
+    def test_the_env_is_checked_against_the_pinned_commit_before_any_stop(self):
+        check = self._at('git show "$DEPLOY_SHA:scripts/validate_env.py"')
+        assert self._at('git show "$DEPLOY_SHA:deployment/deploy_production.sh"') < check
+        assert check < self._at("    wait_for_window\n")
+        assert check < self._at('systemctl stop "$timer"')
+        # Isolated, as the copy runs from /tmp; checked later when no venv yet
+        assert '"$VENV_DIR/bin/python" -I "$ENV_CHECK"' in self.TEXT
+        assert self._at('if [ "$ENV_CHECKED" != true ]') > self._at(
+            "install --quiet -r requirements.txt"
+        )
+
+    def test_a_staging_deploy_checks_its_env(self):
+        text = (REPO / "deployment" / "deploy_staging.sh").read_text(encoding="utf-8")
+        check = text.index('-I scripts/validate_env.py "$DEPLOY_DIR/.env"')
+        assert text.index('git reset --hard "origin/$BRANCH"') < check
+
     def test_unverified_code_never_runs_before_the_gate(self):
         gate = self._at('elif ! ci_gate "$DEPLOY_SHA"; then')
         assert gate < self._at('exec bash "$FRESH_SCRIPT" "$@"')

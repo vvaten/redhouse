@@ -123,11 +123,21 @@ if [ ! -f "$DEPLOY_DIR/.env" ]; then
     exit 1
 fi
 
-# Verify STAGING_MODE is enabled
+# Verify STAGING_MODE is enabled. On a failure the timers stay stopped:
+# restarted, they would run the new code with this .env.
 if ! grep -q "STAGING_MODE=true" "$DEPLOY_DIR/.env"; then
     echo "[FAIL] STAGING_MODE is not set to true in $DEPLOY_DIR/.env"
     echo "This would write to production buckets from staging!"
     echo "Fix: Set STAGING_MODE=true in $DEPLOY_DIR/.env"
+    echo "The staging timers stay stopped until a deploy passes"
+    RUNNING_TIMERS=""
+    exit 1
+fi
+
+if ! sudo -u pi "$VENV_DIR/bin/python" -I scripts/validate_env.py "$DEPLOY_DIR/.env"; then
+    echo "[FAIL] $DEPLOY_DIR/.env is not a valid staging configuration"
+    echo "The staging timers stay stopped until a deploy passes"
+    RUNNING_TIMERS=""
     exit 1
 fi
 

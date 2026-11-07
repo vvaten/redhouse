@@ -34,6 +34,11 @@ REQUIRED_KEYS = {
     },
 }
 
+# Required unless STAGING_MODE is on: their writers do not run in staging
+PRODUCTION_ONLY_KEYS = {
+    "INFLUXDB_BUCKET_NETWORK": "Network ping data bucket",
+}
+
 # Optional but recommended keys
 RECOMMENDED_KEYS = {
     "STAGING_MODE": "Set to 'true' for staging deployment",
@@ -59,6 +64,17 @@ def check_placeholder_value(key: str, value: str) -> bool:
     return False
 
 
+def _staging_suffix_issues() -> list[str]:
+    """Each bucket key that names a bucket without the '_staging' suffix.
+    Staging reads the production temperatures and writes none."""
+    issues = []
+    for key in [*REQUIRED_KEYS["influxdb_buckets"], *PRODUCTION_ONLY_KEYS]:
+        bucket = os.getenv(key)
+        if key != "INFLUXDB_BUCKET_TEMPERATURES" and bucket and not bucket.endswith("_staging"):
+            issues.append(f"{key}={bucket} does not have '_staging' suffix")
+    return issues
+
+
 def validate_env_file(env_path: str = ".env") -> tuple[bool, list[str], list[str]]:
     """
     Validate .env file for required configuration.
@@ -79,9 +95,13 @@ def validate_env_file(env_path: str = ".env") -> tuple[bool, list[str], list[str
 
     # Load environment variables
     load_dotenv(env_path)
+    staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
 
     # Check required keys
-    for category, keys in REQUIRED_KEYS.items():
+    required = dict(REQUIRED_KEYS)
+    if not staging_mode:
+        required["production_only"] = PRODUCTION_ONLY_KEYS
+    for category, keys in required.items():
         print(f"\nChecking {category}...")
 
         for key, description in keys.items():
@@ -107,27 +127,17 @@ def validate_env_file(env_path: str = ".env") -> tuple[bool, list[str], list[str
             print(f"  [OK] {key}: {value}")
 
     # Check for staging mode safety
-    staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
     if staging_mode:
         print("\nSTAGING MODE ENABLED")
         print("  Checking bucket names have '_staging' suffix...")
 
-        staging_issues = []
-        for key in REQUIRED_KEYS["influxdb_buckets"].keys():
-            if "LOAD_CONTROL" in key or key == "INFLUXDB_BUCKET_WEATHER":
-                bucket = os.getenv(key, "")
-                if bucket and not bucket.endswith("_staging"):
-                    staging_issues.append(
-                        f"  {key}={bucket} does not have '_staging' suffix"
-                    )
-
+        staging_issues = _staging_suffix_issues()
         if staging_issues:
-            warnings.append("STAGING MODE: Some buckets don't have '_staging' suffix:")
-            warnings.extend(staging_issues)
+            errors.extend(f"STAGING MODE: {issue}" for issue in staging_issues)
             for issue in staging_issues:
-                print(f"  [WARNING] {issue}")
+                print(f"  [ERROR] {issue}")
         else:
-            print("  [OK] All critical buckets have '_staging' suffix")
+            print("  [OK] All written buckets have '_staging' suffix")
 
     is_valid = len(errors) == 0
 

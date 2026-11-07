@@ -381,6 +381,27 @@ if [ "$PRE_DEPLOY_COMMIT" != "(fresh install)" ] && [ -z "${REDHOUSE_DEPLOY_REEX
     rm -f "$FRESH_SCRIPT"
 fi
 
+# --- Refuse a .env that lacks a key the pinned commit needs ---
+# A missing key fails the units only at their next run. Checked here,
+# before anything stops, unless no venv exists yet to run the check.
+
+ENV_CHECKED=false
+if [ -x "$VENV_DIR/bin/python" ]; then
+    ENV_CHECK=$(mktemp)
+    chmod 644 "$ENV_CHECK"
+    # -I: the copy sits in /tmp, so its directory must not be on sys.path
+    if ! sudo -u pi git show "$DEPLOY_SHA:scripts/validate_env.py" > "$ENV_CHECK" ||
+        ! sudo -u pi "$VENV_DIR/bin/python" -I "$ENV_CHECK" "$DEPLOY_DIR/.env"; then
+        rm -f "$ENV_CHECK"
+        echo "[FAIL] $DEPLOY_DIR/.env does not satisfy $DEPLOY_SHA, nothing deployed"
+        exit 1
+    fi
+    rm -f "$ENV_CHECK"
+    ENV_CHECKED=true
+else
+    echo "[WARN] No venv yet: .env is checked after the venv is set up"
+fi
+
 # --- Wait for safe window (or skip with --now) ---
 
 if [ "$DEPLOY_NOW" = true ]; then
@@ -456,6 +477,12 @@ if [ ! -f "$DEPLOY_DIR/config/sensors.yaml" ]; then
 fi
 
 echo "[OK] .env and config/sensors.yaml exist"
+
+if [ "$ENV_CHECKED" != true ] &&
+    ! sudo -u pi "$VENV_DIR/bin/python" -I scripts/validate_env.py "$DEPLOY_DIR/.env"; then
+    echo "[FAIL] $DEPLOY_DIR/.env does not satisfy $DEPLOY_SHA"
+    exit 1
+fi
 
 # --- Create log directory ---
 
