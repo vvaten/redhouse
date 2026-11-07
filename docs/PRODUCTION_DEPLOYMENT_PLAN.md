@@ -404,6 +404,79 @@ Check that python3 now holds the port, and that wibatemp's file is
 written again at the next sensor report:
 `sudo ss -ltnp 'sport = :8008'; ls -l /home/pi/wibatemp/temperature_status.json`.
 
+### Phase 8: bucket migration
+
+Goal: all history in the new buckets at the right resolution, then the
+old buckets deleted. The same work cuts the shard count, which is what
+slows InfluxDB down: on 2026-11-07 it held about 1920 shards for 529 MB
+of data. Most come from forever-kept buckets with 7-day shard groups,
+`spotprice` alone has 262 shards for 2 MB. A new shard group duration
+applies only to new shards, so the only way to merge old shards is to
+copy the bucket.
+
+Decisions, 2026-11-07:
+
+- Raw temperatures stay forever at full resolution.
+- Ping data: hourly forever in a new `network_1hour`, raw `network`
+  for 30 days only.
+- The solar prediction moves out of `emeters` into a new bucket
+  `solar_prediction`.
+- No InfluxDB token is bound to a bucket, so a renamed bucket needs no
+  token change.
+
+| Bucket | Now | Target |
+|--------|-----|--------|
+| `emeters` | energy at 5 min 2022-11-02 to 2026-11-01, the solar prediction hourly, phase data for 2022-10-02 to 10-10 only | energy history mapped into `analytics_15min` and `analytics_1hour`, the prediction copied to `solar_prediction`, phase data dropped, then deleted |
+| `checkwatt_full_data` | copy of `checkwatt`, no writes since 2026-11-01 | verified against `checkwatt`, then deleted |
+| `network` | raw at 1 min, forever, 254 MB | 30 days raw, history in `network_1hour` |
+| `temperatures`, `spotprice`, `weather`, `windpower`, `checkwatt`, `load_control` | forever, 7-day shards | same names and data, 365-day shards |
+| forever-kept staging buckets | about 57 shards each | 30-day retention, 7-day shards |
+| `solis_inverter`, `relays` | empty | deleted |
+
+Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
+5 can run beside them.
+
+1. A full InfluxDB backup on the NAS
+   (`run_backup_nas.sh`, see BACKUP.md). Keep it until step 7 is
+   verified.
+2. Settings only. 30-day retention and 7-day shard groups on
+   `temperatures_staging`, `weather_staging`, `checkwatt_staging`,
+   `emeters_staging`, `load_control_staging` and `spotprice_staging`.
+   7-day shard groups on the staging buckets that have 1-day shards,
+   and on `shelly_em3_emeters_raw`. Delete `solis_inverter` and
+   `relays` after a check that both are empty.
+   Steps 1 and 2 done 2026-11-07. The old 1-day shards expire within
+   30 days.
+3. `solar_prediction` (forever, 365-day shards) and
+   `solar_prediction_staging`. A new `INFLUXDB_BUCKET_SOLAR_PREDICTION`
+   setting for predict_solar_yield.py, heating_data_fetcher.py and the
+   Energy Meters panel of both dashboards. Create the bucket, copy the
+   prediction history from 2023-05-12, add the .env key, deploy, then
+   copy the hours written in between. A copy can run again without
+   harm: the same points overwrite.
+4. `network_1hour` (forever, 365-day shards). A new hourly aggregator
+   and timer: the hourly mean of the average and percentile fields,
+   the minimum of `rtt_min_ms`, the maximum of `rtt_max_ms`, the
+   counts as sums, and the loss ratio again from the summed counts.
+   A mean of percentiles is an approximation, good for trends. Backfill
+   all history, verify it, and only then set 30-day retention on
+   `network`. The Network Ping panel reads raw data up to 8 days and
+   `network_1hour` above, as the temperature panels do. A stale-data
+   alert on `network_1hour`.
+5. A mapper from the old `emeters`/`energy` fields to the aggregator
+   input, then `backfill_aggregation.py --skip-5min` from 2022-11-02 to
+   2026-09-17. History goes to `analytics_15min` (1825 days) and
+   `analytics_1hour` (forever), never `emeters_5min` (90 days). The
+   prices come out right for their time, because `spotprice` stores
+   the tax and transfer price of each point as it was then.
+6. The 365-day shard swap, one bucket at a time, at night: create
+   `X_new`, copy the history month by month inside InfluxDB with
+   `to()`, rename `X` to `X_old` and `X_new` to `X`, copy the points
+   written in between, compare counts per month. The names stay the
+   same, so no code, dashboard or alert changes.
+7. Verify, then delete `emeters`, `checkwatt_full_data` and each
+   `X_old`. Every deletion needs its own go.
+
 ### Pump control test: DONE
 
 2026-04-06 and 2026-04-08, against the real hardware, all commands
