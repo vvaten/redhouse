@@ -1,0 +1,13 @@
+# Findings in the git history that are no longer secrets, one fingerprint
+# (commit:file:rule:line) each. A new finding must be fixed, not added here
+# unless the value is revoked or a placeholder.
+# 2025-10-19 src/data_collection/windpower.py: Fingrid key, revoked 2026-11-07
+fa7893491fdfb1c91d286cf9cd464640dede8b30:src/data_collection/windpower.py:assigned-hex-key:21
+# 2025-11-01 deployment/STAGING_DEPLOYMENT_GUIDE.md: YOUR_API_KEY placeholder
+0e26a451c9c2c9c8a700deac0ef3ee1ecb3ea593:deployment/STAGING_DEPLOYMENT_GUIDE.md:curl-auth-header:501
+# 2026-01-09 docs/SECURITY.md: Fingrid key, revoked 2026-11-07
+e01666051b60b2d1900b4f5f72f3faf5e289a00c:docs/SECURITY.md:assigned-hex-key:46
+# 2026-01-09 docs/SECURITY.md: truncated JWT placeholder in an example
+e01666051b60b2d1900b4f5f72f3faf5e289a00c:docs/SECURITY.md:generic-api-key:49
+# 2026-02-01 docs/CODE_REVIEW_REPORT.md: Fingrid key, revoked 2026-11-07
+a0bc367ebbb0a1b3f95568dbebbe5ce7cd06fe17:docs/CODE_REVIEW_REPORT.md:assigned-hex-key:625

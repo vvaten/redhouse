@@ -60,3 +60,28 @@ jobs:
     - name: Lint with ruff
       run: |
         ruff check src/ tests/
+
+  secrets:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # The whole history: a secret committed once stays in it
+        fetch-depth: 0
+
+    - name: Install gitleaks
+      env:
+        VERSION: 8.21.2
+      run: |
+        base="https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}"
+        archive="gitleaks_${VERSION}_linux_x64.tar.gz"
+        curl -sSfL -o "$archive" "$base/$archive"
+        curl -sSfL -o checksums.txt "$base/gitleaks_${VERSION}_checksums.txt"
+        grep " ${archive}\$" checksums.txt | sha256sum -c -
+        tar -xzf "$archive" gitleaks
+
+    - name: Scan the whole history for secrets
+      run: |
+        ./gitleaks git --redact --no-banner \
+          --config .gitleaks.toml --gitleaks-ignore-path .gitleaksignore

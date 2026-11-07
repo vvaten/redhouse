@@ -1,0 +1,16 @@
+# gitleaks configuration: the default rules plus the ones they miss.
+# Used by the pre-commit hook (scripts/hooks/pre-commit) and by CI.
+
+title = "redhouse"
+
+[extend]
+useDefault = true
+
+# The default rules do not flag a bare hex key, such as a Fingrid
+# x-api-key, assigned to a *_KEY name.
+[[rules]]
+id = "assigned-hex-key"
+description = "A hex value of 32 or more characters assigned to a key, token, secret or password"
+regex = '''(?i)[a-z0-9_.-]*(?:key|token|secret|password)[a-z0-9_.-]*["']?\s*[:=]\s*["']?([0-9a-f]{32,})\b'''
+secretGroup = 1
+keywords = ["key", "token", "secret", "password"]

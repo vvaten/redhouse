@@ -1,0 +1,145 @@
+#!/bin/bash
+# Pre-commit hook for redhouse project. Tracked in the repo; the copy in
+# .git/hooks only calls this file (deployment/setup-git-hooks.sh).
+# Runs security checks, then delegates to scripts/run_all_checks.py
+
+set -e
+
+echo "=== Running pre-commit checks ==="
+echo ""
+
+# ============================================================================
+# 1. Security checks
+# ============================================================================
+echo "[1/2] Security checks..."
+
+BLOCKED_FILES=(
+    ".env.staging"
+    ".env.prod"
+    ".env.production"
+)
+
+# Check 1.1: Block production environment files
+for file in "${BLOCKED_FILES[@]}"; do
+    if git diff --cached --name-only | grep -q "^${file}$"; then
+        echo "ERROR: Attempting to commit blocked file: ${file}"
+        echo "This file may contain production credentials!"
+        exit 1
+    fi
+done
+
+# Check 1.2: Scan .env files for real credentials
+SECRET_PATTERNS=(
+    "PASSWORD="
+    "TOKEN="
+    "_PASSWORD="
+    "_TOKEN="
+    "SECRET="
+    "API_KEY="
+)
+
+while IFS= read -r -d '' file; do
+    if [[ "$file" != *.env* ]] || [[ "$file" == *.example ]]; then
+        continue
+    fi
+    for pattern in "${SECRET_PATTERNS[@]}"; do
+        if git diff --cached -- "$file" | grep -q "^+.*${pattern}"; then
+            if git diff --cached -- "$file" | grep "^+.*${pattern}" | grep -vq -E '(your-|example|dummy|fake|test|xxx|<|>|\*\*\*)'; then
+                echo "ERROR: File ${file} appears to contain real credentials!"
+                exit 1
+            fi
+        fi
+    done
+done < <(git diff --cached -z --name-only)
+
+# Check 1.3: Scan every staged text file, not only .py and .env, for a
+# value assigned to a key, token, secret or password name.
+Q="'"
+NAME="[A-Za-z0-9_.-]*(key|token|secret|password)[A-Za-z0-9_.-]*[\"${Q}]?[[:space:]]*[:=][[:space:]]*[\"${Q}]?"
+SECRET_NAME="[A-Za-z0-9_.-]*(token|secret|password)[\"${Q}]?[[:space:]]*[:=][[:space:]]*[\"${Q}]?"
+HEX_KEY="${NAME}[0-9a-fA-F]{32,}"
+LONG_SECRET="${SECRET_NAME}[A-Za-z0-9_+/=-]{40,}"
+LONG_TOKEN="${NAME}[A-Za-z0-9_-]{40,}"
+PLACEHOLDER='(your-|example|dummy|fake|xxx|TODO|FIXME|<.*>|config\.get|os\.getenv|os\.environ)'
+SAFE_PATTERNS='(your-|example|dummy|fake|test|xxx|TODO|FIXME|<.*>|config\.get|os\.getenv|os\.environ)'
+
+block() {
+    echo "ERROR: File $1 appears to contain a hardcoded $2!"
+    echo "Detected line:"
+    echo "$3" | sed 's/^+/  /'
+    echo ""
+    echo "Please move credentials to environment variables or config files."
+    exit 1
+}
+
+while IFS= read -r -d '' file; do
+    # Skip test files as they often contain mock credentials
+    if [[ "$file" =~ ^tests/ ]] || [[ "$file" =~ (^|/)test_[^/]*\.py$ ]] ||
+        [[ "$file" =~ _test\.py$ ]]; then
+        continue
+    fi
+
+    added=$(git diff --cached --text -- "$file" | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+    # No placeholder is 32 hex characters, so no placeholder filter here
+    matches=$(echo "$added" | grep -iE "$HEX_KEY" || true)
+    [ -z "$matches" ] || block "$file" "API key" "$matches"
+
+    matches=$(echo "$added" | grep -iE "$LONG_SECRET" | grep -vE "$PLACEHOLDER" || true)
+    [ -z "$matches" ] || block "$file" "token or password" "$matches"
+
+    matches=$(echo "$added" | grep -iE "$LONG_TOKEN" | grep -vE "$SAFE_PATTERNS" || true)
+    if [ -n "$matches" ]; then
+        echo "WARNING: File ${file} may contain a hardcoded credential!"
+        echo "$matches" | sed 's/^+/  /'
+        echo "If this is a real credential, please move it to environment variables."
+    fi
+done < <(git diff --cached -z --diff-filter=ACMR --name-only)
+
+# Check 1.4: gitleaks with the repo's rules, when it is installed. CI runs
+# it on every push in any case, over the whole history.
+# gitleaks exits 1 on a config error too, so it runs only with the config.
+if ! command -v gitleaks > /dev/null 2>&1; then
+    echo "NOTE: gitleaks is not installed; CI scans every push with it"
+elif [ ! -f .gitleaks.toml ] || [ ! -f .gitleaksignore ]; then
+    echo "NOTE: no .gitleaks.toml or .gitleaksignore in this checkout, gitleaks skipped"
+elif ! gitleaks git --pre-commit --staged --redact --no-banner \
+    --config .gitleaks.toml --gitleaks-ignore-path .gitleaksignore; then
+    echo "ERROR: gitleaks found a secret in the staged changes"
+    exit 1
+fi
+
+echo "Security checks passed"
+echo ""
+
+# ============================================================================
+# 2. Activate virtual environment and run quality checks
+# ============================================================================
+echo "[2/2] Running code quality checks..."
+echo ""
+
+if [ -z "$VIRTUAL_ENV" ]; then
+    if [ -f "venv/Scripts/activate" ]; then
+        source venv/Scripts/activate
+    elif [ -f "venv/bin/activate" ]; then
+        source venv/bin/activate
+    else
+        echo "ERROR: Virtual environment not found"
+        exit 1
+    fi
+fi
+
+# A failing check blocks the commit. REDHOUSE_ALLOW_FAILING_CHECKS=1
+# lets it through; unlike --no-verify, the secret checks above still run.
+if ! python scripts/run_all_checks.py --quick; then
+    if [ "${REDHOUSE_ALLOW_FAILING_CHECKS:-}" = 1 ]; then
+        echo "WARNING: checks failed, committing anyway (REDHOUSE_ALLOW_FAILING_CHECKS=1)"
+    else
+        echo "ERROR: checks failed, commit blocked"
+        echo "Fix them, or override: REDHOUSE_ALLOW_FAILING_CHECKS=1 git commit ..."
+        exit 1
+    fi
+fi
+
+echo ""
+echo "Pre-commit checks complete!"
+exit 0

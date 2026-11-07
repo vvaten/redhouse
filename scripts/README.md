@@ -63,21 +63,16 @@ See [deployment/README.md](../deployment/README.md) for deployment-related scrip
 
 ## Pre-Commit Hook
 
-To automatically run checks before every commit, you can install a git pre-commit hook:
+Install the tracked hook, `scripts/hooks/pre-commit`, once after cloning:
 
 ```bash
-# Create pre-commit hook (Linux/Mac)
-cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/bash
-python -u scripts/run_all_checks.py --quick
-EOF
-chmod +x .git/hooks/pre-commit
-
-# Create pre-commit hook (Windows Git Bash)
-cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/bash
-python -u scripts/run_all_checks.py --quick
-EOF
+./deployment/setup-git-hooks.sh
 ```
 
-The hook will run automatically before each commit. If checks fail, the commit will be blocked.
+It runs the secret checks (see docs/SECURITY.md), then
+`run_all_checks.py --quick`. A failure in either blocks the commit. To
+commit with failing checks, but still with the secret checks:
+
+```bash
+REDHOUSE_ALLOW_FAILING_CHECKS=1 git commit ...
+```

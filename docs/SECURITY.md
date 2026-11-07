@@ -22,7 +22,15 @@ After cloning this repository, set up git hooks to prevent accidental credential
 ./deployment/setup-git-hooks.sh
 ```
 
-This installs a pre-commit hook that provides three layers of protection:
+The hook itself is `scripts/hooks/pre-commit`, tracked in the repo; the
+installed `.git/hooks/pre-commit` only calls it. It is a convenience: a
+commit with `--no-verify` or from another clone skips it. The check that
+always runs is the `secrets` job in CI, which scans the whole git history
+with gitleaks, the default rules plus `.gitleaks.toml`, on every push.
+`.gitleaksignore` lists the findings in the history that are no longer
+secrets: revoked keys and placeholders, by fingerprint.
+
+The hook provides these layers of protection:
 
 ### Check 1: Block Production Files
 - Prevents commits of `.env.staging`, `.env.prod`, `.env.production`
@@ -33,20 +41,25 @@ This installs a pre-commit hook that provides three layers of protection:
 - Allows `.env.example` files with placeholder values
 - Detects real credentials vs. dummy values (`your-`, `example`, `test`, etc.)
 
-### Check 3: Scan Python Source Files (NEW)
-- Detects hardcoded secrets in Python files (e.g., `API_KEY = "..."`)
-- Identifies hex strings 32+ characters (common API key format)
-- Recognizes long alphanumeric tokens (40+ characters)
+### Check 3: Scan Every Staged Text File
+- Docs too: the Fingrid key leaked through a Markdown example
+- Blocks a hex value of 32+ characters assigned to a key, token, secret
+  or password name (e.g., `API_KEY = "..."`, `"x-api-key": "..."`)
+- Warns on long alphanumeric tokens (40+ characters)
 - Allows safe patterns: `config.get()`, `os.getenv()`, `os.environ[]`
 - Skips test files which may contain mock credentials
+
+### Check 4: gitleaks
+- Runs `gitleaks git --pre-commit --staged` with the repo rules when
+  gitleaks is on PATH; without it the hook prints a note
 
 **Example patterns detected:**
 ```python
 # BLOCKED - Hardcoded hex API key
-FINGRID_API_KEY = "779865ac3644488cb77186b98df787cb"
+FINGRID_API_KEY = "<32 hex characters>"
 
 # BLOCKED - Hardcoded token
-AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+AUTH_TOKEN = "<a JWT or other long token>"
 
 # ALLOWED - Reading from config
 api_key = config.get("FINGRID_API_KEY")
@@ -55,6 +68,28 @@ api_key = os.getenv("FINGRID_API_KEY")
 # ALLOWED - Placeholder value
 API_KEY = "your-api-key-here"
 ```
+
+## Commit checks
+
+What runs on `git commit`, in order:
+
+1. The secret checks (Checks 1 to 4 above). A finding blocks the commit.
+2. `scripts/run_all_checks.py --quick`: black, ruff, mypy, the unit
+   tests and the code quality limits. A failure blocks the commit.
+
+Common situations:
+
+| Situation | What to do |
+|-----------|------------|
+| Fresh clone, the hook does not run | `./deployment/setup-git-hooks.sh` (git does not clone hooks) |
+| A test or lint fails and the commit must go in anyway | `REDHOUSE_ALLOW_FAILING_CHECKS=1 git commit ...`; the secret checks still run |
+| The hook says it found a key or token | Remove it from the change. If it was ever pushed, rotate it first |
+| The CI `secrets` job fails | A secret is in a pushed commit: rotate it, then add the finding's fingerprint to `.gitleaksignore` with a comment that names the revoked value |
+| The hook says gitleaks is not installed | Only a note: CI runs gitleaks on every push. To run it locally, put gitleaks 8.21.2 on PATH |
+| A false positive blocks a commit | Rewrite the line (for example read the value from config). Do not add a placeholder to `.gitleaksignore` unless the value is not a secret |
+
+Do not use `git commit --no-verify`. It skips the secret checks as well,
+and only CI would catch a leak, after the push.
 
 ## If Credentials Are Exposed
 
@@ -86,10 +121,10 @@ If you accidentally commit credentials to git:
 ## Environment File Structure
 
 ```
-.env.example        ✅ In git (template with dummy values)
-.env.staging        ❌ NOT in git (real staging credentials)
-.env.prod           ❌ NOT in git (real production credentials)
-.env.test           ❌ NOT in git (test credentials, may be local)
+.env.example        [in git]  template with dummy values
+.env.staging        [NOT in git]  real staging credentials
+.env.prod           [NOT in git]  real production credentials
+.env.test           [NOT in git]  test credentials, may be local
 ```
 
 ## Testing the Pre-commit Hook

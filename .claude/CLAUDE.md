@@ -8,6 +8,11 @@
   - If any checks fail, fix the issues before committing.
   - Use --fix flag to auto-fix formatting and linting: python scripts/run_all_checks.py --fix
   - Use --quick flag to skip coverage for faster checks: python scripts/run_all_checks.py --quick
+- The pre-commit hook (scripts/hooks/pre-commit) blocks a commit when the secret checks or run_all_checks.py --quick fail. Details: docs/SECURITY.md, "Commit checks".
+  - Not installed in a fresh clone (git does not copy hooks): run ./deployment/setup-git-hooks.sh once.
+  - To commit with failing tests or lint, only when the human operator asks: REDHOUSE_ALLOW_FAILING_CHECKS=1 git commit ... It keeps the secret checks.
+  - Never use git commit --no-verify: it skips the secret checks too.
+  - A secret found by the hook or by the CI "secrets" job: tell the human operator, who rotates it. Only a revoked value or a placeholder may go into .gitleaksignore.
 - When committing, NEVER use git add -A or git add . - always add files individually
 - Do not use default values in Dict().get(key, ...) unless explicitly requested by human operator. Check the output if the key was found and show error message and abort program run if that happens.
 - Always place imports at the top of the file, never inside functions. Use the standard Python import ordering: stdlib, third-party, local.

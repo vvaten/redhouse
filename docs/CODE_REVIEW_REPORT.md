@@ -622,8 +622,10 @@ json_logger.cleanup_old_logs()
 
 **Issue:**
 ```python
-FINGRID_API_KEY = "779865ac3644488cb77186b98df787cb"
+FINGRID_API_KEY = "<32 hex characters>"
 ```
+
+The key was revoked and replaced on 2026-11-07.
 
 API key is hardcoded in source code and committed to version control.
 
