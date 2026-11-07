@@ -23,6 +23,15 @@ def test_every_copied_bucket_but_load_control_has_a_window():
     assert set(cps.GAP_WINDOW_MINUTES) == set(cps.BUCKET_MAPPINGS) - {"load_control"}
 
 
+def test_a_missing_bucket_is_skipped_and_the_others_still_copy():
+    client = MagicMock()
+    missing = {"solar_prediction_staging"}
+    client.buckets_api.return_value.find_bucket_by_name.side_effect = lambda name: (
+        None if name in missing else MagicMock()
+    )
+    assert cps._existing(client, ["weather", "solar_prediction"]) == ["weather"]
+
+
 def test_load_control_is_copied_only_with_overwrite():
     client = MagicMock()
     assert cps.fill_bucket_gaps(client, "load_control", "load_control_staging", START, END) == 0
@@ -86,6 +95,19 @@ def test_overwrite_copies_the_whole_range_and_the_default_fills_gaps(flag, chose
     used = {"fill_bucket_gaps": fill, "copy_bucket_data": full}
     assert used[chosen].call_count == 1
     assert sum(mock.call_count for mock in used.values()) == 1
+
+
+def test_a_skipped_bucket_fails_the_run_after_the_others_are_copied():
+    argv = ["copy_production_to_staging.py", "--days", "2", "--buckets", "weather", "checkwatt"]
+    with (
+        patch.object(sys, "argv", argv),
+        patch.object(cps, "_connect"),
+        patch.object(cps, "get_config"),
+        patch.object(cps, "_existing", return_value=["weather"]),
+        patch.object(cps, "fill_bucket_gaps", return_value=0) as fill,
+    ):
+        assert cps.main() == 1
+    assert [c.args[1] for c in fill.call_args_list] == ["weather"]
 
 
 def _record(measurement, time):

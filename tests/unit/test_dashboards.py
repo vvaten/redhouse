@@ -15,9 +15,9 @@ CURSOR_PANELS = {
     "Wind Power (Finland) MW",
     "Heating Schedule (Geothermal Pump)",
 }
-EMETERS_BUCKET = {
-    "production_dashboard.json": "emeters",
-    "staging_dashboard.json": "emeters_staging",
+PREDICTION_BUCKET = {
+    "production_dashboard.json": "solar_prediction",
+    "staging_dashboard.json": "solar_prediction_staging",
 }
 
 
@@ -40,7 +40,7 @@ def _override(panel, matcher_id, options):
     return next(o for o in overrides if o["matcher"] == {"id": matcher_id, "options": options})
 
 
-@pytest.mark.parametrize("name", sorted(EMETERS_BUCKET))
+@pytest.mark.parametrize("name", sorted(PREDICTION_BUCKET))
 def test_every_forecast_panel_has_a_hidden_now_cursor(name):
     panels = _panels(name)
     for title in CURSOR_PANELS:
@@ -56,12 +56,12 @@ def test_every_forecast_panel_has_a_hidden_now_cursor(name):
         assert "current_time: 0}" in query and "current_time: 1}" in query, title
 
 
-@pytest.mark.parametrize("name", sorted(EMETERS_BUCKET))
+@pytest.mark.parametrize("name", sorted(PREDICTION_BUCKET))
 def test_energy_meters_shows_the_solar_prediction_in_watts(name):
     panel = _panels(name)["Energy Meters"]
     assert panel["fieldConfig"]["defaults"]["unit"] == "watt"
     query = _target(panel, "Prediction")["query"]
-    assert f'from(bucket: "{EMETERS_BUCKET[name]}")' in query
+    assert f'from(bucket: "{PREDICTION_BUCKET[name]}")' in query
     assert '"solar_yield_avg_prediction"' in query and "* 3600.0" in query
     _override(panel, "byName", "solar_yield_avg_prediction")
 

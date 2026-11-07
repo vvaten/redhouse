@@ -450,10 +450,12 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
 3. `solar_prediction` (forever, 365-day shards) and
    `solar_prediction_staging`. A new `INFLUXDB_BUCKET_SOLAR_PREDICTION`
    setting for predict_solar_yield.py, heating_data_fetcher.py and the
-   Energy Meters panel of both dashboards. Create the bucket, copy the
-   prediction history from 2023-05-12, add the .env key, deploy, then
-   copy the hours written in between. A copy can run again without
-   harm: the same points overwrite.
+   Energy Meters panel of both dashboards. Order: create both buckets,
+   add the key to both .env files (a deploy refuses a .env without it),
+   deploy staging and production, wait for the first hourly run, then
+   copy the history from `emeters` once, from 2023-05-12 up to that
+   run. A copy that reached past it would put older forecasts over the
+   newer ones.
 4. `network_1hour` (forever, 365-day shards). A new hourly aggregator
    and timer: the hourly mean of the average and percentile fields,
    the minimum of `rtt_min_ms`, the maximum of `rtt_max_ms`, the

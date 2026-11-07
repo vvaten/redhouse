@@ -187,6 +187,10 @@ class Config:
     def influxdb_bucket_network(self) -> str:
         return self._require_env("INFLUXDB_BUCKET_NETWORK")
 
+    @property
+    def influxdb_bucket_solar_prediction(self) -> str:
+        return self._require_env("INFLUXDB_BUCKET_SOLAR_PREDICTION")
+
     # Weather configuration (from .env - PII)
     @property
     def weather_latlon(self) -> str:

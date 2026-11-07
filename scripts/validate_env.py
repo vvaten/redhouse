@@ -30,6 +30,7 @@ REQUIRED_KEYS = {
         "INFLUXDB_BUCKET_ANALYTICS_15MIN": "15-minute analytics bucket",
         "INFLUXDB_BUCKET_ANALYTICS_1HOUR": "1-hour analytics bucket",
         "INFLUXDB_BUCKET_WINDPOWER": "Wind power data bucket",
+        "INFLUXDB_BUCKET_SOLAR_PREDICTION": "Solar yield prediction bucket",
     },
 }
 

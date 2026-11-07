@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 from freezegun import freeze_time
 
+from src.common.config import Config
 from src.control.heating_data_fetcher import (
     HeatingDataFetcher,
     HeatingDataUnavailable,
@@ -22,9 +23,9 @@ class TestHeatingDataFetcher(unittest.TestCase):
     def setUp(self, mock_config, mock_influx_class):
         """Set up test fixtures."""
         # Mock config
-        self.mock_config = Mock()
+        self.mock_config = Mock(spec=Config)
         self.mock_config.influxdb_org = "test_org"
-        self.mock_config.influxdb_bucket_emeters = "emeters_test"
+        self.mock_config.influxdb_bucket_solar_prediction = "solar_prediction_test"
         self.mock_config.influxdb_bucket_spotprice = "spotprice_test"
         self.mock_config.influxdb_bucket_weather = "weather_test"
         mock_config.return_value = self.mock_config
@@ -70,6 +71,9 @@ class TestHeatingDataFetcher(unittest.TestCase):
 
         fetcher = HeatingDataFetcher()
         result = fetcher._fetch_solar_predictions(start_offset=0, stop_offset=1)
+
+        query = self.mock_influx.query_with_retry.call_args.args[0]
+        self.assertIn('from(bucket: "solar_prediction_test")', query)
 
         # Verify results
         self.assertEqual(len(result), 2)
@@ -536,9 +540,9 @@ class TestRequiredInputsFailLoudly(unittest.TestCase):
     """
 
     def _fetcher(self, mock_influx_class, mock_config):
-        config = Mock()
+        config = Mock(spec=Config)
         config.influxdb_org = "test_org"
-        config.influxdb_bucket_emeters = "emeters_test"
+        config.influxdb_bucket_solar_prediction = "solar_prediction_test"
         config.influxdb_bucket_spotprice = "spotprice_test"
         config.influxdb_bucket_weather = "weather_test"
         mock_config.return_value = config

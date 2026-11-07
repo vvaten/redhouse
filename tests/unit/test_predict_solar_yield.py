@@ -1,4 +1,4 @@
-"""The predictor reads history from emeters_5min and writes to emeters."""
+"""The predictor reads history from emeters_5min and writes to solar_prediction."""
 
 import importlib.util
 from pathlib import Path
@@ -29,6 +29,7 @@ def _client():
     client.config.influxdb_bucket_weather = "weather_b"
     client.config.influxdb_bucket_emeters = "emeters_b"
     client.config.influxdb_bucket_emeters_5min = "emeters_5min_b"
+    client.config.influxdb_bucket_solar_prediction = "solar_prediction_b"
     client.query_api.query.return_value = [table]
     return client
 
@@ -52,12 +53,11 @@ class TestHistoryQuery:
 
 
 class TestPredictionWrite:
-    def test_predictions_still_go_to_emeters(self):
-        """The generator and wibatemp read the prediction from emeters."""
+    def test_predictions_go_to_their_own_bucket(self):
         client = _client()
         hour = pd.Timestamp("2026-10-12 10:00", tz="UTC")
         pred = pd.DataFrame({"solar_yield_avg_prediction": [0.5]}, index=[hour])
         _load().write_predictions_to_influxdb(pred, client)
         kwargs = client.write_with_retry.call_args.kwargs
-        assert kwargs["bucket"] == "emeters_b"
+        assert kwargs["bucket"] == "solar_prediction_b"
         assert kwargs["record"][0]["time"] == hour + pd.Timedelta(minutes=30)

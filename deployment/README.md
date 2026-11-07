@@ -73,6 +73,7 @@ INFLUXDB_BUCKET_SPOTPRICE=spotprice_staging
 INFLUXDB_BUCKET_EMETERS=emeters_staging
 INFLUXDB_BUCKET_CHECKWATT=checkwatt_staging
 INFLUXDB_BUCKET_LOAD_CONTROL=load_control_staging
+INFLUXDB_BUCKET_SOLAR_PREDICTION=solar_prediction_staging
 
 # Enable staging mode (no hardware control, blocks production writes)
 STAGING_MODE=true
@@ -125,6 +126,7 @@ INFLUXDB_BUCKET_SPOTPRICE=spotprice
 INFLUXDB_BUCKET_EMETERS=emeters
 INFLUXDB_BUCKET_CHECKWATT=checkwatt
 INFLUXDB_BUCKET_LOAD_CONTROL=load_control
+INFLUXDB_BUCKET_SOLAR_PREDICTION=solar_prediction
 
 # Disable staging mode (enable hardware control)
 STAGING_MODE=false

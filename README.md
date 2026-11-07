@@ -174,6 +174,7 @@ influx bucket create -n checkwatt_full_data_test -o area51 -r 30d
 influx bucket create -n shelly_em3_emeters_raw_test -o area51 -r 30d
 influx bucket create -n load_control_test -o area51 -r 30d
 influx bucket create -n windpower_test -o area51 -r 30d
+influx bucket create -n solar_prediction_test -o area51 -r 30d
 ```
 
 Configure your `.env` to use test buckets when developing.

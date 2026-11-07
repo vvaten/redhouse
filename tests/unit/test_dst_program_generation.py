@@ -33,7 +33,7 @@ EVENING_SPIKE = (17, 18, 19)  # local hours priced above the EVU threshold
 @pytest.fixture(autouse=True)
 def _buckets(monkeypatch):
     """The bucket names the fetcher reads; a fresh config singleton per test."""
-    for name in ("EMETERS", "SPOTPRICE", "WEATHER"):
+    for name in ("SOLAR_PREDICTION", "SPOTPRICE", "WEATHER"):
         monkeypatch.setenv(f"INFLUXDB_BUCKET_{name}", name.lower())
     monkeypatch.setattr(app_config, "_config", None)
 

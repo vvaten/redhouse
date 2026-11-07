@@ -41,6 +41,7 @@ BUCKET_MAPPINGS = {
     "shelly_em3_emeters_raw": "shelly_em3_emeters_raw_staging",
     "load_control": "load_control_staging",
     "windpower": "windpower_staging",
+    "solar_prediction": "solar_prediction_staging",
 }
 
 # Minutes per window; a window where staging has no point of a measurement
@@ -53,6 +54,7 @@ GAP_WINDOW_MINUTES = {
     "checkwatt": 15,
     "shelly_em3_emeters_raw": 15,
     "windpower": 60,
+    "solar_prediction": 60,
 }
 
 
@@ -279,6 +281,21 @@ def fill_bucket_gaps(client, source_bucket, dest_bucket, start_time, end_time, d
     )
 
 
+def _existing(client, sources):
+    """The source buckets that exist with their staging copy; a missing
+    one is skipped, so it cannot stop the copy of the others."""
+    buckets_api = client.buckets_api()
+    present = []
+    for source in sources:
+        names = (source, BUCKET_MAPPINGS[source])
+        missing = [name for name in names if buckets_api.find_bucket_by_name(name) is None]
+        if missing:
+            print(f"\n{source}: skipped, no bucket {', '.join(missing)}")
+        else:
+            present.append(source)
+    return present
+
+
 def _connect(config):
     """An InfluxDB client with a one-minute timeout."""
     print(f"\nConnecting to InfluxDB: {config.influxdb_url}")
@@ -326,14 +343,11 @@ def main():
     print("Overwriting staging with the whole range" if args.overwrite else "Filling gaps only")
 
     try:
-        # Copy each bucket
-        total_records = 0
-        for source_bucket in args.buckets:
-            dest_bucket = BUCKET_MAPPINGS[source_bucket]
-            records = copy_range(
-                client, source_bucket, dest_bucket, start_time, end_time, args.dry_run
-            )
-            total_records += records
+        present = _existing(client, args.buckets)
+        total_records = sum(
+            copy_range(client, source, BUCKET_MAPPINGS[source], start_time, end_time, args.dry_run)
+            for source in present
+        )
 
         print("\n" + "=" * 60)
         print(
@@ -347,7 +361,8 @@ def main():
             print("\nStaging buckets populated with production data!")
             print("You can now test program generation with real data.")
 
-        return 0
+        # A skipped bucket fails the run, after the others are copied
+        return int(len(present) != len(args.buckets))
 
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)

@@ -114,7 +114,7 @@ Fields written by `energy_to_fissio.py` (primary 5-min data):
 | `emeter_previous_total` | float | Wh | Previous cumulative Shelly EM3 net total |
 | `latest_power_source` | string | - | `"external"` or `"backup"` (UPS/battery status) |
 | `previous_power_source` | string | - | Previous power source value |
-| `solar_yield_avg_prediction` | float | Wh/s | Solar yield prediction (written separately for future timestamps) |
+| `solar_yield_avg_prediction` | float | Wh/s | Solar yield prediction; history only, see `solar_prediction` |
 
 Additional fields written back by `checkwatt_dataloader.py` (5-min merged data):
 
@@ -139,8 +139,10 @@ Additional fields written back by `checkwatt_dataloader.py` (5-min merged data):
   (equivalent to 72 kW sustained) and handled by zeroing the previous value.
 - Solar yield was not read at night (00:00-03:00 local time) to avoid SMA
   inverter connection errors.
-- The old `generate_heating_program.py` reads `solar_yield_avg_prediction` from
-  this bucket to plan heating schedules.
+- `predict_solar_yield.py` writes `solar_yield_avg_prediction` to the
+  `solar_prediction` bucket, measurement `energy`, one point per hour at
+  the half hour. The heating program and the Energy Meters panel read it
+  there. The copy here holds the history up to the move.
 - The old `get_weather.py` uses the field name `"Air temperature"` (with capital
   and space) when querying weather; see weather bucket notes below.
 
@@ -694,6 +696,7 @@ HeatingProgramGenerator     -> load_control (measurements: load_control, load_co
 | `INFLUXDB_BUCKET_ANALYTICS_1HOUR` | `analytics_1hour` | New only | 1-hour analytics |
 | `INFLUXDB_BUCKET_WINDPOWER` | `windpower` | New only | Wind power production/forecasts |
 | `INFLUXDB_BUCKET_LOAD_CONTROL` | `load_control` | New only | Heating program schedules |
+| `INFLUXDB_BUCKET_SOLAR_PREDICTION` | `solar_prediction` | New only | Hourly solar yield prediction |
 
 For integration tests append `_test` to each bucket name and create them as
 described in the README.

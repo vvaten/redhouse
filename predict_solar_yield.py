@@ -7,7 +7,7 @@ This script predicts solar panel yield based on:
 - Pre-trained hourly conversion ratios
 - Historical solar production (emeters_5min bucket), for the error only
 
-The predictions are written to the emeters bucket as 'solar_yield_avg_prediction' field.
+The predictions are written to the solar_prediction bucket as 'solar_yield_avg_prediction' field.
 """
 
 import argparse
@@ -213,7 +213,7 @@ def predict_solar_yield(df, prediction_ratio, prediction_model):
 
 def write_predictions_to_influxdb(pred, influx_client):
     """
-    Write solar yield predictions to InfluxDB emeters bucket.
+    Write solar yield predictions to InfluxDB solar_prediction bucket.
 
     Args:
         pred: DataFrame with predictions
@@ -240,7 +240,9 @@ def write_predictions_to_influxdb(pred, influx_client):
 
     if points:
         logger.info(f"Writing {len(points)} solar predictions to InfluxDB")
-        influx_client.write_with_retry(bucket=config.influxdb_bucket_emeters, record=points)
+        influx_client.write_with_retry(
+            bucket=config.influxdb_bucket_solar_prediction, record=points
+        )
         logger.info("Solar predictions written successfully")
     else:
         logger.warning("No valid predictions to write")
