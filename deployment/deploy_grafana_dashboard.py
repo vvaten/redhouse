@@ -53,7 +53,7 @@ def main():
 
     grafana_url = grafana_url.rstrip("/")
 
-    with open(dashboard_file) as f:
+    with open(dashboard_file, encoding="utf-8") as f:
         dashboard = json.load(f)
 
     if "title" not in dashboard:

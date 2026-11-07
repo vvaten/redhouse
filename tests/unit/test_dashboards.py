@@ -66,6 +66,24 @@ def test_energy_meters_shows_the_solar_prediction_in_watts(name):
     _override(panel, "byName", "solar_yield_avg_prediction")
 
 
+@pytest.mark.parametrize("name", sorted(PREDICTION_BUCKET))
+def test_a_bucket_is_picked_by_the_past_part_of_the_range(name):
+    """Only the past holds data; with now/d+2d the full range is 3 days."""
+    tiered = 0
+    for title, panel in _panels(name).items():
+        if "targets" not in panel:
+            continue
+        for target in panel["targets"]:
+            if "query" not in target or "windowDuration" not in target["query"]:
+                continue
+            tiered += 1
+            query = target["query"]
+            past = "pastStop = if v.timeRangeStop > now() then now() else v.timeRangeStop"
+            assert past in query, title
+            assert "windowDuration = int(v: pastStop) - int(v: v.timeRangeStart)" in query, title
+    assert tiered == 16
+
+
 def test_production_and_staging_have_the_same_panels_and_queries():
     production, staging = _panels("production_dashboard.json"), _panels("staging_dashboard.json")
     assert production.keys() == staging.keys()
