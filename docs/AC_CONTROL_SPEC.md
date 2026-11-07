@@ -5,8 +5,12 @@ Status: draft for review, 2026-10-12. Only the interim protection
 
 ## 1. Purpose
 
-The "AC" is the house supply and exhaust ventilation. A Shelly relay at
-192.168.1.5 (relay/0) switches it. The code inherited from wibatemp calls
+The "AC" is the house supply and exhaust ventilation. The relay output
+of the Shelly 3EM energy meter at 192.168.1.5 (relay/0) drives its
+emergency shutdown. It is the same unit that redhouse reads for power
+every minute; its /status also reports the relay state. A reboot of the
+3EM, after a power cut or a firmware update, sets the relay by its
+power-on setting. The code inherited from wibatemp calls
 it the "AC pump" or the "circulation pump"; that name is wrong and goes.
 
 The hazard: when the AC starts, the exhaust fan starts first and the
@@ -123,7 +127,9 @@ file reads as: no fire window, no holds, off_by_redhouse false. That is
 the safe default, because nothing is then turned on.
 
 The AC state, the fire window and the holds also go to InfluxDB, so
-Grafana and the e-ink display can show them.
+Grafana and the e-ink display can show them. The Shelly EM3 collector
+also logs the relay state from the 3EM's /status every minute. That
+records every switch, also those made in the Shelly UI.
 
 ## 5. When the rules run
 
@@ -242,6 +248,13 @@ Each step has its own tests and a fresh review, and is safe to use alone.
 ## 11. Low priority
 
 - The Shelly power-on setting decides the AC state after a power cut.
-  The grid has not failed in six years, and the Pi has a UPS.
+  The grid has not failed in six years, and the Pi has a UPS. The
+  setting is "ON" and stays "ON" (decision 2026-10-14), so after any
+  outage the AC runs. When the holds (R4, R5) are built, a 3EM restart
+  ends a hold, so redhouse must see the restart and apply the hold
+  again.
+- Any 3EM reboot while the grid stays up, such as a firmware update,
+  drops the relay and restarts the AC. The firmware dates from
+  2023-09-13, and new Gen1 firmware is rare.
 - If the ventilation unit can start the supply fan first, or both fans
   together, that removes the hazard at its root.
