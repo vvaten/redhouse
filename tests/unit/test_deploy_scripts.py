@@ -196,7 +196,14 @@ class TestStagingTimersScript:
     SCRIPT = REPO / "deployment" / "staging_timers.sh"
 
     @pytest.mark.parametrize(
-        "timer", ["temperature", "health-check", "program-check", "program-fallback", "pinglogger"]
+        "timer",
+        [
+            "temperature",
+            "health-check",
+            "program-check",
+            "program-fallback",
+            "pinglogger",
+        ],
     )
     def test_is_not_auto_started(self, timer):
         """These do nothing useful in staging, three of them by email."""
@@ -204,6 +211,15 @@ class TestStagingTimersScript:
         match = re.search(r"NO_AUTO_START=\((.*?)^\)", text, re.S | re.M)
         assert match, "NO_AUTO_START not found"
         assert f'"{timer}"' in match.group(1)
+
+    def test_the_network_summary_runs_in_staging(self):
+        """It reads the production ping data and writes network_1hour_staging."""
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        timers = re.search(r"^TIMERS=\((.*?)^\)", text, re.S | re.M)
+        skipped = re.search(r"NO_AUTO_START=\((.*?)^\)", text, re.S | re.M)
+        assert timers and skipped
+        assert '"aggregate-network-1hour"' in timers.group(1)
+        assert '"aggregate-network-1hour"' not in skipped.group(1)
 
     def test_temperature_is_still_startable_by_name(self):
         """Skipping it from start-all must not make the name invalid."""

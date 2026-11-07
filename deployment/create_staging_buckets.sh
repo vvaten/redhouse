@@ -20,6 +20,7 @@ BUCKETS=(
     "checkwatt_staging"
     "load_control_staging"
     "solar_prediction_staging"
+    "network_1hour_staging"
 )
 
 for bucket in "${BUCKETS[@]}"; do

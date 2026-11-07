@@ -188,6 +188,10 @@ class Config:
         return self._require_env("INFLUXDB_BUCKET_NETWORK")
 
     @property
+    def influxdb_bucket_network_1hour(self) -> str:
+        return self._require_env("INFLUXDB_BUCKET_NETWORK_1HOUR")
+
+    @property
     def influxdb_bucket_solar_prediction(self) -> str:
         return self._require_env("INFLUXDB_BUCKET_SOLAR_PREDICTION")
 

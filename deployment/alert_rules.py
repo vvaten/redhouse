@@ -61,6 +61,16 @@ ALERT_RULES = [
         "skip_envs": ["staging", "wibatemp"],
     },
     {
+        "name": "Network hourly aggregation stale",
+        "timer": "redhouse-aggregate-network-1hour",
+        "bucket": "network_1hour",
+        "measurement": "network",
+        # Points are stamped at the hour start and written 72 minutes later
+        "max_age_minutes": 180,
+        "eval_interval_seconds": 1800,
+        "skip_envs": ["staging", "wibatemp"],
+    },
+    {
         "name": "5min aggregation stale",
         "timer": "redhouse-aggregate-emeters-5min",
         "bucket": "emeters_5min",

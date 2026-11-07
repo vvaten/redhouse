@@ -9,6 +9,7 @@
 #   :03,:08,:13,...  emeters_5min aggregation
 #   :04,:19,:34,:49  analytics_15min aggregation
 #   :05:30           analytics_1hour aggregation (hourly)
+#   :12:30           network_1hour aggregation (hourly)
 #
 # Usage:
 #   ./deploy_smart.sh              # Wait for next window, then deploy
@@ -127,6 +128,7 @@ show_schedule() {
     echo "  :03, :08, :13, etc. (5-min emeters aggregation)"
     echo "  :04, :19, :34, :49  (15-min analytics aggregation)"
     echo "  :05:30              (1-hour analytics aggregation)"
+    echo "  :12:30              (1-hour network aggregation)"
     echo "  :X6:00-:X6:10       (Shelly EM3 collection)"
     echo "  :01, :06, :11, etc. (CheckWatt collection)"
     echo ""

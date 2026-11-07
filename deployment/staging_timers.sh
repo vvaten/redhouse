@@ -30,6 +30,7 @@ TIMERS=(
     "aggregate-emeters-5min"
     "aggregate-analytics-15min"
     "aggregate-analytics-1hour"
+    "aggregate-network-1hour"
     "solar-prediction"
     "generate-program"
     "execute-program"

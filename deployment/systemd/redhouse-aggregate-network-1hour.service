@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse Hourly Network Ping Summary
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+EnvironmentFile=/opt/redhouse/.env
+ExecStart=/opt/redhouse/venv/bin/python -m src.aggregation.network_1hour
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-aggregate-network-1hour
+
+[Install]
+WantedBy=multi-user.target

@@ -467,6 +467,19 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
    `network`. The Network Ping panel reads raw data up to 8 days and
    `network_1hour` above, as the temperature panels do. A stale-data
    alert on `network_1hour`.
+   Built as src/aggregation/network_1hour.py and
+   redhouse-aggregate-network-1hour.timer (:12:30 UTC). Each run
+   recomputes the last 4 finished hours. Staging first: it reads the
+   production `network` and writes `network_1hour_staging`, with both
+   keys in the staging .env. Then production. Order: create
+   `network_1hour` (forever, 365-day shards), add
+   `INFLUXDB_BUCKET_NETWORK_1HOUR=network_1hour` to the production
+   .env (a deploy refuses a .env without it), deploy, deploy the
+   dashboards, then backfill on the Pi:
+   `sudo -u pi venv/bin/python -m src.aggregation.network_1hour --start 2023-09-13 --end <today>`.
+   A dry run of the whole history gave 27602 hours with stable field
+   types. Only after the hourly sums match the raw ones, set the 30-day
+   retention on `network`.
 5. A mapper from the old `emeters`/`energy` fields to the aggregator
    input, then `backfill_aggregation.py --skip-5min` from 2022-11-02 to
    2026-09-17. History goes to `analytics_15min` (1825 days) and
@@ -477,7 +490,9 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
    `X_new`, copy the history month by month inside InfluxDB with
    `to()`, rename `X` to `X_old` and `X_new` to `X`, copy the points
    written in between, compare counts per month. The names stay the
-   same, so no code, dashboard or alert changes.
+   same, so no code, dashboard or alert changes. Not `network`: with
+   30-day retention its 7-day shards expire by themselves, and a
+   365-day shard group longer than the retention is not allowed.
 7. Verify, then delete `emeters`, `checkwatt_full_data` and each
    `X_old`. Every deletion needs its own go.
 

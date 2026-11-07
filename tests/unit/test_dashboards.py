@@ -81,7 +81,26 @@ def test_a_bucket_is_picked_by_the_past_part_of_the_range(name):
             past = "pastStop = if v.timeRangeStop > now() then now() else v.timeRangeStop"
             assert past in query, title
             assert "windowDuration = int(v: pastStop) - int(v: v.timeRangeStart)" in query, title
-    assert tiered == 16
+    assert tiered == 17
+
+
+@pytest.mark.parametrize(
+    "name, hourly",
+    [
+        ("production_dashboard.json", "network_1hour"),
+        ("staging_dashboard.json", "network_1hour_staging"),
+    ],
+)
+def test_network_ping_reads_the_hourly_bucket_for_long_or_old_ranges(name, hourly):
+    """Raw ping data is kept 30 days, so a short range from long ago is hourly too."""
+    query = _target(_panels(name)["Network Ping"], "A")["query"]
+    assert 'from(bucket: "network")' in query and f'from(bucket: "{hourly}")' in query
+    use_hours = (
+        "useHours = windowDuration > eightDaysNs or "
+        "int(v: v.timeRangeStart) < int(v: now()) - int(v: 29d)"
+    )
+    assert use_hours in query
+    assert "rawStart = if useHours then 1970-01-01T00:00:00Z else v.timeRangeStart" in query
 
 
 def test_production_and_staging_have_the_same_panels_and_queries():

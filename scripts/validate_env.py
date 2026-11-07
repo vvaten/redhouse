@@ -31,13 +31,13 @@ REQUIRED_KEYS = {
         "INFLUXDB_BUCKET_ANALYTICS_1HOUR": "1-hour analytics bucket",
         "INFLUXDB_BUCKET_WINDPOWER": "Wind power data bucket",
         "INFLUXDB_BUCKET_SOLAR_PREDICTION": "Solar yield prediction bucket",
+        "INFLUXDB_BUCKET_NETWORK": "Network ping data bucket",
+        "INFLUXDB_BUCKET_NETWORK_1HOUR": "Hourly network ping summary bucket",
     },
 }
 
-# Required unless STAGING_MODE is on: their writers do not run in staging
-PRODUCTION_ONLY_KEYS = {
-    "INFLUXDB_BUCKET_NETWORK": "Network ping data bucket",
-}
+# Production buckets that staging reads and never writes
+STAGING_READS_PRODUCTION = {"INFLUXDB_BUCKET_TEMPERATURES", "INFLUXDB_BUCKET_NETWORK"}
 
 # Optional but recommended keys
 RECOMMENDED_KEYS = {
@@ -65,12 +65,12 @@ def check_placeholder_value(key: str, value: str) -> bool:
 
 
 def _staging_suffix_issues() -> list[str]:
-    """Each bucket key that names a bucket without the '_staging' suffix.
-    Staging reads the production temperatures and writes none."""
+    """Each bucket key, but those staging only reads, that names a bucket
+    without the '_staging' suffix."""
     issues = []
-    for key in [*REQUIRED_KEYS["influxdb_buckets"], *PRODUCTION_ONLY_KEYS]:
+    for key in REQUIRED_KEYS["influxdb_buckets"]:
         bucket = os.getenv(key)
-        if key != "INFLUXDB_BUCKET_TEMPERATURES" and bucket and not bucket.endswith("_staging"):
+        if key not in STAGING_READS_PRODUCTION and bucket and not bucket.endswith("_staging"):
             issues.append(f"{key}={bucket} does not have '_staging' suffix")
     return issues
 
@@ -98,10 +98,7 @@ def validate_env_file(env_path: str = ".env") -> tuple[bool, list[str], list[str
     staging_mode = os.getenv("STAGING_MODE", "false").lower() in ("true", "1", "yes")
 
     # Check required keys
-    required = dict(REQUIRED_KEYS)
-    if not staging_mode:
-        required["production_only"] = PRODUCTION_ONLY_KEYS
-    for category, keys in required.items():
+    for category, keys in REQUIRED_KEYS.items():
         print(f"\nChecking {category}...")
 
         for key, description in keys.items():
@@ -172,19 +169,13 @@ def main():
 
     if is_valid:
         if warnings:
-            print(
-                "Configuration is VALID but has warnings. "
-                "Review them before deployment."
-            )
+            print("Configuration is VALID but has warnings. " "Review them before deployment.")
             sys.exit(0)
         else:
             print("Configuration is VALID and complete!")
             sys.exit(0)
     else:
-        print(
-            "Configuration is INVALID. "
-            "Fix errors before running the system."
-        )
+        print("Configuration is INVALID. " "Fix errors before running the system.")
         sys.exit(1)
 
 

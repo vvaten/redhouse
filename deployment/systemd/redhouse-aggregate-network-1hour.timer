@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Hourly Network Ping Summary Timer
+
+[Timer]
+# Outside the deploy windows and the other hourly aggregations
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:12:30 UTC
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

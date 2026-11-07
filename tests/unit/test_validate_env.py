@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import dotenv.main
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "validate_env.py"
 
@@ -27,8 +28,6 @@ def _validate(tmp_path, staging, drop=(), override=None):
     for keys in module.REQUIRED_KEYS.values():
         for key in keys:
             values[key] = key.lower()
-    if not staging:
-        values.update((key, key.lower()) for key in module.PRODUCTION_ONLY_KEYS)
     for key in module.REQUIRED_KEYS["influxdb_buckets"]:
         if staging and key != "INFLUXDB_BUCKET_TEMPERATURES":
             values[key] += "_staging"
@@ -53,20 +52,19 @@ def test_a_missing_bucket_key_is_an_error(tmp_path):
     assert any("INFLUXDB_BUCKET_SOLAR_PREDICTION" in e for e in errors)
 
 
-def test_production_needs_the_network_bucket_and_staging_does_not(tmp_path):
-    valid, errors, _ = _validate(tmp_path, staging=False, drop=["INFLUXDB_BUCKET_NETWORK"])
+@pytest.mark.parametrize("staging", [False, True])
+@pytest.mark.parametrize("key", ["INFLUXDB_BUCKET_NETWORK", "INFLUXDB_BUCKET_NETWORK_1HOUR"])
+def test_both_environments_need_the_network_buckets(tmp_path, staging, key):
+    """The hourly summary runs in staging too, reading the production ping data."""
+    valid, errors, _ = _validate(tmp_path, staging=staging, drop=[key])
     assert not valid
-    assert any("INFLUXDB_BUCKET_NETWORK" in e for e in errors)
-    assert _validate(tmp_path, staging=True)[0]
+    assert any(key in e for e in errors)
 
 
 def test_every_bucket_key_the_config_requires_is_checked():
     config = (SCRIPT.parents[1] / "src" / "common" / "config.py").read_text(encoding="utf-8")
     needed = set(re.findall(r'_require_env\("(INFLUXDB_BUCKET_\w+)"\)', config))
-    module = _load()
-    assert needed == set(module.REQUIRED_KEYS["influxdb_buckets"]) | set(
-        module.PRODUCTION_ONLY_KEYS
-    )
+    assert needed == set(_load().REQUIRED_KEYS["influxdb_buckets"])
 
 
 def test_staging_may_not_name_a_production_bucket(tmp_path):
@@ -76,13 +74,16 @@ def test_staging_may_not_name_a_production_bucket(tmp_path):
     assert any("INFLUXDB_BUCKET_SOLAR_PREDICTION=solar_prediction" in e for e in errors)
 
 
-def test_staging_may_not_name_the_production_network_bucket(tmp_path):
-    override = {"INFLUXDB_BUCKET_NETWORK": "network"}
+def test_staging_may_not_name_the_production_hourly_network_bucket(tmp_path):
+    override = {"INFLUXDB_BUCKET_NETWORK_1HOUR": "network_1hour"}
     valid, errors, _ = _validate(tmp_path, staging=True, override=override)
     assert not valid
-    assert any("INFLUXDB_BUCKET_NETWORK=network" in e for e in errors)
+    assert any("INFLUXDB_BUCKET_NETWORK_1HOUR=network_1hour" in e for e in errors)
 
 
-def test_staging_reads_the_production_temperatures(tmp_path):
-    override = {"INFLUXDB_BUCKET_TEMPERATURES": "temperatures"}
+def test_staging_reads_the_production_temperatures_and_ping_data(tmp_path):
+    override = {
+        "INFLUXDB_BUCKET_TEMPERATURES": "temperatures",
+        "INFLUXDB_BUCKET_NETWORK": "network",
+    }
     assert _validate(tmp_path, staging=True, override=override)[0]

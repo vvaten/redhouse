@@ -36,6 +36,7 @@ REDHOUSE_SERVICES = [
     "redhouse-aggregate-emeters-5min",
     "redhouse-aggregate-analytics-15min",
     "redhouse-aggregate-analytics-1hour",
+    "redhouse-aggregate-network-1hour",
     "redhouse-solar-prediction",
     "redhouse-generate-program",
     "redhouse-execute-program",
