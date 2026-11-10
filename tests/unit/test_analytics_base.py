@@ -6,7 +6,9 @@ from unittest.mock import MagicMock, Mock
 import pytest
 import pytz
 
+from src.aggregation import quarter_prices as quarter_prices_module
 from src.aggregation.analytics_base import AnalyticsAggregatorBase
+from src.aggregation.quarter_prices import bill_periods, quarter_prices
 from src.common.influx_client import InfluxClient
 
 
@@ -139,42 +141,55 @@ class TestAnalyticsAggregatorBase:
         with pytest.raises(Exception, match="Read timed out"):
             aggregator._fetch_emeters_5min_data(window_start, window_end)
 
-    def test_fetch_spotprice_data_success(self, aggregator, time_window):
-        """Test successful fetch of spot price data."""
+    def test_a_quarter_window_reads_its_whole_hour_for_the_bill_price(
+        self, aggregator, time_window
+    ):
         window_start, window_end = time_window
+        records = []
+        for minutes, price in ((-15, 9.0), (0, 8.0), (15, 7.0), (30, 6.0), (45, 5.0)):
+            record = Mock()
+            record.get_time.return_value = window_start + datetime.timedelta(minutes=minutes)
+            record.values = {"price_total": price, "price_sell": 4.0, "price_withtax": None}
+            records.append(record)
+        aggregator.influx.query_with_retry.return_value = [Mock(records=records)]
 
-        # Mock InfluxDB response
-        mock_record = Mock()
-        mock_record.values = {"price_total": 8.5, "price_sell": 4.0}
+        periods = aggregator._fetch_spotprice_data(window_start, window_end)
 
-        mock_table = Mock()
-        mock_table.records = [mock_record]
+        assert periods == [
+            {
+                "start": window_start,
+                "stop": window_end,
+                "price_total": 6.5,
+                "price_sell": 4.0,
+                "price_withtax": None,
+            }
+        ]
+        query = aggregator.influx.query_with_retry.call_args.args[0]
+        assert f"start: {(window_start - datetime.timedelta(hours=1)).isoformat()}" in query
+        assert f"stop: {(window_start + datetime.timedelta(hours=1)).isoformat()}" in query
 
-        aggregator.influx.query_with_retry.return_value = [mock_table]
-
-        spotprice = aggregator._fetch_spotprice_data(window_end)
-
-        assert spotprice is not None
-        assert spotprice["price_total"] == 8.5
-        assert spotprice["price_sell"] == 4.0
-
-    def test_fetch_spotprice_data_empty(self, aggregator, time_window):
-        """Test fetch of spot price data with no results."""
+    def test_no_price_points_give_a_period_without_prices(self, aggregator, time_window):
         window_start, window_end = time_window
         aggregator.influx.query_with_retry.return_value = []
 
-        spotprice = aggregator._fetch_spotprice_data(window_end)
+        periods = aggregator._fetch_spotprice_data(window_start, window_end)
 
-        assert spotprice is None
+        assert periods == [
+            {
+                "start": window_start,
+                "stop": window_end,
+                "price_total": None,
+                "price_sell": None,
+                "price_withtax": None,
+            }
+        ]
 
-    def test_fetch_spotprice_data_exception(self, aggregator, time_window):
-        """Test fetch of spot price data with exception."""
+    def test_a_failed_price_read_raises_so_the_window_is_retried(self, aggregator, time_window):
         window_start, window_end = time_window
         aggregator.influx.query_with_retry.side_effect = Exception("Database error")
 
-        spotprice = aggregator._fetch_spotprice_data(window_end)
-
-        assert spotprice is None
+        with pytest.raises(Exception, match="Database error"):
+            aggregator._fetch_spotprice_data(window_start, window_end)
 
     def test_fetch_weather_data_success(self, aggregator, time_window):
         """Test successful fetch of weather data."""
@@ -286,7 +301,7 @@ class TestAnalyticsAggregatorBase:
         assert raw_data["humidities"] == {"test": "humidities"}
 
         aggregator._fetch_emeters_5min_data.assert_called_once_with(window_start, window_end)
-        aggregator._fetch_spotprice_data.assert_called_once_with(window_end)
+        aggregator._fetch_spotprice_data.assert_called_once_with(window_start, window_end)
         aggregator._fetch_weather_data.assert_called_once_with(window_start, window_end)
         aggregator._fetch_temperatures_data.assert_called_once_with(window_start, window_end)
         aggregator._fetch_humidities_data.assert_called_once_with(window_start, window_end)
@@ -382,3 +397,124 @@ class TestAnalyticsAggregatorBase:
 
         assert "air_temperature" not in metrics
         assert "PaaMH" not in metrics
+
+    def test_soc_is_the_last_known_value_and_absent_when_unknown(self, aggregator):
+        known = aggregator._calculate_energy_metrics([{"Battery_SoC": 40.0}, {"Battery_SoC": None}])
+        unknown = aggregator._calculate_energy_metrics([{"Battery_SoC": None}])
+        assert known["Battery_SoC"] == 40.0
+        assert unknown["Battery_SoC"] is None
+
+
+def _at(hour, minute=0, year=2026):
+    return datetime.datetime(year, 1, 8, hour, minute, tzinfo=pytz.UTC)
+
+
+def _spot(hour, minute, price, year=2026):
+    return {
+        "time": _at(hour, minute, year),
+        "price_total": price,
+        "price_sell": 0.02,
+        "price_withtax": None,
+    }
+
+
+HOURLY = 2025  # a year with hourly prices
+
+
+class TestQuarterPrices:
+    """Each quarter takes the last price at or before its start."""
+
+    def test_an_hourly_price_covers_its_four_quarters(self):
+        points = [_spot(h, 0, p, HOURLY) for h, p in ((9, 0.10), (10, 0.20), (11, 0.30))]
+        quarters = quarter_prices(points, _at(10, 0, HOURLY), _at(11, 0, HOURLY))
+        assert [q["time"] for q in quarters] == [_at(10, m, HOURLY) for m in (0, 15, 30, 45)]
+        assert [q["price_total"] for q in quarters] == [0.20] * 4
+
+    def test_quarter_prices_are_taken_one_by_one(self):
+        points = [_spot(10, m, 0.1 + m / 100) for m in (0, 15, 30, 45)] + [_spot(11, 0, 0.9)]
+        quarters = quarter_prices(points, _at(10), _at(11))
+        assert [q["price_total"] for q in quarters] == [0.10, 0.25, 0.40, 0.55]
+
+    def test_a_missing_quarter_price_is_not_taken_from_the_quarter_before(self):
+        points = [_spot(10, 0, 0.10), _spot(10, 30, 0.30), _spot(10, 45, 0.40)]
+        quarters = quarter_prices(points, _at(10), _at(11))
+        assert [q["price_total"] for q in quarters] == [0.10, None, 0.30, 0.40]
+
+    def test_a_price_older_than_an_hour_is_not_in_force(self):
+        quarters = quarter_prices(
+            [_spot(9, 0, 0.10, HOURLY)], _at(10, 0, HOURLY), _at(11, 0, HOURLY)
+        )
+        assert quarters[0]["price_total"] is None
+
+
+def _energy(hour, minute, consumption_wh, solar_wh=0.0, year=2026):
+    return {
+        "time": _at(hour, minute, year),
+        "consumption_diff": consumption_wh,
+        "solar_yield_diff": solar_wh,
+        "battery_charge_diff": 0.0,
+        "battery_discharge_diff": 0.0,
+    }
+
+
+QUARTER_SPOTS = [_spot(10, 15 * i, p) for i, p in enumerate((0.10, 0.20, 0.30, 0.40))]
+# 300 Wh of solar in the first quarter, 300 Wh of use in the second
+SOLAR_THEN_USE = [_energy(10, 5 * i, 0.0, 100.0) for i in range(3)] + [
+    _energy(10, 5 * i, 100.0) for i in range(3, 6)
+]
+
+
+@pytest.fixture
+def quarter_netting(monkeypatch):
+    monkeypatch.setattr(quarter_prices_module, "QUARTER_NETTING_FROM", _at(0))
+
+
+class TestBillPeriods:
+    """While the meter nets by the hour, the bill prices the whole hour."""
+
+    def test_an_hour_is_one_period_at_its_mean_quarter_price(self):
+        periods = bill_periods(QUARTER_SPOTS, _at(10), _at(11))
+        assert [(p["start"], p["stop"]) for p in periods] == [(_at(10), _at(11))]
+        assert periods[0]["price_total"] == pytest.approx(0.25)
+
+    def test_a_quarter_window_gets_the_price_of_its_hour(self):
+        periods = bill_periods(QUARTER_SPOTS, _at(10, 15), _at(10, 30))
+        assert [(p["start"], p["stop"]) for p in periods] == [(_at(10, 15), _at(10, 30))]
+        assert periods[0]["price_total"] == pytest.approx(0.25)
+
+    def test_an_hour_with_a_missing_quarter_price_has_no_price(self):
+        periods = bill_periods(QUARTER_SPOTS[:3], _at(10), _at(11))
+        assert periods[0]["price_total"] is None
+
+    def test_quarter_netting_prices_each_quarter_by_itself(self, quarter_netting):
+        periods = bill_periods(QUARTER_SPOTS, _at(10), _at(11))
+        assert [p["start"] for p in periods] == [_at(10, m) for m in (0, 15, 30, 45)]
+        assert [p["price_total"] for p in periods] == [0.10, 0.20, 0.30, 0.40]
+
+
+class TestPricesAndCosts:
+    """The costs of a window are the sum of its bill periods' costs."""
+
+    def test_hourly_netting_offsets_solar_and_use_within_the_hour(self, aggregator):
+        periods = bill_periods(QUARTER_SPOTS, _at(10), _at(11))
+        result = aggregator._prices_and_costs(SOLAR_THEN_USE, periods)
+        assert result["grid_import_cost"] == pytest.approx(0.0)
+        assert result["solar_to_export"] == pytest.approx(0.0)
+        assert result["price_total"] == pytest.approx(0.25)
+
+    def test_quarter_netting_buys_and_sells_each_quarter(self, aggregator, quarter_netting):
+        periods = bill_periods(QUARTER_SPOTS, _at(10), _at(11))
+        result = aggregator._prices_and_costs(SOLAR_THEN_USE, periods)
+        assert result["grid_import_cost"] == pytest.approx(0.3 * 0.20)
+        assert result["solar_export_revenue"] == pytest.approx(0.3 * 0.02)
+
+    def test_a_period_with_energy_but_no_price_leaves_out_all_costs(self, aggregator):
+        periods = bill_periods(QUARTER_SPOTS[:3], _at(10), _at(11))
+        emeters = [_energy(10, 5 * i, 100.0) for i in range(12)]
+        assert aggregator._prices_and_costs(emeters, periods) == {}
+
+    def test_a_quarter_without_energy_needs_no_price(self, aggregator, quarter_netting):
+        periods = bill_periods(QUARTER_SPOTS[:3], _at(10), _at(11))
+        emeters = [_energy(10, 5 * i, 100.0) for i in range(9)]
+        result = aggregator._prices_and_costs(emeters, periods)
+        assert result["grid_import_cost"] == pytest.approx(0.3 * (0.10 + 0.20 + 0.30))

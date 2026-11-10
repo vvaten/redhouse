@@ -33,26 +33,14 @@ class Analytics15MinAggregator(AnalyticsAggregatorBase):
     ) -> Optional[dict]:
         """Calculate 15-minute aggregated analytics metrics."""
         emeters_data = raw_data.get("emeters", [])
-        spotprice = raw_data.get("spotprice")
+        spot_quarters = raw_data.get("spotprice")
         weather = raw_data.get("weather")
         temperatures = raw_data.get("temperatures")
         humidities = raw_data.get("humidities")
 
-        metrics = {}
-
-        # Calculate energy metrics
-        energy_metrics = self._calculate_energy_metrics(emeters_data)
-        metrics.update(energy_metrics)
-
-        # Calculate cost allocation if we have spot price data
-        if spotprice:
-            # Prices stored in EUR/kWh
-            metrics["price_total"] = spotprice.get("price_total")
-            metrics["price_sell"] = spotprice.get("price_sell")
-            metrics["price_withtax"] = spotprice.get("price_withtax")
-
-            cost_metrics = self._calculate_cost_allocation(metrics, spotprice)
-            metrics.update(cost_metrics)
+        metrics = self._calculate_energy_metrics(emeters_data)
+        if spot_quarters:
+            metrics.update(self._prices_and_costs(emeters_data, spot_quarters))
 
         # Calculate self-consumption ratio
         self_consumption_metrics = self._calculate_self_consumption(metrics)
@@ -65,53 +53,6 @@ class Analytics15MinAggregator(AnalyticsAggregatorBase):
             f"Aggregated 15-min window: {len(emeters_data)} emeters_5min points, "
             f"{len(metrics)} total fields"
         )
-
-        return metrics
-
-    def _calculate_energy_metrics(self, emeters_data: list) -> dict:
-        """Aggregate energy data from 3x 5-min windows."""
-        from src.aggregation.metric_calculators import (
-            extract_field,
-            safe_last,
-            safe_mean,
-            safe_sum,
-        )
-
-        metrics = {}
-
-        # Average power values (W)
-        for field in [
-            "solar_yield_avg",
-            "consumption_avg",
-            "emeter_avg",
-            "battery_charge_avg",
-            "battery_discharge_avg",
-            "energy_import_avg",
-            "energy_export_avg",
-        ]:
-            metrics[field] = safe_mean(extract_field(emeters_data, field))
-
-        # Sum energy deltas (Wh) for 15-min totals
-        sum_field_map = {
-            "solar_yield_sum": "solar_yield_diff",
-            "consumption_sum": "consumption_diff",
-            "emeter_sum": "emeter_diff",
-            "battery_charge_sum": "battery_charge_diff",
-            "battery_discharge_sum": "battery_discharge_diff",
-        }
-        for target, source in sum_field_map.items():
-            metrics[target] = safe_sum(extract_field(emeters_data, source))
-
-        # Export: energy_export_avg is in W, convert to Wh for 5 minutes
-        export_values = [
-            v * (5.0 / 60.0)
-            for v in extract_field(emeters_data, "energy_export_avg")
-            if v is not None
-        ]
-        metrics["export_sum"] = safe_sum(export_values)
-
-        # Battery SoC: use last value
-        metrics["Battery_SoC"] = safe_last(extract_field(emeters_data, "Battery_SoC"))
 
         return metrics
 

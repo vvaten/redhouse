@@ -9,9 +9,36 @@ import datetime
 from typing import Optional
 
 from src.aggregation.aggregation_base import AggregationPipeline
+from src.aggregation.metric_calculators import extract_field, safe_mean, safe_sum
+from src.aggregation.quarter_prices import (
+    PRICE_FIELDS,
+    PRICE_LOOKBACK,
+    bill_periods,
+    ceil_hour,
+    floor_hour,
+    mean_price,
+    spot_points,
+)
 from src.common.logger import setup_logger
 
 logger = setup_logger(__name__, "analytics_base.log")
+
+AVG_FIELDS = (
+    "solar_yield_avg",
+    "consumption_avg",
+    "emeter_avg",
+    "battery_charge_avg",
+    "battery_discharge_avg",
+    "energy_import_avg",
+    "energy_export_avg",
+)
+SUM_FIELDS = {
+    "solar_yield_sum": "solar_yield_diff",
+    "consumption_sum": "consumption_diff",
+    "emeter_sum": "emeter_diff",
+    "battery_charge_sum": "battery_charge_diff",
+    "battery_discharge_sum": "battery_discharge_diff",
+}
 
 
 class AnalyticsAggregatorBase(AggregationPipeline):
@@ -22,7 +49,7 @@ class AnalyticsAggregatorBase(AggregationPipeline):
     def fetch_data(self, window_start: datetime.datetime, window_end: datetime.datetime) -> dict:
         """Fetch data from all sources: emeters, spotprice, weather, temperatures, humidities."""
         emeters_data = self._fetch_emeters_5min_data(window_start, window_end)
-        spotprice = self._fetch_spotprice_data(window_end)
+        spotprice = self._fetch_spotprice_data(window_start, window_end)
         weather = self._fetch_weather_data(window_start, window_end)
         temperatures = self._fetch_temperatures_data(window_start, window_end)
         humidities = self._fetch_humidities_data(window_start, window_end)
@@ -82,39 +109,23 @@ from(bucket: "{bucket}")
             logger.error(f"Error fetching data from {bucket}: {e}")
             raise
 
-    def _fetch_spotprice_data(self, window_time: datetime.datetime) -> Optional[dict]:
-        """Fetch spot price for the given time (hourly prices)."""
+    def _fetch_spotprice_data(
+        self, window_start: datetime.datetime, window_end: datetime.datetime
+    ) -> list:
+        """The bill periods of the window with their prices in EUR/kWh. A
+        failed read raises, so the window is retried and not written without
+        its costs."""
         bucket = self.config.influxdb_bucket_spotprice
-
-        # Spot prices are hourly, so get the hour containing this window
-        hour_start = window_time.replace(minute=0, second=0, microsecond=0)
-        hour_end = hour_start + datetime.timedelta(hours=1)
-
+        start = floor_hour(window_start) - PRICE_LOOKBACK
         query = f"""
 from(bucket: "{bucket}")
-  |> range(start: {hour_start.isoformat()}, stop: {hour_end.isoformat()})
+  |> range(start: {start.isoformat()}, stop: {ceil_hour(window_end).isoformat()})
   |> filter(fn: (r) => r._measurement == "spot")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> limit(n: 1)
 """
-
-        logger.debug(f"Fetching spotprice data for hour {hour_start}")
-
-        try:
-            tables = self.influx.query_with_retry(query)
-            for table in tables:
-                for record in table.records:
-                    # All prices are in EUR/kWh
-                    return {
-                        "price_total": record.values.get("price_total"),
-                        "price_sell": record.values.get("price_sell"),
-                        "price_withtax": record.values.get("price_withtax"),
-                    }
-            logger.debug("No spotprice data found")
-            return None
-        except Exception as e:
-            logger.error(f"Error fetching spotprice data: {e}")
-            return None
+        logger.debug(f"Fetching spot prices for {window_start} - {window_end}")
+        points = spot_points(self.influx.query_with_retry(query))
+        return bill_periods(points, window_start, window_end)
 
     def _fetch_weather_data(
         self, start_time: datetime.datetime, end_time: datetime.datetime
@@ -228,6 +239,45 @@ from(bucket: "{bucket}")
             return False
 
         return True
+
+    def _calculate_energy_metrics(self, emeters_data: list) -> dict:
+        """Mean power (W) and summed energy (Wh) of the 5-min points."""
+        metrics: dict = {
+            field: safe_mean(extract_field(emeters_data, field)) for field in AVG_FIELDS
+        }
+        for target, source in SUM_FIELDS.items():
+            metrics[target] = safe_sum(extract_field(emeters_data, source))
+
+        # energy_export_avg is in W over 5 minutes
+        export_values = [
+            v * (5.0 / 60.0)
+            for v in extract_field(emeters_data, "energy_export_avg")
+            if v is not None
+        ]
+        metrics["export_sum"] = safe_sum(export_values)
+
+        socs = [v for v in extract_field(emeters_data, "Battery_SoC") if v is not None]
+        metrics["Battery_SoC"] = float(socs[-1]) if socs else None
+        return metrics
+
+    def _prices_and_costs(self, emeters_data: list, periods: list) -> dict:
+        """The mean price of the bill periods and the costs summed per period;
+        nothing when a period with energy data has no price."""
+        costs: dict = {}
+        for period in periods:
+            part = [p for p in emeters_data if period["start"] <= p["time"] < period["stop"]]
+            if not part:
+                continue
+            if period["price_total"] is None or period["price_sell"] is None:
+                return {}
+            energy = self._calculate_energy_metrics(part)
+            for name, value in self._calculate_cost_allocation(energy, period).items():
+                costs[name] = costs[name] + value if name in costs else value
+        if not costs:
+            return {}
+        result = {field: mean_price(periods, field) for field in PRICE_FIELDS}
+        result.update(costs)
+        return result
 
     def _calculate_cost_allocation(self, metrics: dict, spotprice: dict) -> dict:
         """Calculate costs using priority-based energy flow allocation."""

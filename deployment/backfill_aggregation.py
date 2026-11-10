@@ -14,6 +14,7 @@ Usage:
     python -u backfill_aggregation.py --start 2026-02-15 --end 2026-02-22
     python -u backfill_aggregation.py --days 1 --dry-run
     python -u backfill_aggregation.py --days 1 --skip-5min
+    python -u backfill_aggregation.py --start 2022-11-02 --end 2026-09-16 --legacy-emeters
 """
 
 import argparse
@@ -27,6 +28,7 @@ import pytz
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from deployment.backfill_bulk import fetch_and_process_day
 from src.aggregation.analytics_1hour import Analytics1HourAggregator
 from src.aggregation.analytics_15min import Analytics15MinAggregator
 from src.aggregation.emeters_5min import Emeters5MinAggregator
@@ -128,6 +130,11 @@ def parse_args() -> argparse.Namespace:
         "--skip-5min",
         action="store_true",
         help="Skip 5-min aggregation (e.g. already done, only redo analytics)",
+    )
+    parser.add_argument(
+        "--legacy-emeters",
+        action="store_true",
+        help="Read the old emeters bucket instead of emeters_5min (implies --skip-5min)",
     )
     parser.add_argument(
         "--skip-15min",
@@ -249,6 +256,7 @@ def _clamp_to_data_range(
     start_time: datetime.datetime,
     end_time: datetime.datetime,
     skip_5min: bool,
+    legacy_emeters: bool = False,
 ) -> tuple:
     """Detect actual data range in the source bucket and clamp the requested range.
 
@@ -257,15 +265,20 @@ def _clamp_to_data_range(
 
     Returns (clamped_start, clamped_end) or (None, None) if no usable range.
     """
-    if not skip_5min:
-        source_bucket = config.influxdb_bucket_shelly_em3_raw
-        source_measurement = "shelly_em3"
+    if legacy_emeters:
+        # A first/last scan of the years-long old bucket times out; empty days skip
+        print("Old emeters: using the requested range as is")
+        data_first, data_last = start_time, end_time
     else:
-        source_bucket = config.influxdb_bucket_emeters_5min
-        source_measurement = "energy"
+        if not skip_5min:
+            source_bucket = config.influxdb_bucket_shelly_em3_raw
+            source_measurement = "shelly_em3"
+        else:
+            source_bucket = config.influxdb_bucket_emeters_5min
+            source_measurement = "energy"
 
-    print(f"Detecting data range in {source_bucket}...")
-    data_first, data_last = find_data_range(client, source_bucket, source_measurement)
+        print(f"Detecting data range in {source_bucket}...")
+        data_first, data_last = find_data_range(client, source_bucket, source_measurement)
 
     if data_first is None:
         print(f"No data found in {source_bucket} -- nothing to backfill.")
@@ -316,13 +329,12 @@ def run_analytics_bulk(
     end_time,
     interval_minutes: int,
     write_to_influx: bool,
+    legacy_emeters: bool = False,
 ) -> tuple:
     """Bulk backfill analytics by pre-fetching data per day, then slicing locally.
 
     Returns (succeeded, skipped).
     """
-    from deployment.backfill_bulk import fetch_and_process_day
-
     const_day = datetime.timedelta(days=1)
     bucket = (
         config.influxdb_bucket_analytics_15min
@@ -350,6 +362,7 @@ def run_analytics_bulk(
             interval_minutes,
             iter_windows,
             write_to_influx,
+            legacy_emeters,
         )
 
         # Batch write all points for this day
@@ -397,14 +410,15 @@ def main() -> int:
 
     try:
         write = not args.dry_run
+        skip_5min = args.skip_5min or args.legacy_emeters
 
         start_time, end_time = _clamp_to_data_range(
-            client, config, start_time, end_time, args.skip_5min
+            client, config, start_time, end_time, skip_5min, args.legacy_emeters
         )
         if start_time is None:
             return 0
 
-        if not args.skip_5min:
+        if not skip_5min:
             windows = list(iter_windows(start_time, end_time, 5))
             run_tier(
                 "5-minute emeters aggregation",
@@ -423,6 +437,7 @@ def main() -> int:
                 end_time,
                 15,
                 write,
+                args.legacy_emeters,
             )
 
         if not args.skip_1hour:
@@ -435,6 +450,7 @@ def main() -> int:
                 end_time,
                 60,
                 write,
+                args.legacy_emeters,
             )
 
         print("\nBackfill complete.")

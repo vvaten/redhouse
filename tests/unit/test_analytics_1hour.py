@@ -65,6 +65,13 @@ def sample_spotprice():
 
 
 @pytest.fixture
+def sample_spot_quarters(sample_spotprice, time_window):
+    """The hour as one bill period."""
+    start, stop = time_window
+    return [{"start": start, "stop": stop, "price_withtax": None, **sample_spotprice}]
+
+
+@pytest.fixture
 def sample_weather():
     """Sample weather data."""
     return {
@@ -90,9 +97,8 @@ def sample_humidities():
 @pytest.fixture
 def time_window():
     """Create a test time window."""
-    tz = pytz.timezone("Europe/Helsinki")
-    window_start = tz.localize(datetime.datetime(2026, 1, 8, 10, 0, 0))
-    window_end = tz.localize(datetime.datetime(2026, 1, 8, 11, 0, 0))
+    window_start = datetime.datetime(2026, 1, 8, 10, 0, 0, tzinfo=pytz.UTC)
+    window_end = datetime.datetime(2026, 1, 8, 11, 0, 0, tzinfo=pytz.UTC)
     return window_start, window_end
 
 
@@ -371,7 +377,7 @@ class TestAnalytics1HourAggregator:
         self,
         aggregator,
         sample_emeters_5min_data,
-        sample_spotprice,
+        sample_spot_quarters,
         sample_weather,
         sample_temperatures,
         sample_humidities,
@@ -381,7 +387,7 @@ class TestAnalytics1HourAggregator:
         window_start, window_end = time_window
         raw_data = {
             "emeters": sample_emeters_5min_data,
-            "spotprice": sample_spotprice,
+            "spotprice": sample_spot_quarters,
             "weather": sample_weather,
             "temperatures": sample_temperatures,
             "humidities": sample_humidities,
@@ -451,7 +457,7 @@ class TestAnalytics1HourAggregator:
         self,
         aggregator,
         sample_emeters_5min_data,
-        sample_spotprice,
+        sample_spot_quarters,
         sample_weather,
         sample_temperatures,
         sample_humidities,
@@ -462,7 +468,7 @@ class TestAnalytics1HourAggregator:
 
         # Mock the fetch methods to return our sample data
         aggregator._fetch_emeters_5min_data = MagicMock(return_value=sample_emeters_5min_data)
-        aggregator._fetch_spotprice_data = MagicMock(return_value=sample_spotprice)
+        aggregator._fetch_spotprice_data = MagicMock(return_value=sample_spot_quarters)
         aggregator._fetch_weather_data = MagicMock(return_value=sample_weather)
         aggregator._fetch_temperatures_data = MagicMock(return_value=sample_temperatures)
         aggregator._fetch_humidities_data = MagicMock(return_value=sample_humidities)

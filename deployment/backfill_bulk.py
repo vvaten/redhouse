@@ -1,13 +1,35 @@
 """
 Bulk data fetching and processing for analytics backfill.
 
-Pre-fetches a full day of source data in 4 queries, then slices locally
+Pre-fetches a full day of source data in a few queries, then slices locally
 into windows -- ~96x fewer queries than the per-window approach.
 """
 
 import datetime
 
+from influxdb_client import Point
+
+from src.aggregation.quarter_prices import (
+    PRICE_LOOKBACK,
+    bill_periods,
+    ceil_hour,
+    floor_hour,
+    spot_points,
+)
 from src.common.influx_client import InfluxClient
+
+# Old emeters keeps power in Wh/s; emeters_5min keeps it in W
+LEGACY_AVG_FIELDS = (
+    "solar_yield_avg",
+    "consumption_avg",
+    "emeter_avg",
+    "battery_charge_avg",
+    "battery_discharge_avg",
+    "energy_import_avg",
+    "energy_export_avg",
+)
+LEGACY_DIFF_FIELDS = ("solar_yield_diff", "consumption_diff", "emeter_diff")
+WATTS_PER_WH_PER_S = 3600.0
 
 
 def bulk_fetch_emeters(client: InfluxClient, config, start, end) -> list:
@@ -27,27 +49,76 @@ from(bucket: "{bucket}")
     return data
 
 
-def bulk_fetch_spotprices(client: InfluxClient, config, start, end) -> dict:
-    """Fetch all spot prices for a range. Returns {hour_timestamp: price_dict}."""
-    bucket = config.influxdb_bucket_spotprice
+def map_legacy_point(values: dict, battery_soc) -> dict:
+    """An old emeters 5-min point in the emeters_5min shape: power in W and
+    energy in Wh. The old bucket has no battery energy and no SoC."""
+    point = {"time": values["_time"], "Battery_SoC": battery_soc}
+    for field in LEGACY_AVG_FIELDS:
+        value = values.get(field)
+        point[field] = value * WATTS_PER_WH_PER_S if value is not None else None
+    for field in LEGACY_DIFF_FIELDS:
+        point[field] = values.get(field)
+    seconds = values.get("ts_diff")
+    for kind in ("battery_charge", "battery_discharge"):
+        power = values.get(f"{kind}_avg")
+        energy = power * seconds if power is not None and seconds is not None else None
+        point[f"{kind}_diff"] = energy
+    return point
+
+
+def bulk_fetch_battery_soc(client: InfluxClient, config, start, end) -> dict:
+    """{5-min window start: the last CheckWatt Battery_SoC in that window}."""
+    bucket = config.influxdb_bucket_checkwatt
     query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start.isoformat()}, stop: {end.isoformat()})
+  |> filter(fn: (r) => r._measurement == "checkwatt" and r._field == "Battery_SoC")
+  |> aggregateWindow(every: 5m, fn: last, timeSrc: "_start", createEmpty: false)
+"""
+    return {
+        record.get_time(): record.get_value()
+        for table in client.query_with_retry(query)
+        for record in table.records
+    }
+
+
+def bulk_fetch_legacy_emeters(client: InfluxClient, config, start, end) -> list:
+    """Old emeters data for a range, mapped to the emeters_5min shape."""
+    bucket = config.influxdb_bucket_emeters
+    query = f"""
+from(bucket: "{bucket}")
+  |> range(start: {start.isoformat()}, stop: {end.isoformat()})
+  |> filter(fn: (r) => r._measurement == "energy")
+  |> filter(fn: (r) => r._field != "solar_yield_avg_prediction")
+  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+"""
+    socs = bulk_fetch_battery_soc(client, config, start, end)
+    data = []
+    no_consumption = 0
+    for table in client.query_with_retry(query):
+        for record in table.records:
+            # Without CheckWatt data the old point has meter energy only
+            if record.values.get("consumption_diff") is None:
+                no_consumption += 1
+                continue
+            soc = socs[record.get_time()] if record.get_time() in socs else None
+            data.append(map_legacy_point(record.values, soc))
+    if no_consumption:
+        print(f"  NO CONSUMPTION {start.date()}: {no_consumption} old points skipped")
+    return sorted(data, key=lambda p: p["time"])
+
+
+def bulk_fetch_spotprices(client: InfluxClient, config, start, end) -> list:
+    """The spot price points of the whole hours that the range touches, with
+    the price in force at their start."""
+    bucket = config.influxdb_bucket_spotprice
+    query = f"""
+from(bucket: "{bucket}")
+  |> range(start: {(floor_hour(start) - PRICE_LOOKBACK).isoformat()}, stop: {ceil_hour(end).isoformat()})
   |> filter(fn: (r) => r._measurement == "spot")
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 """
-    tables = client.query_with_retry(query)
-    prices = {}
-    for table in tables:
-        for record in table.records:
-            t = record.get_time()
-            hour_key = t.replace(minute=0, second=0, microsecond=0)
-            prices[hour_key] = {
-                "price_total": record.values.get("price_total"),
-                "price_sell": record.values.get("price_sell"),
-                "price_withtax": record.values.get("price_withtax"),
-            }
-    return prices
+    return spot_points(client.query_with_retry(query))
 
 
 def _bulk_fetch_field_records(client: InfluxClient, query: str) -> list:
@@ -129,12 +200,14 @@ def fetch_and_process_day(
     interval_minutes: int,
     iter_windows_fn,
     write_to_influx: bool,
+    legacy_emeters: bool = False,
 ) -> tuple:
     """Fetch all source data for one day, process windows, return points.
 
     Returns (points_list, ok_count, skip_count).
     """
-    emeters = bulk_fetch_emeters(client, config, day_start, day_end)
+    fetch_emeters = bulk_fetch_legacy_emeters if legacy_emeters else bulk_fetch_emeters
+    emeters = fetch_emeters(client, config, day_start, day_end)
     spotprices = bulk_fetch_spotprices(client, config, day_start, day_end)
     weather = bulk_fetch_weather(client, config, day_start, day_end)
     temps = bulk_fetch_temperatures(client, config, day_start, day_end)
@@ -166,7 +239,7 @@ def _avg_humidities_with_prefix(records: list, window_start, window_end) -> dict
 def process_day_windows(
     aggregator,
     emeters: list,
-    spotprices: dict,
+    spotprices: list,
     weather: list,
     temps: list,
     humidities: list,
@@ -180,8 +253,6 @@ def process_day_windows(
 
     Returns (points_list, ok_count, skip_count).
     """
-    from influxdb_client import Point
-
     const_interval = datetime.timedelta(minutes=interval_minutes)
     points = []
     day_ok = 0
@@ -194,10 +265,9 @@ def process_day_windows(
             day_skip += 1
             continue
 
-        hour_key = window_end.replace(minute=0, second=0, microsecond=0)
         raw_data = {
             "emeters": emeters_slice,
-            "spotprice": spotprices.get(hour_key),
+            "spotprice": bill_periods(spotprices, window_start, window_end),
             "weather": avg_field_records(weather, window_start, window_end) or None,
             "temperatures": avg_field_records(temps, window_start, window_end) or None,
             "humidities": _avg_humidities_with_prefix(humidities, window_start, window_end) or None,
@@ -207,6 +277,9 @@ def process_day_windows(
         if not metrics:
             day_skip += 1
             continue
+        if "net_cost" not in metrics:
+            # A rewrite keeps the costs an earlier run stored for this window
+            print(f"  NO PRICE {window_start.isoformat()}")
 
         if write_to_influx:
             point = Point("analytics")
