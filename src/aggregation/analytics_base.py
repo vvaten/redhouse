@@ -32,6 +32,14 @@ AVG_FIELDS = (
     "energy_import_avg",
     "energy_export_avg",
 )
+# The FMI names in the weather bucket and their analytics names
+WEATHER_FIELDS = {
+    "Air temperature": "air_temperature",
+    "Total cloud cover": "cloud_cover",
+    "Global radiation": "solar_radiation",
+    "Wind speed": "wind_speed",
+}
+WEATHER_FILTER = " or ".join(f'r._field == "{name}"' for name in WEATHER_FIELDS)
 SUM_FIELDS = {
     "solar_yield_sum": "solar_yield_diff",
     "consumption_sum": "consumption_diff",
@@ -39,6 +47,12 @@ SUM_FIELDS = {
     "battery_charge_sum": "battery_charge_diff",
     "battery_discharge_sum": "battery_discharge_diff",
 }
+EMETERS_FIELDS = AVG_FIELDS + tuple(SUM_FIELDS.values()) + ("Battery_SoC",)
+
+
+def emeters_point(record) -> dict:
+    """An emeters_5min record with every field the tiers read, None if absent."""
+    return {"time": record.get_time(), **{f: record.values.get(f) for f in EMETERS_FIELDS}}
 
 
 class AnalyticsAggregatorBase(AggregationPipeline):
@@ -79,27 +93,7 @@ from(bucket: "{bucket}")
 
         try:
             tables = self.influx.query_with_retry(query)
-            data = []
-            for table in tables:
-                for record in table.records:
-                    data.append(
-                        {
-                            "time": record.get_time(),
-                            "solar_yield_avg": record.values.get("solar_yield_avg"),
-                            "solar_yield_diff": record.values.get("solar_yield_diff"),
-                            "consumption_avg": record.values.get("consumption_avg"),
-                            "consumption_diff": record.values.get("consumption_diff"),
-                            "emeter_avg": record.values.get("emeter_avg"),
-                            "emeter_diff": record.values.get("emeter_diff"),
-                            "battery_charge_avg": record.values.get("battery_charge_avg"),
-                            "battery_charge_diff": record.values.get("battery_charge_diff"),
-                            "battery_discharge_avg": record.values.get("battery_discharge_avg"),
-                            "battery_discharge_diff": record.values.get("battery_discharge_diff"),
-                            "Battery_SoC": record.values.get("Battery_SoC"),
-                            "energy_import_avg": record.values.get("energy_import_avg"),
-                            "energy_export_avg": record.values.get("energy_export_avg"),
-                        }
-                    )
+            data = [emeters_point(record) for table in tables for record in table.records]
             logger.info(f"Fetched {len(data)} data points from {bucket}")
             return data
         except Exception as e:
@@ -137,7 +131,7 @@ from(bucket: "{bucket}")
 from(bucket: "{bucket}")
   |> range(start: {start_time.isoformat()}, stop: {end_time.isoformat()})
   |> filter(fn: (r) => r._measurement == "weather")
-  |> filter(fn: (r) => r._field == "air_temperature" or r._field == "cloud_cover" or r._field == "solar_radiation" or r._field == "wind_speed")
+  |> filter(fn: (r) => {WEATHER_FILTER})
   |> mean()
 """
 
@@ -148,8 +142,7 @@ from(bucket: "{bucket}")
             weather_data = {}
             for table in tables:
                 for record in table.records:
-                    field_name = record.get_field()
-                    weather_data[field_name] = record.get_value()
+                    weather_data[WEATHER_FIELDS[record.get_field()]] = record.get_value()
 
             if weather_data:
                 logger.debug(f"Fetched weather data: {list(weather_data.keys())}")

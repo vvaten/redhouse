@@ -198,10 +198,10 @@ class TestAnalyticsAggregatorBase:
         # Mock InfluxDB response with multiple records
         mock_records = []
         for field_name, value in [
-            ("air_temperature", 5.5),
-            ("cloud_cover", 50.0),
-            ("solar_radiation", 150.0),
-            ("wind_speed", 4.5),
+            ("Air temperature", 5.5),
+            ("Total cloud cover", 50.0),
+            ("Global radiation", 150.0),
+            ("Wind speed", 4.5),
         ]:
             mock_record = Mock()
             mock_record.get_field.return_value = field_name
@@ -215,11 +215,15 @@ class TestAnalyticsAggregatorBase:
 
         weather = aggregator._fetch_weather_data(window_start, window_end)
 
-        assert weather is not None
-        assert weather["air_temperature"] == 5.5
-        assert weather["cloud_cover"] == 50.0
-        assert weather["solar_radiation"] == 150.0
-        assert weather["wind_speed"] == 4.5
+        assert weather == {
+            "air_temperature": 5.5,
+            "cloud_cover": 50.0,
+            "solar_radiation": 150.0,
+            "wind_speed": 4.5,
+        }
+        query = aggregator.influx.query_with_retry.call_args.args[0]
+        assert 'r._field == "Air temperature"' in query
+        assert 'r._field == "Wind speed"' in query
 
     def test_fetch_weather_data_empty(self, aggregator, time_window):
         """Test fetch of weather data with no results."""

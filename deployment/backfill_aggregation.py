@@ -14,7 +14,7 @@ Usage:
     python -u backfill_aggregation.py --start 2026-02-15 --end 2026-02-22
     python -u backfill_aggregation.py --days 1 --dry-run
     python -u backfill_aggregation.py --days 1 --skip-5min
-    python -u backfill_aggregation.py --start 2022-11-02 --end 2026-09-16 --legacy-emeters
+    python -u backfill_aggregation.py --start 2022-11-02 --end 2026-09-17 --legacy-emeters
 """
 
 import argparse
@@ -353,17 +353,23 @@ def run_analytics_bulk(
         day_end = min(day_start + const_day, end_time)
         day_label = day_start.strftime("%Y-%m-%d")
 
-        points, day_ok, day_skip = fetch_and_process_day(
-            client,
-            config,
-            aggregator,
-            day_start,
-            day_end,
-            interval_minutes,
-            iter_windows,
-            write_to_influx,
-            legacy_emeters,
-        )
+        try:
+            points, day_ok, day_skip = fetch_and_process_day(
+                client,
+                config,
+                aggregator,
+                day_start,
+                day_end,
+                interval_minutes,
+                iter_windows,
+                write_to_influx,
+                legacy_emeters,
+            )
+        except Exception as e:
+            # One failed day must not end a run of years; rerun it alone later
+            print(f"  ERROR fetching {day_label}: {e}")
+            day_start = day_end
+            continue
 
         # Batch write all points for this day
         if points:

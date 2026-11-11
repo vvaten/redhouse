@@ -15,13 +15,18 @@ QUARTER_NETTING_FROM: Optional[datetime.datetime] = None
 PRICE_FIELDS = ("price_total", "price_sell", "price_withtax")
 
 
-def spot_points(tables) -> list:
-    """The points of a pivoted spot price query, sorted by time."""
-    points = [
-        {"time": record.get_time(), **{f: record.values.get(f) for f in PRICE_FIELDS}}
-        for table in tables
-        for record in table.records
-    ]
+def spot_points(tables, buyback_margin: Optional[float] = None) -> list:
+    """The points of a pivoted spot price query, sorted by time. With a
+    buyback margin in c/kWh, a point without price_sell gets one from its
+    spot price, as the spot price collector computes it."""
+    points = []
+    for table in tables:
+        for record in table.records:
+            point = {"time": record.get_time(), **{f: record.values.get(f) for f in PRICE_FIELDS}}
+            spot = record.values.get("price")
+            if point["price_sell"] is None and buyback_margin is not None and spot is not None:
+                point["price_sell"] = round(spot - 0.01 * buyback_margin, 4)
+            points.append(point)
     return sorted(points, key=lambda p: p["time"])
 
 
