@@ -3,13 +3,20 @@
 import datetime
 import os
 import sys
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.tools.replay_json_logs import list_available_logs, main, replay_log_file, replay_logs
+from src.tools.replay_json_logs import (
+    _filter_logs_by_time,
+    list_available_logs,
+    main,
+    replay_log_file,
+    replay_logs,
+)
 
 
 @pytest.fixture
@@ -38,6 +45,24 @@ def sample_log_entry():
         "data": {"test": "data"},
         "metadata": {"source": "test"},
     }
+
+
+@pytest.mark.parametrize(
+    "start, stop, expected",
+    [
+        ("20261112_1830", "20261112_1830", ["20261112_183005", "20261112_183059"]),
+        ("20261112_1831", "20261112_1832", ["20261112_183100"]),
+        ("20261112_2359", "20261113_0000", ["20261112_235930", "20261113_000010"]),
+        ("1830", "1830", ["20261111_183020", "20261112_183005", "20261112_183059"]),
+        (None, "20261111", ["20261111_183020"]),
+    ],
+)
+def test_the_time_filter_keeps_the_files_of_its_minutes(start, stop, expected):
+    names = ["20261111_183020", "20261112_183005", "20261112_183059", "20261112_183100"]
+    names += ["20261112_235930", "20261113_000010"]
+    files = [Path(f"{n}.json") for n in names]
+    kept = _filter_logs_by_time(files, start, stop)
+    assert [f.stem for f in kept] == expected
 
 
 class TestListAvailableLogs:

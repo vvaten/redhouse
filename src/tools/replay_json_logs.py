@@ -252,32 +252,29 @@ def _filter_logs_by_time(
         file_time = _parse_log_filename_time(log_file)
         if not file_time:
             continue
-
-        # Support both HHMM (today) and YYYYMMDD_HHMM formats
-        if start:
-            start_cmp = start.replace(":", "").replace("-", "").replace("_", "")
-            if len(start_cmp) <= 4:
-                # HHMM - compare only time portion
-                file_hhmm = file_time[9:13]
-                if file_hhmm < start_cmp:
-                    continue
-            else:
-                if file_time < start_cmp[:15]:
-                    continue
-
-        if stop:
-            stop_cmp = stop.replace(":", "").replace("-", "").replace("_", "")
-            if len(stop_cmp) <= 4:
-                file_hhmm = file_time[9:13]
-                if file_hhmm > stop_cmp:
-                    continue
-            else:
-                if file_time > stop_cmp[:15]:
-                    continue
-
+        # YYYYMMDDHHMMSS, cut to the length of each limit: a limit given to
+        # the minute takes in the whole minute
+        digits = file_time.replace("_", "")
+        if start and _file_digits(digits, start) < _limit_digits(start):
+            continue
+        if stop and _file_digits(digits, stop) > _limit_digits(stop):
+            continue
         filtered.append(log_file)
 
     return filtered
+
+
+def _limit_digits(limit: str) -> str:
+    return limit.replace(":", "").replace("-", "").replace("_", "")
+
+
+def _file_digits(digits: str, limit: str) -> str:
+    """The part of the file time to compare with the limit; HHMM compares
+    only the time of day."""
+    cmp = _limit_digits(limit)
+    if len(cmp) <= 4:
+        return digits[8 : 8 + len(cmp)]
+    return digits[: len(cmp)]
 
 
 async def replay_logs(
