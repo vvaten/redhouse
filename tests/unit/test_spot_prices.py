@@ -65,6 +65,15 @@ class TestSpotPriceCollection(unittest.TestCase):
         expected_sell = round(10.0 - 0.01 * 0.30, 4)
         self.assertEqual(result[0]["price_sell"], expected_sell)
 
+    def test_a_whole_number_price_is_written_as_a_float(self):
+        """InfluxDB refuses an integer into a float field, so 0 must be 0.0."""
+        raw_prices = [{"DateTime": "2025-10-18T14:00:00+03:00", "PriceNoTax": 0}]
+
+        result = process_spot_prices(raw_prices, self.mock_config)
+
+        for field in ("price", "price_sell", "price_withtax", "price_total"):
+            self.assertIsInstance(result[0][field], float, field)
+
     def test_process_spot_prices_missing_config(self):
         """Test that missing spot price config results in no processed entries."""
         config = Mock()

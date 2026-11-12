@@ -134,7 +134,7 @@ def _calculate_price_fields(entry: dict, params: dict, hour: int) -> dict:
         Dictionary with all calculated price fields (all in EUR/kWh)
     """
     # API returns PriceNoTax in EUR/kWh
-    price_no_tax = entry["PriceNoTax"]
+    price_no_tax = float(entry["PriceNoTax"])
 
     # Price without tax (EUR/kWh)
     price = price_no_tax
