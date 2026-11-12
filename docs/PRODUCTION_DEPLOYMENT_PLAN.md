@@ -488,6 +488,16 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
    `analytics_1hour` (forever), never `emeters_5min` (90 days). The
    prices come out right for their time, because `spotprice` stores
    the tax and transfer price of each point as it was then.
+   Done 2026-11-11 with f0438ad: `--legacy-emeters` from 2022-11-02 to
+   2026-09-17 (89 min on the Pi), then `--skip-5min` from 2026-09-18 to
+   2026-11-11, which rewrote the live rows with the hour mean price and
+   the weather. 1471 days, 35165 hourly and 140532 15-minute rows, no
+   errors. Known gaps, all in the sources: no weather before 2023-05-05;
+   no cost in 5 hours that `spotprice` lacks (2023-04-03 20Z,
+   2023-05-28 21Z, and 01Z on the autumn clock change of 2023 to 2025);
+   short days where the old `emeters` bucket has outages. The live data
+   also lost 2026-10-25 01:00-01:59Z, the repeated hour of the clock
+   change, in `shelly_em3_emeters_raw` and every tier after it.
 6. The 365-day shard swap, one bucket at a time, at night: create
    `X_new`, copy the history month by month inside InfluxDB with
    `to()`, rename `X` to `X_old` and `X_new` to `X`, copy the points
