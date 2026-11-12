@@ -10,7 +10,11 @@ from pathlib import Path
 
 import pytest
 
+from deployment import bucket_rename
+
 UNITS = sorted((Path(__file__).parents[2] / "deployment" / "systemd").glob("*.timer"))
+# They run each minute but neither read nor write a bucket that is swapped
+TOUCH_NO_SWAPPED_BUCKET = {"redhouse-pinglogger.timer", "redhouse-shelly-em3.timer"}
 DAILY = re.compile(r"^(\*-\*-\* )?(\d{1,2})(\.\.\d{1,2})?:\d{2}(:\d{2})?$")
 SYSTEMD_ANALYZE = shutil.which("systemd-analyze")
 
@@ -35,6 +39,34 @@ def test_sub_daily_timers_run_on_utc_and_daily_ones_avoid_3am(unit):
             assert daily.group(2) != "03", f"{unit.name}: {schedule} is lost on the spring change"
         else:
             assert schedule.endswith(" UTC"), f"{unit.name}: {schedule} skips the repeated hour"
+
+
+def _minutes(schedule):
+    """The minutes of the hour at which an OnCalendar schedule fires."""
+    clock = next(token for token in schedule.split() if ":" in token)
+    minutes = set()
+    for item in clock.split(":")[1].split(","):
+        if item == "*":
+            minutes |= set(range(60))
+        elif "/" in item:
+            first, step = item.split("/")
+            minutes |= set(range(int(first), 60, int(step)))
+        elif ".." in item:
+            low, high = item.split("..")
+            minutes |= set(range(int(low), int(high) + 1))
+        else:
+            minutes.add(int(item))
+    return minutes
+
+
+@pytest.mark.parametrize("unit", UNITS, ids=lambda p: p.name)
+def test_no_timer_starts_in_the_minute_that_swap_bucket_shards_renames(unit):
+    if unit.name in TOUCH_NO_SWAPPED_BUCKET:
+        return
+    rename = {bucket_rename.RENAME_MINUTE_MOD_15 + 15 * k for k in range(4)}
+    for schedule in _schedules(unit):
+        clash = _minutes(schedule) & rename
+        assert not clash, f"{unit.name}: {schedule} starts at minute {sorted(clash)}"
 
 
 def _elapses(spec, base):
