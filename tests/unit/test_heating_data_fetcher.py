@@ -590,7 +590,7 @@ class TestRequiredInputsFailLoudly(unittest.TestCase):
         table.records = [record]
 
         def by_bucket(query):
-            if "emeters_test" in query:
+            if "solar_prediction_test" in query:
                 raise Exception("Read timed out. (read timeout=15)")
             return [table]
 

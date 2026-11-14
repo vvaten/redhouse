@@ -14,7 +14,6 @@ Usage:
     python -u backfill_aggregation.py --start 2026-02-15 --end 2026-02-22
     python -u backfill_aggregation.py --days 1 --dry-run
     python -u backfill_aggregation.py --days 1 --skip-5min
-    python -u backfill_aggregation.py --start 2022-11-02 --end 2026-09-17 --legacy-emeters
 """
 
 import argparse
@@ -130,11 +129,6 @@ def parse_args() -> argparse.Namespace:
         "--skip-5min",
         action="store_true",
         help="Skip 5-min aggregation (e.g. already done, only redo analytics)",
-    )
-    parser.add_argument(
-        "--legacy-emeters",
-        action="store_true",
-        help="Read the old emeters bucket instead of emeters_5min (implies --skip-5min)",
     )
     parser.add_argument(
         "--skip-15min",
@@ -256,7 +250,6 @@ def _clamp_to_data_range(
     start_time: datetime.datetime,
     end_time: datetime.datetime,
     skip_5min: bool,
-    legacy_emeters: bool = False,
 ) -> tuple:
     """Detect actual data range in the source bucket and clamp the requested range.
 
@@ -265,20 +258,15 @@ def _clamp_to_data_range(
 
     Returns (clamped_start, clamped_end) or (None, None) if no usable range.
     """
-    if legacy_emeters:
-        # A first/last scan of the years-long old bucket times out; empty days skip
-        print("Old emeters: using the requested range as is")
-        data_first, data_last = start_time, end_time
+    if not skip_5min:
+        source_bucket = config.influxdb_bucket_shelly_em3_raw
+        source_measurement = "shelly_em3"
     else:
-        if not skip_5min:
-            source_bucket = config.influxdb_bucket_shelly_em3_raw
-            source_measurement = "shelly_em3"
-        else:
-            source_bucket = config.influxdb_bucket_emeters_5min
-            source_measurement = "energy"
+        source_bucket = config.influxdb_bucket_emeters_5min
+        source_measurement = "energy"
 
-        print(f"Detecting data range in {source_bucket}...")
-        data_first, data_last = find_data_range(client, source_bucket, source_measurement)
+    print(f"Detecting data range in {source_bucket}...")
+    data_first, data_last = find_data_range(client, source_bucket, source_measurement)
 
     if data_first is None:
         print(f"No data found in {source_bucket} -- nothing to backfill.")
@@ -329,7 +317,6 @@ def run_analytics_bulk(
     end_time,
     interval_minutes: int,
     write_to_influx: bool,
-    legacy_emeters: bool = False,
 ) -> tuple:
     """Bulk backfill analytics by pre-fetching data per day, then slicing locally.
 
@@ -363,7 +350,6 @@ def run_analytics_bulk(
                 interval_minutes,
                 iter_windows,
                 write_to_influx,
-                legacy_emeters,
             )
         except Exception as e:
             # One failed day must not end a run of years; rerun it alone later
@@ -416,11 +402,9 @@ def main() -> int:
 
     try:
         write = not args.dry_run
-        skip_5min = args.skip_5min or args.legacy_emeters
+        skip_5min = args.skip_5min
 
-        start_time, end_time = _clamp_to_data_range(
-            client, config, start_time, end_time, skip_5min, args.legacy_emeters
-        )
+        start_time, end_time = _clamp_to_data_range(client, config, start_time, end_time, skip_5min)
         if start_time is None:
             return 0
 
@@ -443,7 +427,6 @@ def main() -> int:
                 end_time,
                 15,
                 write,
-                args.legacy_emeters,
             )
 
         if not args.skip_1hour:
@@ -456,7 +439,6 @@ def main() -> int:
                 end_time,
                 60,
                 write,
-                args.legacy_emeters,
             )
 
         print("\nBackfill complete.")

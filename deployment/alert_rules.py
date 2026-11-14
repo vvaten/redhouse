@@ -20,9 +20,6 @@ ALERT_RULES = [
         "timer": "redhouse-shelly-em3",
         "bucket": "shelly_em3_emeters_raw",
         "measurement": "shelly_em3",
-        "wibatemp_bucket": "emeters",
-        "wibatemp_measurement": "energy",
-        "wibatemp_max_age_minutes": 30,
         "max_age_minutes": 5,
         "eval_interval_seconds": 120,
     },
@@ -31,7 +28,6 @@ ALERT_RULES = [
         "timer": "redhouse-checkwatt",
         "bucket": "checkwatt",
         "measurement": "checkwatt",
-        "wibatemp_bucket": "checkwatt_full_data",
         "max_age_minutes": 120,
         "eval_interval_seconds": 600,
     },
@@ -58,7 +54,7 @@ ALERT_RULES = [
         "measurement": "network",
         "max_age_minutes": 10,
         "eval_interval_seconds": 300,
-        "skip_envs": ["staging", "wibatemp"],
+        "skip_envs": ["staging"],
     },
     {
         "name": "Network hourly aggregation stale",
@@ -68,7 +64,7 @@ ALERT_RULES = [
         # Points are stamped at the hour start and written 72 minutes later
         "max_age_minutes": 180,
         "eval_interval_seconds": 1800,
-        "skip_envs": ["staging", "wibatemp"],
+        "skip_envs": ["staging"],
     },
     {
         "name": "5min aggregation stale",
@@ -77,7 +73,6 @@ ALERT_RULES = [
         "measurement": "energy",
         "max_age_minutes": 15,
         "eval_interval_seconds": 300,
-        "skip_envs": ["wibatemp"],
     },
     {
         "name": "15min aggregation stale",
@@ -86,7 +81,6 @@ ALERT_RULES = [
         "measurement": "analytics",
         "max_age_minutes": 45,
         "eval_interval_seconds": 600,
-        "skip_envs": ["wibatemp"],
     },
     {
         "name": "1hour aggregation stale",
@@ -95,7 +89,6 @@ ALERT_RULES = [
         "measurement": "analytics",
         "max_age_minutes": 180,
         "eval_interval_seconds": 1800,
-        "skip_envs": ["wibatemp"],
     },
 ]
 

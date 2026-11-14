@@ -117,7 +117,6 @@ class TestConfig(unittest.TestCase):
                 "INFLUXDB_BUCKET_TEMPERATURES": "temps_test",
                 "INFLUXDB_BUCKET_WEATHER": "weather_test",
                 "INFLUXDB_BUCKET_SPOTPRICE": "spotprice_test",
-                "INFLUXDB_BUCKET_EMETERS": "emeters_test",
                 "INFLUXDB_BUCKET_CHECKWATT": "checkwatt_test",
             },
         ):
@@ -125,7 +124,6 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.influxdb_bucket_temperatures, "temps_test")
             self.assertEqual(config.influxdb_bucket_weather, "weather_test")
             self.assertEqual(config.influxdb_bucket_spotprice, "spotprice_test")
-            self.assertEqual(config.influxdb_bucket_emeters, "emeters_test")
             self.assertEqual(config.influxdb_bucket_checkwatt, "checkwatt_test")
 
     def test_config_hardware_from_yaml(self):

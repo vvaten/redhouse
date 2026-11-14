@@ -16,7 +16,6 @@ BUCKETS=(
     "temperatures_staging"
     "weather_staging"
     "spotprice_staging"
-    "emeters_staging"
     "checkwatt_staging"
     "load_control_staging"
     "solar_prediction_staging"

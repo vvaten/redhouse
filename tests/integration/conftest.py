@@ -24,7 +24,6 @@ TEST_BUCKETS = {
     "INFLUXDB_BUCKET_TEMPERATURES": "temperatures_test",
     "INFLUXDB_BUCKET_WEATHER": "weather_test",
     "INFLUXDB_BUCKET_SPOTPRICE": "spotprice_test",
-    "INFLUXDB_BUCKET_EMETERS": "emeters_test",
     "INFLUXDB_BUCKET_CHECKWATT": "checkwatt_test",
     "INFLUXDB_BUCKET_SHELLY_EM3_RAW": "shelly_em3_emeters_raw_test",
     "INFLUXDB_BUCKET_EMETERS_5MIN": "emeters_5min_test",

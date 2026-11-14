@@ -50,8 +50,8 @@ class TestRuleIsWanted:
         assert "not applicable" in reason
 
     def test_no_filter_when_running_is_unknown(self):
-        """wibatemp and staging are not filtered by redhouse timers."""
-        wanted, _ = sga.rule_is_wanted(rule("Weather data stale"), "wibatemp", None)
+        """Staging is not filtered by redhouse timers."""
+        wanted, _ = sga.rule_is_wanted(rule("Weather data stale"), "staging", None)
         assert wanted is True
 
     def test_todays_production_state_yields_two_rules(self):

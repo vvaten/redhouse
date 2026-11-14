@@ -152,10 +152,6 @@ class Config:
         return self._require_env("INFLUXDB_BUCKET_SPOTPRICE")
 
     @property
-    def influxdb_bucket_emeters(self) -> str:
-        return self._require_env("INFLUXDB_BUCKET_EMETERS")
-
-    @property
     def influxdb_bucket_checkwatt(self) -> str:
         return self._require_env("INFLUXDB_BUCKET_CHECKWATT")
 

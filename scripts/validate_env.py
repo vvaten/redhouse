@@ -22,7 +22,6 @@ REQUIRED_KEYS = {
         "INFLUXDB_BUCKET_TEMPERATURES": "Temperature sensor data bucket",
         "INFLUXDB_BUCKET_WEATHER": "Weather forecast data bucket",
         "INFLUXDB_BUCKET_SPOTPRICE": "Electricity spot price bucket",
-        "INFLUXDB_BUCKET_EMETERS": "Energy meter data bucket",
         "INFLUXDB_BUCKET_CHECKWATT": "CheckWatt API data bucket",
         "INFLUXDB_BUCKET_SHELLY_EM3_RAW": "Shelly EM3 raw data bucket",
         "INFLUXDB_BUCKET_LOAD_CONTROL": "Load control commands bucket (CRITICAL)",

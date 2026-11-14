@@ -68,7 +68,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--env",
         required=True,
-        choices=["wibatemp", "staging", "production"],
+        choices=["staging", "production"],
         help="Which environment's alert group to act on",
     )
     parser.add_argument(

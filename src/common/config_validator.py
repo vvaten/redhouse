@@ -21,9 +21,7 @@ class ConfigValidator:
         "temperatures",
         "weather",
         "spotprice",
-        "emeters",
         "checkwatt",
-        "checkwatt_full_data",
         "shelly_em3_emeters_raw",
         "windpower",
         "network",
@@ -192,7 +190,6 @@ class ConfigValidator:
             ("temperatures", config.influxdb_bucket_temperatures),
             ("weather", config.influxdb_bucket_weather),
             ("spotprice", config.influxdb_bucket_spotprice),
-            ("emeters", config.influxdb_bucket_emeters),
             ("checkwatt", config.influxdb_bucket_checkwatt),
         ]
 
@@ -258,7 +255,6 @@ class ConfigValidator:
             config.influxdb_bucket_temperatures,
             config.influxdb_bucket_weather,
             config.influxdb_bucket_spotprice,
-            config.influxdb_bucket_emeters,
             config.influxdb_bucket_checkwatt,
         ]
 

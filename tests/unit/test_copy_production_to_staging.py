@@ -74,9 +74,9 @@ def test_the_window_query_counts_per_series_and_keeps_the_measurement():
 
 
 def test_a_measurement_copy_filters_the_range():
-    query = cps._build_range_query("emeters", START, END, "energy")
-    assert 'r._measurement == "energy"' in query
-    assert "_measurement" not in cps._build_range_query("emeters", START, END)
+    query = cps._build_range_query("checkwatt", START, END, "checkwatt")
+    assert 'r._measurement == "checkwatt"' in query
+    assert "_measurement" not in cps._build_range_query("checkwatt", START, END)
 
 
 @pytest.mark.parametrize(

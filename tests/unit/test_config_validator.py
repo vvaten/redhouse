@@ -146,8 +146,7 @@ class TestConfigValidator(unittest.TestCase):
         config.influxdb_bucket_temperatures = "temperatures"
         config.influxdb_bucket_weather = "weather"
         config.influxdb_bucket_spotprice = "spotprice"
-        config.influxdb_bucket_emeters = "emeters"
-        config.influxdb_bucket_checkwatt = "checkwatt_full_data"
+        config.influxdb_bucket_checkwatt = "checkwatt"
 
         messages = ConfigValidator.check_environment(config)
 
@@ -160,8 +159,7 @@ class TestConfigValidator(unittest.TestCase):
         config.influxdb_bucket_temperatures = "temperatures_test"
         config.influxdb_bucket_weather = "weather_test"
         config.influxdb_bucket_spotprice = "spotprice_test"
-        config.influxdb_bucket_emeters = "emeters_test"
-        config.influxdb_bucket_checkwatt = "checkwatt_full_data_test"
+        config.influxdb_bucket_checkwatt = "checkwatt_test"
 
         messages = ConfigValidator.check_environment(config)
 
@@ -174,8 +172,7 @@ class TestConfigValidator(unittest.TestCase):
         config.influxdb_bucket_temperatures = "temperatures"  # Production
         config.influxdb_bucket_weather = "weather_test"  # Test
         config.influxdb_bucket_spotprice = "spotprice"  # Production
-        config.influxdb_bucket_emeters = "emeters_test"  # Test
-        config.influxdb_bucket_checkwatt = "checkwatt_full_data"  # Production
+        config.influxdb_bucket_checkwatt = "checkwatt"  # Production
 
         messages = ConfigValidator.check_environment(config)
 
@@ -187,8 +184,7 @@ class TestConfigValidator(unittest.TestCase):
         config.influxdb_bucket_temperatures = "temperatures_test"
         config.influxdb_bucket_weather = "weather_test"
         config.influxdb_bucket_spotprice = "spotprice_test"
-        config.influxdb_bucket_emeters = "emeters_test"
-        config.influxdb_bucket_checkwatt = "checkwatt_full_data_test"
+        config.influxdb_bucket_checkwatt = "checkwatt_test"
 
         # Should not raise
         ConfigValidator.require_test_environment(config)
@@ -199,8 +195,7 @@ class TestConfigValidator(unittest.TestCase):
         config.influxdb_bucket_temperatures = "temperatures"  # Production!
         config.influxdb_bucket_weather = "weather_test"
         config.influxdb_bucket_spotprice = "spotprice_test"
-        config.influxdb_bucket_emeters = "emeters_test"
-        config.influxdb_bucket_checkwatt = "checkwatt_full_data_test"
+        config.influxdb_bucket_checkwatt = "checkwatt_test"
 
         with self.assertRaises(ConfigValidationError) as ctx:
             ConfigValidator.require_test_environment(config)

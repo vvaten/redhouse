@@ -1,5 +1,4 @@
-"""The backfill prices each window as the bill does, and the old emeters
-points come out in the emeters_5min units."""
+"""The backfill prices each window as the bill does."""
 
 import datetime
 from unittest.mock import MagicMock, Mock
@@ -11,10 +10,8 @@ from deployment.backfill_aggregation import iter_windows
 from deployment.backfill_bulk import (
     bulk_fetch_emeters,
     bulk_fetch_humidities,
-    bulk_fetch_legacy_emeters,
     bulk_fetch_spotprices,
     bulk_fetch_weather,
-    map_legacy_point,
     process_day_windows,
 )
 from src.aggregation import quarter_prices
@@ -122,101 +119,6 @@ def test_an_hourly_price_covers_its_hour():
     assert [q["price_total"] for q in seen] == [0.30] * 4
 
 
-def test_an_old_point_is_converted_from_wh_per_second_to_watts():
-    values = {
-        "_time": _at(10),
-        "consumption_avg": 1.476,
-        "consumption_diff": 442.9,
-        "emeter_avg": 1.476,
-        "emeter_diff": 442.9,
-        "solar_yield_avg": 0.0,
-        "solar_yield_diff": 0.0,
-        "battery_charge_avg": 0.1,
-        "ts_diff": 300,
-    }
-    point = map_legacy_point(values, {"Battery_SoC": 55.0})
-    assert point["time"] == _at(10)
-    assert point["consumption_avg"] == pytest.approx(5313.6)
-    assert point["consumption_diff"] == 442.9
-    assert point["battery_charge_diff"] == pytest.approx(30.0)
-    assert point["battery_discharge_avg"] is None and point["battery_discharge_diff"] is None
-    assert point["Battery_SoC"] == 55.0
-
-
-# An old point from before CheckWatt: net meter power and solar only
-BEFORE_CHECKWATT = {
-    "_time": _at(10),
-    "consumption_avg": 0.5,
-    "consumption_diff": 150.0,
-    "emeter_avg": -0.25,
-    "emeter_diff": -75.0,
-    "solar_yield_avg": 0.75,
-    "solar_yield_diff": 225.0,
-    "ts_diff": 300,
-}
-
-
-def test_before_checkwatt_import_and_export_are_the_signs_of_the_meter():
-    exporting = map_legacy_point(BEFORE_CHECKWATT, {})
-    importing = map_legacy_point({**BEFORE_CHECKWATT, "emeter_avg": 0.5}, {})
-    assert (exporting["energy_import_avg"], exporting["energy_export_avg"]) == (0.0, 900.0)
-    assert (importing["energy_import_avg"], importing["energy_export_avg"]) == (1800.0, 0.0)
-
-
-def test_checkwatt_fills_a_point_without_battery_fields():
-    checkwatt = {
-        "Battery_SoC": 50.0,
-        "SolarYield": 600.0,
-        "BatteryCharge": 1200.0,
-        "BatteryDischarge": 0.0,
-        "EnergyImport": 1500.0,
-        "EnergyExport": 0.0,
-    }
-    point = map_legacy_point(
-        {**BEFORE_CHECKWATT, "emeter_avg": 0.5, "emeter_diff": 150.0}, checkwatt
-    )
-    assert point["battery_charge_avg"] == 1200.0
-    assert point["battery_charge_diff"] == pytest.approx(100.0)
-    assert point["solar_yield_avg"] == 600.0
-    # CheckWatt's grid fields read 0 then, so the meter gives the grid import
-    assert (point["energy_import_avg"], point["energy_export_avg"]) == (1800.0, 0.0)
-    # Meter 1800 W + solar 600 W - charge 1200 W
-    assert point["consumption_avg"] == pytest.approx(1200.0)
-    assert point["consumption_diff"] == pytest.approx(150.0 + 50.0 - 100.0)
-
-
-def test_the_old_points_get_the_checkwatt_values_of_their_own_5min_window():
-    config = Mock(influxdb_bucket_emeters="emeters", influxdb_bucket_checkwatt="checkwatt")
-
-    def record(time, values=None, field=None, value=None):
-        r = Mock(values={"_time": time, **(values or {})})
-        r.get_time.return_value = time
-        r.get_field.return_value = field
-        r.get_value.return_value = value
-        return r
-
-    socs = [Mock(records=[record(_at(10, 5), field="Battery_SoC", value=61.0)])]
-    power = [Mock(records=[record(_at(10, 5), field="BatteryCharge", value=None)])]
-    used = {"consumption_avg": 1.0, "consumption_diff": 300.0}
-    energy = [
-        Mock(
-            records=[
-                record(_at(10, 5), used),
-                record(_at(10), {"consumption_diff": 1.0}),
-                record(_at(10, 10), {"emeter_diff": 150.0}),
-            ]
-        )
-    ]
-    client = Mock()
-    client.query_with_retry.side_effect = [socs, power, energy]
-
-    points = bulk_fetch_legacy_emeters(client, config, _at(10), _at(11))
-
-    # The point without consumption has no CheckWatt data and is left out
-    assert [(p["time"], p["Battery_SoC"]) for p in points] == [(_at(10), None), (_at(10, 5), 61.0)]
-    assert points[1]["consumption_avg"] == pytest.approx(3600.0)
-
-
 def test_the_weather_fields_are_read_by_their_fmi_names():
     record = Mock()
     record.get_time.return_value = _at(10)
@@ -322,18 +224,3 @@ def test_an_emeters_5min_row_has_every_field_even_when_the_day_lacks_one():
 
     assert point["emeter_avg"] == 1000.0
     assert point["consumption_avg"] is None and point["solar_yield_avg"] is None
-
-
-def test_the_gap_fill_needs_both_meter_values_and_drops_unreasonable_power():
-    checkwatt = {
-        "Battery_SoC": 50.0,
-        "SolarYield": 99999.0,
-        "BatteryCharge": 1200.0,
-        "BatteryDischarge": 0.0,
-    }
-    without_diff = map_legacy_point({**BEFORE_CHECKWATT, "emeter_diff": None}, checkwatt)
-    assert without_diff["battery_charge_avg"] is None
-    assert without_diff["consumption_avg"] == pytest.approx(1800.0)
-
-    point = map_legacy_point(BEFORE_CHECKWATT, checkwatt)
-    assert point["solar_yield_avg"] == 0.0 and point["battery_charge_avg"] == 1200.0

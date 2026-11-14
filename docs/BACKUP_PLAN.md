@@ -77,8 +77,7 @@ Daily data generation rates (for estimating incremental size):
 |--------|----------------|-------------|-------------------|
 | `temperatures` | 1/min, ~15 sensors | 1,440 | ~6.5 MB |
 | `shelly_em3_emeters_raw` | 1/min, 3 phases | 1,440 | ~4.3 MB |
-| `checkwatt_full_data` | 1/5min, 6 fields | 288 | ~0.5 MB |
-| `emeters` | 1/5min (legacy) | 288 | ~0.5 MB |
+| `checkwatt` | 1/5min, 6 fields | 288 | ~0.5 MB |
 | `weather` | 1/hour, forecasts | 24 | ~0.1 MB |
 | `spotprice` | 24 prices/day | 24 | ~0.03 MB |
 | `windpower` | 1/hour | ~24 | ~0.03 MB |

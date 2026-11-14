@@ -107,8 +107,6 @@ def replace_bucket_names(query: str) -> tuple[str, int]:
         "temperatures": "temperatures_staging",
         "weather": "weather_staging",
         "spotprice": "spotprice_staging",
-        "emeters": "emeters_staging",
-        "checkwatt_full_data": "checkwatt_staging",
         "load_control": "load_control_staging",
         "solar_prediction": "solar_prediction_staging",
         "network_1hour": "network_1hour_staging",

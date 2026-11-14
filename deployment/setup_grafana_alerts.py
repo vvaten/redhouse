@@ -8,13 +8,11 @@ and notifies via the configured contact point.
 Usage:
     python deployment/setup_grafana_alerts.py --env staging [--dry-run]
     python deployment/setup_grafana_alerts.py --env production [--dry-run]
-    python deployment/setup_grafana_alerts.py --env wibatemp [--dry-run]
     python deployment/setup_grafana_alerts.py --env all [--dry-run]
 
 Environments:
-    wibatemp    - Current production (wibatemp writes to production buckets)
     staging     - RedHouse staging (writes to *_staging buckets)
-    production  - RedHouse production (when it takes over production buckets)
+    production  - RedHouse production (writes to the production buckets)
 
 Requires:
     GRAFANA_API_KEY environment variable (or --api-key flag)
@@ -153,17 +151,13 @@ def build_alert_rule(rule_def, datasource_uid, folder_uid, env_name, group_name)
     bucket = rule_def["bucket"]
     measurement = rule_def["measurement"]
 
-    if env_name == "wibatemp":
-        bucket = rule_def.get("wibatemp_bucket", bucket)
-        measurement = rule_def.get("wibatemp_measurement", measurement)
-        max_age_minutes = rule_def.get("wibatemp_max_age_minutes", max_age_minutes)
-    elif env_name == "staging":
+    if env_name == "staging":
         bucket = STAGING_BUCKET_MAP[bucket]
 
     max_age_seconds = max_age_minutes * 60
     flux_query = build_flux_query(bucket, measurement, max_age_minutes)
 
-    env_labels = {"wibatemp": "[Wibatemp] ", "staging": "[Staging] ", "production": ""}
+    env_labels = {"staging": "[Staging] ", "production": ""}
     env_prefix = env_labels[env_name]
 
     flux_data = {
@@ -265,7 +259,7 @@ def parse_args():
     )
     parser.add_argument(
         "--env",
-        choices=["wibatemp", "staging", "production", "all"],
+        choices=["staging", "production", "all"],
         default="all",
         help="Which environment to create alerts for (default: all)",
     )
@@ -402,7 +396,7 @@ def main():
 
     base_url = args.grafana_url.rstrip("/")
     if args.env == "all":
-        environments = ["wibatemp", "staging", "production"]
+        environments = ["staging", "production"]
     else:
         environments = [args.env]
 
@@ -423,11 +417,7 @@ def main():
                 bucket = rule_def["bucket"]
                 measurement = rule_def["measurement"]
                 max_age = rule_def["max_age_minutes"]
-                if env_name == "wibatemp":
-                    bucket = rule_def.get("wibatemp_bucket", bucket)
-                    measurement = rule_def.get("wibatemp_measurement", measurement)
-                    max_age = rule_def.get("wibatemp_max_age_minutes", max_age)
-                elif env_name == "staging":
+                if env_name == "staging":
                     bucket = STAGING_BUCKET_MAP[bucket]
                 print(
                     f"  - {rule_def['name']}: bucket={bucket}/{measurement},"

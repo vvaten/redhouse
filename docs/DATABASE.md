@@ -88,8 +88,9 @@ Control
 
 ### Bucket: `emeters` (Old system)
 
-**Status:** Currently active. Written by the old system scripts and read by
-the old heating optimizer, water temperature controller, and Grafana dashboards.
+**Status:** Deleted in Phase 8 step 7 (no writes after 2026-11-01). Its
+energy history is in `analytics_15min` and `analytics_1hour`, its solar
+prediction history in `solar_prediction`. The schema below is for reference.
 
 **Written by:** `.fissio/energy_to_fissio.py` (5-min intervals, cron) and
 supplemented by `wibatemp/checkwatt_dataloader.py` (which re-writes merged
@@ -153,8 +154,8 @@ Additional fields written back by `checkwatt_dataloader.py` (5-min merged data):
 Written by `wibatemp/checkwatt_dataloader.py`. The new system writes the
 same schema to its own bucket `checkwatt`. History from 2025-02-27 onward
 was copied into `checkwatt` on 2026-09-09 with `deployment/copy_bucket.py`.
-`checkwatt_full_data` stays alive until the wibatemp heating control is
-retired, because the same cron job also produces the `emeters` netting.
+`checkwatt_full_data` was deleted after the wibatemp CheckWatt loader
+stopped on 2026-11-01.
 
 ---
 
@@ -688,7 +689,6 @@ HeatingProgramGenerator     -> load_control (measurements: load_control, load_co
 | `INFLUXDB_BUCKET_TEMPERATURES` | `temperatures` | Both | Room temperatures and humidities |
 | `INFLUXDB_BUCKET_WEATHER` | `weather` | Both | FMI weather forecasts |
 | `INFLUXDB_BUCKET_SPOTPRICE` | `spotprice` | Both | Electricity spot prices |
-| `INFLUXDB_BUCKET_EMETERS` | `emeters` | Old only | Old system energy meter data |
 | `INFLUXDB_BUCKET_CHECKWATT` | `checkwatt` | New only | 1-min CheckWatt power data (old: `checkwatt_full_data`) |
 | `INFLUXDB_BUCKET_SHELLY_EM3_RAW` | `shelly_em3_emeters_raw` | New only | 1-min Shelly EM3 raw data |
 | `INFLUXDB_BUCKET_EMETERS_5MIN` | `emeters_5min` | New only | 5-min aggregated energy |

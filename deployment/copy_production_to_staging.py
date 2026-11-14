@@ -36,7 +36,6 @@ BUCKET_MAPPINGS = {
     # "temperatures": "temperatures_staging",  # Temperatures are read from production bucket - read only
     "weather": "weather_staging",
     "spotprice": "spotprice_staging",
-    "emeters": "emeters_staging",
     "checkwatt": "checkwatt_staging",
     "shelly_em3_emeters_raw": "shelly_em3_emeters_raw_staging",
     "load_control": "load_control_staging",
@@ -50,7 +49,6 @@ BUCKET_MAPPINGS = {
 GAP_WINDOW_MINUTES = {
     "weather": 60,
     "spotprice": 60,
-    "emeters": 15,
     "checkwatt": 15,
     "shelly_em3_emeters_raw": 15,
     "windpower": 60,

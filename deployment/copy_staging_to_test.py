@@ -22,7 +22,7 @@ from src.common.config import get_config
 
 # Bucket mappings: staging -> test
 BUCKET_MAPPINGS = {
-    "checkwatt_staging": "checkwatt_full_data_test",
+    "checkwatt_staging": "checkwatt_test",
     "shelly_em3_emeters_raw_staging": "shelly_em3_emeters_raw_test",
 }
 

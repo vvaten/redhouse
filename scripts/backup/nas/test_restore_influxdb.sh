@@ -97,7 +97,7 @@ else
 fi
 
 # Check 5: Key production buckets have recent data
-BUCKETS_TO_CHECK="spotprice weather emeters checkwatt_full_data"
+BUCKETS_TO_CHECK="spotprice weather temperatures checkwatt"
 for BUCKET in $BUCKETS_TO_CHECK; do
     COUNT=$(docker exec "$CONTAINER" influx query \
         --host "$INFLUX_HOST" --token "$OPERATOR_TOKEN" --org "$ORG" \

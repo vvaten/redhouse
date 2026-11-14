@@ -31,7 +31,6 @@ Before switching from the old system to the new one, deploy in **staging mode** 
 influx bucket create -n temperatures_staging -o area51 -r 0
 influx bucket create -n weather_staging -o area51 -r 0
 influx bucket create -n spotprice_staging -o area51 -r 0
-influx bucket create -n emeters_staging -o area51 -r 0
 influx bucket create -n checkwatt_staging -o area51 -r 0
 influx bucket create -n load_control_staging -o area51 -r 0
 ```
@@ -70,7 +69,6 @@ Add or update these lines:
 INFLUXDB_BUCKET_TEMPERATURES=temperatures  # Read-only, avoids sensor hardware contention
 INFLUXDB_BUCKET_WEATHER=weather_staging
 INFLUXDB_BUCKET_SPOTPRICE=spotprice_staging
-INFLUXDB_BUCKET_EMETERS=emeters_staging
 INFLUXDB_BUCKET_CHECKWATT=checkwatt_staging
 INFLUXDB_BUCKET_LOAD_CONTROL=load_control_staging
 INFLUXDB_BUCKET_SOLAR_PREDICTION=solar_prediction_staging
@@ -123,7 +121,6 @@ Change buckets back to production and disable staging:
 INFLUXDB_BUCKET_TEMPERATURES=temperatures
 INFLUXDB_BUCKET_WEATHER=weather
 INFLUXDB_BUCKET_SPOTPRICE=spotprice
-INFLUXDB_BUCKET_EMETERS=emeters
 INFLUXDB_BUCKET_CHECKWATT=checkwatt
 INFLUXDB_BUCKET_LOAD_CONTROL=load_control
 INFLUXDB_BUCKET_SOLAR_PREDICTION=solar_prediction

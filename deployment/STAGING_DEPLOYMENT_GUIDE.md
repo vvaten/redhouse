@@ -34,7 +34,6 @@ Staging mode allows you to run the new RedHouse system in parallel with your old
    - `temperatures_staging`
    - `weather_staging`
    - `spotprice_staging`
-   - `emeters_staging`
    - `checkwatt_staging`
    - `load_control_staging`
 
@@ -53,7 +52,6 @@ influx config create \
 influx bucket create -n temperatures_staging
 influx bucket create -n weather_staging
 influx bucket create -n spotprice_staging
-influx bucket create -n emeters_staging
 influx bucket create -n checkwatt_staging
 influx bucket create -n load_control_staging
 ```
@@ -132,7 +130,6 @@ INFLUXDB_ORG=area51
 INFLUXDB_BUCKET_TEMPERATURES=temperatures  # Read-only, avoids sensor hardware contention
 INFLUXDB_BUCKET_WEATHER=weather_staging
 INFLUXDB_BUCKET_SPOTPRICE=spotprice_staging
-INFLUXDB_BUCKET_EMETERS=emeters_staging
 INFLUXDB_BUCKET_CHECKWATT=checkwatt_staging
 INFLUXDB_BUCKET_LOAD_CONTROL=load_control_staging
 INFLUXDB_BUCKET_SOLAR_PREDICTION=solar_prediction_staging
@@ -420,7 +417,6 @@ sudo nano /opt/redhouse/.env
 INFLUXDB_BUCKET_TEMPERATURES=temperatures
 INFLUXDB_BUCKET_WEATHER=weather
 INFLUXDB_BUCKET_SPOTPRICE=spotprice
-INFLUXDB_BUCKET_EMETERS=emeters
 INFLUXDB_BUCKET_CHECKWATT=checkwatt
 INFLUXDB_BUCKET_LOAD_CONTROL=load_control
 INFLUXDB_BUCKET_SOLAR_PREDICTION=solar_prediction
