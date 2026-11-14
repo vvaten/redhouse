@@ -7,3 +7,4 @@ import pytest
 def _pump_state_in_tmp(tmp_path, monkeypatch):
     """Keep pump state files out of the data directory of the install."""
     monkeypatch.setattr("src.control.pump_controller.DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr("src.common.control_lock.LOCK_FILE", tmp_path / "data" / "control.lock")

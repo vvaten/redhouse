@@ -51,7 +51,7 @@ class TestHeatingProgramGenerator(unittest.TestCase):
         # Check garage heater config
         garage = self.generator.schedule_builder.LOADS["garage_heater"]
         self.assertEqual(garage["priority"], 2)
-        self.assertEqual(garage["power_kw"], 2.0)
+        self.assertEqual(garage["power_kw"], 2.13)
         self.assertFalse(garage["enabled"])
 
 

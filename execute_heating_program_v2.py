@@ -36,6 +36,7 @@ import argparse
 import datetime
 import sys
 
+from src.common.control_lock import ControlLockTimeout, control_lock
 from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
 from src.control.program_executor import HeatingProgramExecutor
@@ -44,6 +45,9 @@ from src.control.program_shape import program_is_well_formed
 from src.monitoring.program_check import program_path
 
 logger = setup_logger(__name__)
+
+# Covers another executor run still in its EVU pulse or a slow write
+LOCK_TIMEOUT_S = 120
 
 
 def parse_args():
@@ -153,6 +157,19 @@ def main():
     logger.info("Starting heating program execution")
     logger.info("=" * 60)
 
+    try:
+        with control_lock(LOCK_TIMEOUT_S):
+            return _run(args)
+    except ControlLockTimeout as e:
+        logger.error(f"Not run, the control lock is taken: {e}")
+        return 1
+    except OSError as e:
+        logger.error(f"Not run, cannot open the control lock: {e}")
+        return 1
+
+
+def _run(args) -> int:
+    """Execute the program under the control lock."""
     try:
         executor = HeatingProgramExecutor(dry_run=args.dry_run)
 

@@ -15,24 +15,6 @@ heating:
   evuoff_threshold_price: 0.40
   evuoff_max_continuous_hours: 4
 
-  # Load definitions
-  loads:
-    geothermal_pump:
-      enabled: true
-      priority: 1
-      power_kw: 3.0
-      control_type: mlp_i2c
-    garage_heater:
-      enabled: false
-      priority: 2
-      power_kw: 2.0
-      control_type: shelly_relay
-    ev_charger:
-      enabled: false
-      priority: 3
-      power_kw: 11.0
-      control_type: ocpp
-
 hardware:
   pump_i2c_bus: 1
   pump_i2c_address: 0x10

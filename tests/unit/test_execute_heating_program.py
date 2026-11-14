@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from src.common import control_lock
 from src.monitoring.program_check import program_path
 
 REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
@@ -117,3 +118,46 @@ class TestMainPassesThePreviousProgram:
             assert wrapper.main() == 1
             executor.run_periodic_pulse.assert_called_once()
             executor.execute_program.assert_not_called()
+
+
+class TestControlLock:
+    """The executor commands the pump only while it holds the control lock."""
+
+    @pytest.fixture
+    def executor(self, tmp_path, monkeypatch):
+        fake = Mock()
+        fake.execute_program = Mock(
+            return_value={
+                "executed_count": 0,
+                "skipped_count": 0,
+                "failed_count": 0,
+                "next_execution_time": None,
+            }
+        )
+        fake.load_program = Mock(return_value={"version": "2.0.0", "loads": {}})
+        monkeypatch.setattr(wrapper, "HeatingProgramExecutor", lambda dry_run: fake)
+        monkeypatch.setattr(sys, "argv", ["x", "--date", "2026-10-12", "--base-dir", str(tmp_path)])
+        return fake
+
+    def test_the_run_holds_the_lock(self, executor):
+        def try_lock(*args, **kwargs):
+            with pytest.raises(control_lock.ControlLockTimeout):
+                with control_lock.control_lock(0):
+                    pass
+            return {
+                "executed_count": 0,
+                "skipped_count": 0,
+                "failed_count": 0,
+                "next_execution_time": None,
+            }
+
+        executor.execute_program = Mock(side_effect=try_lock)
+        assert wrapper.main() == 0
+        executor.execute_program.assert_called_once()
+
+    def test_a_taken_lock_stops_the_run_with_an_error(self, executor, monkeypatch):
+        monkeypatch.setattr(wrapper, "LOCK_TIMEOUT_S", 0)
+        with control_lock.control_lock(0):
+            assert wrapper.main() == 1
+        executor.execute_program.assert_not_called()
+        executor.run_periodic_pulse.assert_not_called()
