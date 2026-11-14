@@ -97,3 +97,23 @@ class TestActiveProductionTimers:
 
         monkeypatch.setattr(sga.subprocess, "run", lambda *a, **k: Result())
         assert sga.active_production_timers() is None
+
+
+class TestLoadIdFilter:
+    def test_the_garage_rule_watches_only_garage_points(self):
+        """load_control also holds the pump's points, which are always fresh."""
+        query = sga.build_alert_rule(
+            rule("Garage heater control stale"), "ds", "f", "production", "g"
+        )
+        flux = query["data"][0]["model"]["query"]
+        assert 'r["load_id"] == "garage_heater"' in flux
+        assert 'r["data_type"] == "actual"' in flux
+        assert 'from(bucket: "load_control")' in flux
+
+    def test_a_rule_without_load_id_has_no_tag_filter(self):
+        flux = sga.build_flux_query("weather", "weather", 10)
+        assert "load_id" not in flux
+
+    def test_staging_watches_the_staging_bucket(self):
+        query = sga.build_alert_rule(rule("Garage heater control stale"), "ds", "f", "staging", "g")
+        assert 'from(bucket: "load_control_staging")' in query["data"][0]["model"]["query"]

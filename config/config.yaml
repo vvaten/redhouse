@@ -15,23 +15,63 @@ heating:
   evuoff_threshold_price: 0.40
   evuoff_max_continuous_hours: 4
 
-  # Load definitions
-  loads:
-    geothermal_pump:
-      enabled: true
-      priority: 1
-      power_kw: 3.0
-      control_type: mlp_i2c
-    garage_heater:
-      enabled: false
-      priority: 2
-      power_kw: 2.0
-      control_type: shelly_relay
-    ev_charger:
-      enabled: false
-      priority: 3
-      power_kw: 11.0
-      control_type: ocpp
+garage:
+  # One heater per relay: .185 drives 1.07 kW on L3, .186 1.06 kW on L1
+  relay_urls: [http://192.168.1.185/relay/0, http://192.168.1.186/relay/0]
+  heater_kw: [1.07, 1.06]
+  sensor_name: Autotalli
+  sensor_status_file: data/shelly_ht_status.json
+  target_c: 5.0
+  floor_c: 2.0
+  stale_after_s: 10800
+  # An OFF turns the relay back ON after this, so a dead controller fails ON
+  off_timer_s: 4500
+  # Pessimistic model, checked against three winters of history
+  loss_k_per_h_per_k: 0.010
+  loss_k_per_h: 0.08
+  heat_gross_k_per_h: 0.6
+
+power_cap:
+  # Helen: the month's third-highest hourly import, 22-07 local at 80 %
+  night_factor: 0.8
+  night_start_hour: 22
+  night_end_hour: 7
+  month_floor_kw: 7.5
+  plan_margin_kw: 0.3
+  guard_margin_kw: 0.1
+  tariff_eur_per_kw: 1.97
+  # 3 x 50 A main fuse at 230 V: a bigger counter step is a reset or a glitch
+  max_import_kw: 34.5
+
+load_budget:
+  # Moves pump ON hours that would not fit under the month's cap
+  enabled: false
+  base_kw: 1.6
+  battery_allowance_kw: 1.5
+  pump_on_kw: 3.4
+  # Saturday 17-22 local; a :30 to :30 session puts half of it in an hour
+  sauna_kw: 7.0
+  sauna_share: 0.5
+  sauna_weekdays: [5]
+  sauna_start_hour: 17
+  sauna_end_hour: 22
+
+car_tip:
+  # 45 kWh before 07:00; a mail only when it saves 1 EUR against 22:00,
+  # power charge included. The other load comes from load_budget
+  session_kwh: 45
+  kw_low: 5.5
+  kw_high: 11.2
+  deadline_hour: 7
+  naive_start_hour: 22
+  min_saving_eur: 1.0
+
+load_guard:
+  # dry_run logs what it would shed; act sheds (staging: mocks only)
+  mode: dry_run
+  # The compressor above the base load; EVU also stops the pump's resistor
+  pump_ale_kw: 3.0
+  pump_evu_kw: 1.0
 
 hardware:
   pump_i2c_bus: 1

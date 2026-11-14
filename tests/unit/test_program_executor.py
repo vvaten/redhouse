@@ -68,25 +68,34 @@ def sample_program():
         "program_date": "2024-01-15",
         "generated_at": 1705276800,
         "loads": {
-            "pump": {
-                "type": "geothermal_pump",
+            "geothermal_pump": {
+                "power_kw": 2.7,
                 "schedule": [
                     {
                         "timestamp": 1600000000,
                         "local_time": "2024-01-15 10:00:00",
                         "command": "ON",
-                        "power_kw": 2.2,
                         "reason": "cheap_electricity",
                     },
                     {
                         "timestamp": 1600003600,
                         "local_time": "2024-01-15 11:00:00",
-                        "command": "OFF",
-                        "power_kw": 0.0,
-                        "reason": "schedule",
+                        "command": "ALE",
+                        "reason": "heating_complete",
                     },
                 ],
-            }
+            },
+            "garage_heater": {
+                "power_kw": 2.13,
+                "schedule": [
+                    {
+                        "timestamp": 1600000000,
+                        "local_time": "2024-01-15 10:00:00",
+                        "command": "ON",
+                        "reason": "plan",
+                    },
+                ],
+            },
         },
     }
 
@@ -153,7 +162,7 @@ class TestLoadProgram:
 
             assert loaded["version"] == "2.0"
             assert loaded["program_date"] == "2024-01-15"
-            assert "pump" in loaded["loads"]
+            assert "geothermal_pump" in loaded["loads"]
 
     def test_load_program_defaults_to_today(
         self, mock_config, mock_influx_client, mock_load_controller, sample_program
@@ -255,6 +264,23 @@ class TestSaveProgram:
 class TestExecuteProgram:
     """Tests for execute_program method."""
 
+    def test_garage_entries_are_plans_the_executor_does_not_run(
+        self, mock_config, mock_influx_client, mock_load_controller, sample_program
+    ):
+        """The garage has its own controller; the executor runs only the pump."""
+        executor = HeatingProgramExecutor(config=mock_config)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.makedirs(os.path.join(tmpdir, "2024-01"))
+            summary = executor.execute_program(
+                sample_program, current_time=1600000010, base_dir=tmpdir
+            )
+
+        assert summary["executed_count"] == 1
+        assert summary["failed_count"] == 0
+        calls = mock_load_controller.return_value.execute_load_command.call_args_list
+        assert [c.args[0] for c in calls] == ["geothermal_pump"]
+        assert "executed_at" not in sample_program["loads"]["garage_heater"]["schedule"][0]
+
     def test_execute_program_no_commands_to_execute(
         self, mock_config, mock_influx_client, mock_load_controller, sample_program
     ):
@@ -291,7 +317,10 @@ class TestExecuteProgram:
 
             assert summary["executed_count"] == 1
             assert summary["skipped_count"] == 0
-            assert sample_program["loads"]["pump"]["schedule"][0].get("executed_at") == current_time
+            assert (
+                sample_program["loads"]["geothermal_pump"]["schedule"][0].get("executed_at")
+                == current_time
+            )
 
     def test_execute_program_skips_delayed_commands(
         self, mock_config, mock_influx_client, mock_load_controller, sample_program
@@ -318,7 +347,7 @@ class TestExecuteProgram:
         executor = HeatingProgramExecutor(config=mock_config)
 
         # Mark first command as executed
-        sample_program["loads"]["pump"]["schedule"][0]["executed_at"] = 1600000005
+        sample_program["loads"]["geothermal_pump"]["schedule"][0]["executed_at"] = 1600000005
 
         current_time = 1600000010
 
@@ -367,7 +396,7 @@ class TestExecuteCommand:
             "command": "ON",
         }
 
-        result = executor._execute_command("pump", entry, 1600000000, 1600000010)
+        result = executor._execute_command("geothermal_pump", entry, 1600000000, 1600000010)
 
         assert result["success"] is True
         assert mock_load_controller.return_value.execute_load_command.called
@@ -389,7 +418,7 @@ class TestExecuteCommand:
             "command": "ON",
         }
 
-        result = executor._execute_command("pump", entry, 1600000000, 1600000010)
+        result = executor._execute_command("geothermal_pump", entry, 1600000000, 1600000010)
 
         assert result["success"] is False
         assert "Test exception" in result["error"]
@@ -407,7 +436,7 @@ class TestWriteExecutionToInflux:
         with patch.dict(os.environ, env_patch, clear=False):
             executor = HeatingProgramExecutor(config=mock_config)
 
-            entry = {"command": "ON", "power_kw": 2.2, "reason": "cheap_electricity"}
+            entry = {"command": "ON", "reason": "cheap_electricity"}
             result = {
                 "success": True,
                 "scheduled_time": 1600000000,
@@ -415,7 +444,7 @@ class TestWriteExecutionToInflux:
                 "delay_seconds": 10,
             }
 
-            executor._write_execution_to_influx("2024-01-15", "pump", entry, result)
+            executor._write_execution_to_influx("2024-01-15", "geothermal_pump", entry, result, 3.0)
 
             write = mock_influx_client.return_value.write_with_retry
             assert write.called
@@ -424,6 +453,57 @@ class TestWriteExecutionToInflux:
             # A naive time is shifted only where local time is not UTC, so check that too.
             assert point.to_line_protocol().endswith(" 1600000010000000000")
             assert point._time.tzinfo is not None
+            assert point._fields["power_kw"] == 3.0
+
+    def test_an_executed_on_records_the_power_of_its_load(
+        self, mock_config, mock_influx_client, mock_load_controller, sample_program
+    ):
+        """The actual point of an ON carries the load's power, not 0.0."""
+        env_patch = {"STAGING_MODE": "false"} if os.getenv("STAGING_MODE") else {}
+        with patch.dict(os.environ, env_patch, clear=False):
+            executor = HeatingProgramExecutor(config=mock_config)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                os.makedirs(os.path.join(tmpdir, "2024-01"))
+                executor.execute_program(sample_program, current_time=1600000010, base_dir=tmpdir)
+
+        point = mock_influx_client.return_value.write_with_retry.call_args.kwargs["record"]
+        assert point._fields["power_kw"] == 2.7
+        assert point._tags["load_id"] == "geothermal_pump"
+
+    def test_a_load_without_power_still_runs_its_commands(
+        self, mock_config, mock_influx_client, mock_load_controller, sample_program
+    ):
+        """Telemetry must not block control: only the actual point is lost."""
+        del sample_program["loads"]["geothermal_pump"]["power_kw"]
+        executor = HeatingProgramExecutor(config=mock_config)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.makedirs(os.path.join(tmpdir, "2024-01"))
+            summary = executor.execute_program(
+                sample_program, current_time=1600003610, base_dir=tmpdir
+            )
+
+        assert summary["executed_count"] == 1
+        assert summary["skipped_count"] == 1
+        assert not mock_influx_client.return_value.write_with_retry.called
+
+    def test_an_executed_ale_records_no_power(
+        self, mock_config, mock_influx_client, mock_load_controller
+    ):
+        env_patch = {"STAGING_MODE": "false"} if os.getenv("STAGING_MODE") else {}
+        with patch.dict(os.environ, env_patch, clear=False):
+            executor = HeatingProgramExecutor(config=mock_config)
+            result = {
+                "success": True,
+                "scheduled_time": 1600000000,
+                "actual_time": 1600000010,
+                "delay_seconds": 10,
+            }
+            executor._write_execution_to_influx(
+                "2024-01-15", "geothermal_pump", {"command": "ALE"}, result, 3.0
+            )
+
+        point = mock_influx_client.return_value.write_with_retry.call_args.kwargs["record"]
+        assert point._fields["power_kw"] == 0.0
 
     def test_write_execution_to_influx_dry_run(
         self, mock_config, mock_influx_client, mock_load_controller
@@ -439,7 +519,7 @@ class TestWriteExecutionToInflux:
             "delay_seconds": 10,
         }
 
-        executor._write_execution_to_influx("2024-01-15", "pump", entry, result)
+        executor._write_execution_to_influx("2024-01-15", "geothermal_pump", entry, result, 3.0)
 
         assert not mock_influx_client.return_value.write_with_retry.called
 
@@ -466,7 +546,7 @@ class TestHandleDayTransition:
         yesterday_program = {
             "program_date": "2024-01-14",
             "loads": {
-                "pump": {
+                "geothermal_pump": {
                     "schedule": [
                         {
                             "timestamp": 1599900000,
@@ -482,7 +562,7 @@ class TestHandleDayTransition:
         result = executor.handle_day_transition(sample_program, yesterday_program)
 
         # No commands should be merged
-        assert len(result["loads"]["pump"]["schedule"]) == 2  # Original 2 commands
+        assert len(result["loads"]["geothermal_pump"]["schedule"]) == 2  # Original 2 commands
 
     def test_handle_day_transition_merges_unexecuted(
         self, mock_config, mock_influx_client, mock_load_controller, sample_program
@@ -493,7 +573,7 @@ class TestHandleDayTransition:
         yesterday_program = {
             "program_date": "2024-01-14",
             "loads": {
-                "pump": {
+                "geothermal_pump": {
                     "schedule": [
                         {
                             "timestamp": 1599900000,
@@ -509,7 +589,7 @@ class TestHandleDayTransition:
         result = executor.handle_day_transition(sample_program, yesterday_program)
 
         # Should merge the unexecuted command
-        assert len(result["loads"]["pump"]["schedule"]) == 3  # Original 2 + 1 merged
+        assert len(result["loads"]["geothermal_pump"]["schedule"]) == 3  # Original 2 + 1 merged
 
     def test_handle_day_transition_skips_duplicate_timestamps(
         self, mock_config, mock_influx_client, mock_load_controller, sample_program
@@ -520,7 +600,7 @@ class TestHandleDayTransition:
         yesterday_program = {
             "program_date": "2024-01-14",
             "loads": {
-                "pump": {
+                "geothermal_pump": {
                     "schedule": [
                         {
                             "timestamp": 1600000000,  # Same as first in today's program
@@ -536,7 +616,27 @@ class TestHandleDayTransition:
         result = executor.handle_day_transition(sample_program, yesterday_program)
 
         # Should not duplicate
-        assert len(result["loads"]["pump"]["schedule"]) == 2  # Original 2, no merge
+        assert len(result["loads"]["geothermal_pump"]["schedule"]) == 2  # Original 2, no merge
+
+    def test_garage_plan_entries_are_not_carried_into_the_next_day(
+        self, mock_config, mock_influx_client, mock_load_controller, sample_program
+    ):
+        """Garage entries are never executed, so they would pile up day after day."""
+        executor = HeatingProgramExecutor(config=mock_config)
+        yesterday_program = {
+            "program_date": "2024-01-14",
+            "loads": {
+                "garage_heater": {
+                    "schedule": [
+                        {"timestamp": 1599900000, "local_time": "x", "command": "ON"},
+                    ]
+                }
+            },
+        }
+
+        result = executor.handle_day_transition(sample_program, yesterday_program)
+
+        assert len(result["loads"]["garage_heater"]["schedule"]) == 1
 
 
 def _pump_program(*entries):

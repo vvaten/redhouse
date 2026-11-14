@@ -219,6 +219,26 @@ class Config:
     def shelly_em3_url(self) -> str:
         return str(self._require_yaml("hardware.shelly_em3_url"))
 
+    @property
+    def garage_section(self) -> dict:
+        return dict(self._require_yaml("garage"))
+
+    @property
+    def power_cap_section(self) -> dict:
+        return dict(self._require_yaml("power_cap"))
+
+    @property
+    def load_guard_section(self) -> dict:
+        return dict(self._require_yaml("load_guard"))
+
+    @property
+    def load_budget_section(self) -> dict:
+        return dict(self._require_yaml("load_budget"))
+
+    @property
+    def car_tip_section(self) -> dict:
+        return dict(self._require_yaml("car_tip"))
+
     # Heating configuration (from config.yaml)
     @property
     def heating_curve(self) -> dict[int, float]:

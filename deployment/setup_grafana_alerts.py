@@ -100,14 +100,19 @@ def find_datasource_uid(base_url, api_key):
     raise RuntimeError("No InfluxDB datasource found in Grafana")
 
 
-def build_flux_query(bucket, measurement, max_age_minutes):
+def build_flux_query(bucket, measurement, max_age_minutes, tags=None):
     """Build a Flux query that returns seconds since last data point."""
+    load_filter = "".join(
+        f'  |> filter(fn: (r) => r["{key}"] == "{value}")\n'
+        for key, value in sorted((tags or {}).items())
+    )
     return (
         f'import "system"\n'
         f"\n"
         f'from(bucket: "{bucket}")\n'
         f"  |> range(start: -{max_age_minutes * 2}m)\n"
         f'  |> filter(fn: (r) => r["_measurement"] == "{measurement}")\n'
+        f"{load_filter}"
         f"  |> last()\n"
         f"  |> map(fn: (r) => ({{_time: r._time, _value: "
         f"float(v: uint(v: system.time()) - uint(v: r._time)) / 1000000000.0}}))\n"
@@ -155,7 +160,8 @@ def build_alert_rule(rule_def, datasource_uid, folder_uid, env_name, group_name)
         bucket = STAGING_BUCKET_MAP[bucket]
 
     max_age_seconds = max_age_minutes * 60
-    flux_query = build_flux_query(bucket, measurement, max_age_minutes)
+    tags = rule_def["tags"] if "tags" in rule_def else None
+    flux_query = build_flux_query(bucket, measurement, max_age_minutes, tags)
 
     env_labels = {"staging": "[Staging] ", "production": ""}
     env_prefix = env_labels[env_name]

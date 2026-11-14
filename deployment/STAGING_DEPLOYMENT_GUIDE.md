@@ -150,6 +150,9 @@ SHELLY_RELAY_URL=http://192.168.1.5
 # CRITICAL: Enable staging mode (no hardware control, blocks production writes)
 STAGING_MODE=true
 
+# The garage controller reads the production H&T receiver's file
+GARAGE_SENSOR_STATUS_FILE=/opt/redhouse/data/shelly_ht_status.json
+
 # Heating Configuration
 HEATING_CURVE_MINUS20=12
 HEATING_CURVE_0=8

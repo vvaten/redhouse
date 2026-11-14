@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Power Cap Update Timer
+
+[Timer]
+# Hourly, after the hour's last 3EM point is written
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:17:00 UTC
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
