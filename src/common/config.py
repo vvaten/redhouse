@@ -235,6 +235,10 @@ class Config:
     def load_budget_section(self) -> dict:
         return dict(self._require_yaml("load_budget"))
 
+    @property
+    def car_tip_section(self) -> dict:
+        return dict(self._require_yaml("car_tip"))
+
     # Heating configuration (from config.yaml)
     @property
     def heating_curve(self) -> dict[int, float]:

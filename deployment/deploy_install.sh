@@ -134,6 +134,7 @@ TIMERS=(
     "redhouse-garage-heater"
     "redhouse-power-cap"
     "redhouse-load-guard"
+    "redhouse-car-tip"
     "redhouse-health-check"
     "redhouse-program-check"
     "redhouse-program-fallback"

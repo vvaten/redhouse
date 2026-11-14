@@ -56,6 +56,16 @@ load_budget:
   sauna_start_hour: 17
   sauna_end_hour: 22
 
+car_tip:
+  # 45 kWh before 07:00; a mail only when it saves 1 EUR against 22:00,
+  # power charge included. The other load comes from load_budget
+  session_kwh: 45
+  kw_low: 5.5
+  kw_high: 11.2
+  deadline_hour: 7
+  naive_start_hour: 22
+  min_saving_eur: 1.0
+
 load_guard:
   # dry_run logs what it would shed; act sheds (staging: mocks only)
   mode: dry_run

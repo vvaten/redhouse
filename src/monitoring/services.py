@@ -18,6 +18,7 @@ REDHOUSE_SERVICES = [
     "redhouse-garage-heater",
     "redhouse-power-cap",
     "redhouse-load-guard",
+    "redhouse-car-tip",
     "redhouse-program-check",
     "redhouse-program-fallback",
 ]
