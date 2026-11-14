@@ -231,6 +231,10 @@ class Config:
     def load_guard_section(self) -> dict:
         return dict(self._require_yaml("load_guard"))
 
+    @property
+    def load_budget_section(self) -> dict:
+        return dict(self._require_yaml("load_budget"))
+
     # Heating configuration (from config.yaml)
     @property
     def heating_curve(self) -> dict[int, float]:

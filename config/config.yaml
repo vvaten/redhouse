@@ -43,6 +43,19 @@ power_cap:
   # 3 x 50 A main fuse at 230 V: a bigger counter step is a reset or a glitch
   max_import_kw: 34.5
 
+load_budget:
+  # Moves pump ON hours that would not fit under the month's cap
+  enabled: false
+  base_kw: 1.6
+  battery_allowance_kw: 1.5
+  pump_on_kw: 3.4
+  # Saturday 17-22 local; a :30 to :30 session puts half of it in an hour
+  sauna_kw: 7.0
+  sauna_share: 0.5
+  sauna_weekdays: [5]
+  sauna_start_hour: 17
+  sauna_end_hour: 22
+
 load_guard:
   # dry_run logs what it would shed; act sheds (staging: mocks only)
   mode: dry_run

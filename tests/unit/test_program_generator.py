@@ -9,8 +9,21 @@ import pandas as pd
 
 from src.control.evu_optimizer import EvuOptimizer
 from src.control.heating_data_fetcher import HeatingDataUnavailable
+from src.control.heating_optimizer import HeatingOptimizer
 from src.control.program_generator import HeatingProgramGenerator
 from src.control.schedule_builder import ScheduleBuilder
+
+# A budget section with every key; tests switch it on or off
+BUDGET_VALUES = {
+    "base_kw": 1.6,
+    "battery_allowance_kw": 1.5,
+    "pump_on_kw": 3.4,
+    "sauna_kw": 7.0,
+    "sauna_share": 0.5,
+    "sauna_weekdays": [5],
+    "sauna_start_hour": 17,
+    "sauna_end_hour": 22,
+}
 
 
 class TestHeatingProgramGenerator(unittest.TestCase):
@@ -607,6 +620,7 @@ class TestGenerateDailyProgram(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.mock_config = MagicMock()
+        self.mock_config.load_budget_section = {"enabled": False, **BUDGET_VALUES}
         self.mock_data_fetcher = MagicMock()
         self.mock_heating_curve = MagicMock()
         self.mock_optimizer = MagicMock()
@@ -684,6 +698,54 @@ class TestGenerateDailyProgram(unittest.TestCase):
             self.generator.generate_daily_program(date_offset=1)
 
         self.assertIn("No priority data available", str(context.exception))
+
+    def test_with_the_budget_on_the_selection_sees_over_cap_hours(self):
+        """The generator hands the budgeted frame to the hour selection."""
+        timestamps = pd.date_range(
+            start="2025-01-15 00:00:00", periods=48, freq="H", tz="Europe/Helsinki"
+        )
+        df = pd.DataFrame(
+            {
+                "price_total": [10.0] * 48,
+                "solar_yield_avg_prediction": [0.5] * 48,
+                "Air temperature": [-5.0] * 48,
+                "price_sell": [5.0] * 48,
+            },
+            index=timestamps,
+        )
+        self.mock_data_fetcher.fetch_heating_data.return_value = df
+        self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
+        self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
+        self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
+        priorities_df = pd.DataFrame(
+            {
+                "heating_prio": [5.0] * 48,
+                "base_load": [1.0] * 48,
+                "solar_yield_avg_prediction": [0.5] * 48,
+                "price_total": [10.0] * 48,
+            },
+            index=timestamps,
+        )
+        day_priorities = priorities_df[24:48]
+        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
+        self.mock_optimizer.filter_day_priorities.return_value = day_priorities
+        self.mock_optimizer.select_cheapest_hours.return_value = day_priorities[:8]
+        self.mock_optimizer.base_load_kw = 1.0
+        self.mock_optimizer.heating_load_kw = 3.0
+        self.mock_config.load_budget_section = {"enabled": True, **BUDGET_VALUES}
+        self.mock_config.power_cap_section = {
+            "night_factor": 0.8,
+            "night_start_hour": 22,
+            "night_end_hour": 7,
+            "month_floor_kw": 7.5,
+            "plan_margin_kw": 0.3,
+            "guard_margin_kw": 0.1,
+            "tariff_eur_per_kw": 1.97,
+            "max_import_kw": 34.5,
+        }
+        self.generator.generate_daily_program(date_offset=1, simulation_mode=False)
+        frame = self.mock_optimizer.select_cheapest_hours.call_args.args[0]
+        self.assertIn("over_cap", frame.columns)
 
     def test_generate_daily_program_success(self):
         """Test successful program generation."""
@@ -1071,3 +1133,19 @@ class TestPlanningResultsEdgeCases(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_evu_blocks_skip_the_hours_the_budget_keeps():
+    """With a budget a heating hour can be dear; an EVU block must not cover it."""
+    optimizer = HeatingOptimizer()
+    config = MagicMock(evuoff_threshold_price=0.20, evuoff_max_continuous_hours=4)
+    with patch("src.control.evu_optimizer.get_config", return_value=config):
+        evu = EvuOptimizer(optimizer)
+    index = pd.date_range("2026-11-14 00:00", periods=24, freq="h", tz="Europe/Helsinki")
+    priorities = pd.DataFrame({"price_total": [0.10] * 18 + [0.50] * 6}, index=index)
+    with patch.object(optimizer, "filter_day_priorities", return_value=priorities):
+        free = evu.generate_evu_off_periods(None, priorities, 4, 1)
+        kept = evu.generate_evu_off_periods(None, priorities, 4, 1, keep=index[18:20])
+    covered = {int(t.timestamp()) for t in index[18:20]}
+    assert any(p["start"] <= min(covered) < p["stop"] for p in free)
+    assert not any(p["start"] <= t < p["stop"] for p in kept for t in covered)

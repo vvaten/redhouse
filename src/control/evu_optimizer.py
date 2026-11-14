@@ -37,7 +37,7 @@ class EvuOptimizer:
         self.EVU_OFF_MAX_CONTINUOUS_HOURS = config.evuoff_max_continuous_hours
 
     def generate_evu_off_periods(
-        self, df, priorities_df, hours_to_heat: float, date_offset: int
+        self, df, priorities_df, hours_to_heat: float, date_offset: int, keep=None
     ) -> list[dict]:
         """
         Generate EVU-OFF periods to block expensive direct heating.
@@ -69,6 +69,9 @@ class EvuOptimizer:
             by="price_total", ascending=False
         )  # type: ignore[call-overload]
 
+        if keep is not None:
+            # Heating hours the power budget chose stay out of the EVU blocks
+            expensive_hours = expensive_hours[~expensive_hours.index.isin(keep)]
         expensive_hours = expensive_hours.head(evu_off_max_hours)
 
         if expensive_hours.empty:
