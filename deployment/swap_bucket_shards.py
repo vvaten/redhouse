@@ -58,7 +58,12 @@ NOT_TAGS = {"result", "table", "_start", "_stop", "_time", "_value", "_field", "
 VERIFY_CHUNK = datetime.timedelta(days=30)
 # The systemd timers on the Pi that write each bucket
 WRITERS = {
-    "load_control": ["redhouse-generate-program.timer", "redhouse-execute-program.timer"],
+    "load_control": [
+        "redhouse-generate-program.timer",
+        "redhouse-execute-program.timer",
+        "redhouse-garage-heater.timer",
+        "redhouse-power-cap.timer",
+    ],
     "windpower": ["redhouse-windpower.timer"],
     "spotprice": ["redhouse-spot-prices.timer"],
     "weather": ["redhouse-weather.timer"],

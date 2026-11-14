@@ -31,6 +31,18 @@ garage:
   loss_k_per_h: 0.08
   heat_gross_k_per_h: 0.6
 
+power_cap:
+  # Helen: the month's third-highest hourly import, 22-07 local at 80 %
+  night_factor: 0.8
+  night_start_hour: 22
+  night_end_hour: 7
+  month_floor_kw: 7.5
+  plan_margin_kw: 0.3
+  guard_margin_kw: 0.1
+  tariff_eur_per_kw: 1.97
+  # 3 x 50 A main fuse at 230 V: a bigger counter step is a reset or a glitch
+  max_import_kw: 34.5
+
 hardware:
   pump_i2c_bus: 1
   pump_i2c_address: 0x10

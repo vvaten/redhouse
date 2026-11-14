@@ -41,6 +41,7 @@ REDHOUSE_SERVICES = [
     "redhouse-generate-program",
     "redhouse-execute-program",
     "redhouse-garage-heater",
+    "redhouse-power-cap",
     "redhouse-program-check",
     "redhouse-program-fallback",
 ]

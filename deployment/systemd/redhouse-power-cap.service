@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse Power Cap Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/update_power_cap.py
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-power-cap
+
+[Install]
+WantedBy=multi-user.target

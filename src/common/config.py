@@ -223,6 +223,10 @@ class Config:
     def garage_section(self) -> dict:
         return dict(self._require_yaml("garage"))
 
+    @property
+    def power_cap_section(self) -> dict:
+        return dict(self._require_yaml("power_cap"))
+
     # Heating configuration (from config.yaml)
     @property
     def heating_curve(self) -> dict[int, float]:
