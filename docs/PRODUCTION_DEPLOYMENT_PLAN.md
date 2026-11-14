@@ -505,8 +505,22 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
    same, so no code, dashboard or alert changes. Not `network`: with
    30-day retention its 7-day shards expire by themselves, and a
    365-day shard group longer than the retention is not allowed.
+   Done 2026-11-12 with deployment/swap_bucket_shards.py (7e9a78d).
+   It copies on the client, not with `to()`, and renames by ID at
+   minute 9, 24, 39 or 54. All six buckets were copied, renamed and
+   verified between 18:09 and 22:43 UTC; temperatures with its
+   collector running, without a lost write.
 7. Verify, then delete `emeters`, `checkwatt_full_data` and each
    `X_old`. Every deletion needs its own go.
+   2026-11-13: the six `X_old` buckets deleted, each after a check that
+   every point dated after its rename is also in the new bucket.
+   `checkwatt_full_data` was already gone. A deleted bucket's shards
+   stay on disk until the next InfluxDB restart. 2026-11-14: `swaptest`
+   and `swaptest_old` deleted, and the code no longer names `emeters` or
+   the wibatemp alerts. Still to do: deploy that, delete `emeters` and
+   `emeters_staging`, delete the Grafana folder RedHouse-Alerts-Wibatemp
+   (five paused rules on deleted buckets), copy the new
+   test_restore_influxdb.sh to the NAS, then a restart and a shard count.
 
 ### Pump control test: DONE
 
@@ -679,6 +693,58 @@ Unit test isolation, added 2026-10-12:
 - test_spot_prices.py reads datetime.utcnow() as local time and fails
   east of UTC+3; test_edit_heating_program.py fails at some times of
   day far east. Helsinki passes.
+
+Found at the InfluxDB restart, added 2026-11-13:
+
+- The replay writes Shelly EM3 readings at the wrong time.
+  write_shelly_em3_to_influx stamps each point with now(), and
+  _replay_shelly_em3 does not pass the log time. On 2026-11-13 the
+  replay of 07:01 and 07:02 (Pi time) wrote both readings at 07:35:36,
+  between newer ones, so the energy counter went back about 1270 Wh.
+  The points were deleted and written again at their logged times by
+  hand. Fix: pass the log time through, as the temperature replay does.
+  Until then, do not replay --source shelly_em3.
+- The Shelly EM3 writer logs "Wrote Shelly EM3 data" after a failed
+  write. write_point returns False on failure and the caller ignores
+  it, so the journal cannot show which Shelly writes were lost.
+- shelly_em3_emeters_raw has no point at 00:01 UTC on 2026-11-12 or
+  2026-11-13: the data goes from 00:00 to 00:02. Find out if each
+  night loses that minute, and why.
+- emeters_5min lost two 5-minute windows on 2026-11-09 and one on
+  2026-11-10. The 2026-11-10 one matches the NAS update restart; the
+  2026-11-09 ones have no known cause.
+
+Grafana panels on long ranges, added 2026-11-13. On "Last 2 years":
+
+- Spot Price, Cost per Hour and the spot price in Heating Schedule
+  return every raw point (Spot Price: 188004 rows for 4 fields). Grafana
+  keeps only part, so Spot Price shows one field up to about 2025-12,
+  and Cost per Hour shows only battery_arbitrage up to about 2026-06.
+- Consumption Effect and Avg. Actual Price show "No data": the join()
+  of hourly spot prices and consumption ran over 300 s, and Grafana
+  stops waiting much earlier.
+
+The fixes, in both dashboard JSON files, then a dashboard deploy:
+
+- Spot Price (ref A) and Heating Schedule (ref B, the spot price): add
+  `|> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)`
+  after the filters. On a range of a few days v.windowPeriod is below
+  15 min, so the panel keeps the raw steps; on 2 years it gets about one
+  point per pixel. Leave Heating Schedule ref A as it is: load_control
+  is small, and a mean would turn the on/off plan into a duty cycle.
+- Cost per Hour: the same aggregateWindow with fn: mean, so the values
+  stay EUR per hour. Not fn: sum, which would give EUR per window.
+- Avg. Actual Price: one query on analytics_1hour, no join. Filter
+  emeter_sum and price_withtax, pivot them into one row per hour, take
+  consumption = max(0, emeter_sum) / 1000, then return
+  sum(price_withtax x consumption) / sum(consumption) x 100 (c/kWh).
+  The hour price is the mean of its quarter prices, as on the bill.
+- Consumption Effect: the same weighted price minus the plain mean of
+  price_withtax over the same hours, x 100. This is the formula the
+  panel uses now, sum((p - mean) x e) / sum(e), written without join.
+- Check on "Last 7 days" that each panel shows the same values as now,
+  then on "Last 2 years" that all series reach today and the gauges
+  answer in a few seconds.
 
 ## Stability Findings (2026-09-09)
 
@@ -1144,7 +1210,6 @@ sudo -u pi nano /opt/redhouse/.env
 #   INFLUXDB_BUCKET_TEMPERATURES=temperatures
 #   INFLUXDB_BUCKET_WEATHER=weather
 #   INFLUXDB_BUCKET_SPOTPRICE=spotprice
-#   INFLUXDB_BUCKET_EMETERS=emeters
 #   INFLUXDB_BUCKET_CHECKWATT=checkwatt   (NEW bucket, not checkwatt_full_data)
 #   INFLUXDB_BUCKET_SHELLY_EM3_RAW=shelly_em3_emeters_raw
 #   INFLUXDB_BUCKET_LOAD_CONTROL=load_control
