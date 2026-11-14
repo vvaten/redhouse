@@ -1,7 +1,7 @@
 # RedHouse Production Deployment Plan
 
 **Created:** 2026-04-06
-**Updated:** 2026-10-12
+**Updated:** 2026-11-14
 **Status:** In Progress
 **Goal:** Replace wibatemp with redhouse as the production system
 
@@ -135,6 +135,7 @@ names its checkpoint: the thing to verify before starting the next.
 - Production Grafana alerting exists and follows the timers: a rule is
   created only when its collector runs.
 - InfluxDB restarted. Latency down 60x, shards 2936 -> 1729.
+- Phase 8 bucket migration, 2026-11-14: 261 shards, 268 MB.
 
 ### Week timeline, from 2026-09-13
 
@@ -404,7 +405,7 @@ Check that python3 now holds the port, and that wibatemp's file is
 written again at the next sensor report:
 `sudo ss -ltnp 'sport = :8008'; ls -l /home/pi/wibatemp/temperature_status.json`.
 
-### Phase 8: bucket migration
+### Phase 8: bucket migration: DONE
 
 Goal: all history in the new buckets at the right resolution, then the
 old buckets deleted. The same work cuts the shard count, which is what
@@ -438,7 +439,8 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
 
 1. A full InfluxDB backup on the NAS
    (`run_backup_nas.sh`, see BACKUP.md). Keep it until step 7 is
-   verified.
+   verified. Step 7 was verified 2026-11-14; the backup is still kept,
+   and its delete needs its own go.
 2. Settings only. 30-day retention and 7-day shard groups on
    `temperatures_staging`, `weather_staging`, `checkwatt_staging`,
    `emeters_staging`, `load_control_staging` and `spotprice_staging`.
@@ -517,10 +519,25 @@ Steps, in order. Steps 2 and 6 give most of the shard reduction; 3 to
    `checkwatt_full_data` was already gone. A deleted bucket's shards
    stay on disk until the next InfluxDB restart. 2026-11-14: `swaptest`
    and `swaptest_old` deleted, and the code no longer names `emeters` or
-   the wibatemp alerts. Still to do: deploy that, delete `emeters` and
-   `emeters_staging`, delete the Grafana folder RedHouse-Alerts-Wibatemp
-   (five paused rules on deleted buckets), copy the new
-   test_restore_influxdb.sh to the NAS, then a restart and a shard count.
+   the wibatemp alerts (61ec074, deployed to staging and production).
+   Then `emeters` and `emeters_staging` deleted, after a check that
+   neither had an energy point after 2026-11-01. The Grafana folders
+   RedHouse-Alerts-Wibatemp (five paused rules on deleted buckets) and
+   the empty "RedHouse Alerts (Wibatemp)" deleted.
+   scripts/backup/nas/test_restore_influxdb.sh, which no longer checks
+   `emeters`, copied to the NAS. The InfluxDB restart at 15:52 UTC took
+   the instance from 1427 to 261 shards and from 503 to 268 MB, counted
+   from the /metrics storage_shard_disk_size lines. No shard of a
+   deleted bucket is left on disk. The temperature write lost at the
+   restart was replayed with the replay tool. The Shelly EM3 reading
+   was written again at its logged time by hand, as on 2026-11-13. The
+   pinglogger point of 15:52:11 UTC is lost: pinglogger writes no JSON
+   log.
+
+Phase 8 done 2026-11-14: about 1920 shards and 529 MB on 2026-11-07,
+261 shards and 268 MB after the restart on 2026-11-14. The count can
+still drop at later restarts, as the old 1-day staging shards and the
+7-day `network` shards expire.
 
 ### Pump control test: DONE
 
@@ -547,9 +564,10 @@ side effect of a dry-run.
 
 - DONE 2026-09-22. Writes now retry. write_with_retry mirrors
   query_with_retry, and every write site in src/ goes through it.
-- InfluxDB hygiene: nine production buckets use forever retention with
-  7-day shard groups, growing 469 shards/year. Widen the shard groups
-  to 90 days: that cuts growth 13x and discards no history.
+- DONE 2026-11-14 in Phase 8, with 365-day shard groups; the instance
+  is now 268 MB. InfluxDB hygiene: nine production buckets use forever
+  retention with 7-day shard groups, growing 469 shards/year. Widen the
+  shard groups to 90 days: that cuts growth 13x and discards no history.
   Do NOT shorten retention to save disk. The whole instance is 0.45 GB.
   weather is 11 MB for 3.4 years, spotprice 1.8 MB for 4.8 years,
   windpower 1.5 MB. Shards are the cost, not bytes, and shard count
@@ -704,6 +722,8 @@ Found at the InfluxDB restart, added 2026-11-13:
   The points were deleted and written again at their logged times by
   hand. Fix: pass the log time through, as the temperature replay does.
   Until then, do not replay --source shelly_em3.
+- pinglogger writes no JSON log, so a ping write lost at an InfluxDB
+  restart cannot be replayed. Seen 2026-11-13 and 2026-11-14.
 - The Shelly EM3 writer logs "Wrote Shelly EM3 data" after a failed
   write. write_point returns False on failure and the caller ignores
   it, so the journal cannot show which Shelly writes were lost.
@@ -1376,7 +1396,7 @@ journalctl -u redhouse-checkwatt.service --since "10 min ago"
 ```
 
 Aligned to `checkwatt`: production .env, production dashboard,
-setup_grafana_alerts.py (wibatemp env still watches checkwatt_full_data),
+setup_grafana_alerts.py (its wibatemp env is removed since 2026-11-14),
 .env.example, copy_production_to_staging.py, DATABASE.md.
 
 ### Retiring wibatemp's CheckWatt loader
@@ -1511,7 +1531,7 @@ These wibatemp cron entries are NOT replaced by redhouse and must stay:
 
 Lines 38 (energy_to_fissio) and 39 (checkwatt_dataloader) were
 commented out on 2026-11-01, with the five [Wibatemp] Grafana alert
-rules paused.
+rules paused. The rules were deleted on 2026-11-14.
 
 ---
 
