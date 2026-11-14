@@ -9,7 +9,8 @@ This module provides implementations for:
 """
 
 import logging
-from typing import Optional
+import time
+from typing import Callable, Optional
 
 import requests
 
@@ -188,3 +189,65 @@ class MockHardwareInterface(PumpHardwareInterface):
             "ison": self.circulation_pump_on,
             "commands_executed": len(self.commands_executed),
         }
+
+
+class GarageRelay:
+    """One garage heater on a Shelly 1 (Gen1) relay. An OFF always carries a
+    flip-back timer, so a stopped controller leaves the heater ON."""
+
+    TRIES = 3
+    RETRY_WAIT_S = 2.0
+    TIMEOUT_S = 5.0
+
+    def __init__(self, url: str, sleep: Callable[[float], None] = time.sleep):
+        self.url = url
+        self._sleep = sleep
+
+    def _get(self, query: str) -> Optional[dict]:
+        """The relay's status reply, or None after every try failed."""
+        for attempt in range(1, self.TRIES + 1):
+            try:
+                response = requests.get(self.url + query, timeout=self.TIMEOUT_S)
+                response.raise_for_status()
+                reply = response.json()
+                if not isinstance(reply, dict) or "ison" not in reply:
+                    raise ValueError(f"no ison in {reply!r}")
+                return reply
+            except (requests.RequestException, ValueError, TypeError) as e:
+                logger.warning(f"Garage relay {self.url} try {attempt}: {e}")
+                if attempt < self.TRIES:
+                    self._sleep(self.RETRY_WAIT_S)
+        return None
+
+    def set(self, on: bool, off_timer_s: int) -> Optional[bool]:
+        """The relay state after the command, or None. An OFF without a running
+        flip-back timer is a failure: the heater would not come back ON."""
+        reply = self._get("?turn=on" if on else f"?turn=off&timer={off_timer_s}")
+        if reply is None:
+            return None
+        if not on and not ("has_timer" in reply and reply["has_timer"]):
+            logger.error(f"Garage relay {self.url} is OFF without its flip-back timer")
+            return None
+        return bool(reply["ison"])
+
+    def state(self) -> Optional[bool]:
+        reply = self._get("")
+        return None if reply is None else bool(reply["ison"])
+
+
+class MockGarageRelay:
+    """Garage relay for staging, dry runs and tests."""
+
+    def __init__(self, url: str, ison: bool = False):
+        self.url = url
+        self.ison = ison
+        self.commands: list = []
+
+    def set(self, on: bool, off_timer_s: int) -> Optional[bool]:
+        self.commands.append((on, off_timer_s))
+        self.ison = on
+        logger.info(f"MOCK: garage relay {self.url} {'ON' if on else 'OFF'}")
+        return self.ison
+
+    def state(self) -> Optional[bool]:
+        return self.ison

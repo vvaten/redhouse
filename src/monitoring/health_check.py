@@ -40,6 +40,7 @@ REDHOUSE_SERVICES = [
     "redhouse-solar-prediction",
     "redhouse-generate-program",
     "redhouse-execute-program",
+    "redhouse-garage-heater",
     "redhouse-program-check",
     "redhouse-program-fallback",
 ]

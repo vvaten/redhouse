@@ -1,0 +1,19 @@
+[Unit]
+Description=RedHouse Garage Heater Control
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+# Drives the garage heater relays. --dry-run uses mock relays and marks
+# its InfluxDB points as dry_run.
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/run_garage_heater.py
+TimeoutStartSec=240
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-garage-heater
+
+[Install]
+WantedBy=multi-user.target

@@ -15,6 +15,22 @@ heating:
   evuoff_threshold_price: 0.40
   evuoff_max_continuous_hours: 4
 
+garage:
+  # One heater per relay: .185 drives 1.07 kW on L3, .186 1.06 kW on L1
+  relay_urls: [http://192.168.1.185/relay/0, http://192.168.1.186/relay/0]
+  heater_kw: [1.07, 1.06]
+  sensor_name: Autotalli
+  sensor_status_file: data/shelly_ht_status.json
+  target_c: 5.0
+  floor_c: 2.0
+  stale_after_s: 10800
+  # An OFF turns the relay back ON after this, so a dead controller fails ON
+  off_timer_s: 4500
+  # Pessimistic model, checked against three winters of history
+  loss_k_per_h_per_k: 0.010
+  loss_k_per_h: 0.08
+  heat_gross_k_per_h: 0.6
+
 hardware:
   pump_i2c_bus: 1
   pump_i2c_address: 0x10

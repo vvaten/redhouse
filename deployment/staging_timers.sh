@@ -34,6 +34,7 @@ TIMERS=(
     "solar-prediction"
     "generate-program"
     "execute-program"
+    "garage-heater"
     "health-check"
     "program-check"
     "program-fallback"
