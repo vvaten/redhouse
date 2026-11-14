@@ -273,15 +273,18 @@ The schema is the same in both old and new systems.
 | Field | Type | Unit | Description |
 |---|---|---|---|
 | `price` | float | EUR/kWh | Raw spot price without tax (`PriceNoTax` from API) |
-| `price_sell` | float | EUR/kWh | Production buyback price (`price - 0.01 * SPOT_PRODUCTION_BUYBACK_MARGIN`) |
-| `price_withtax` | float | EUR/kWh | Spot price including VAT (`SPOT_VALUE_ADDED_TAX * price`) |
+| `price_sell` | float | EUR/kWh | Production buyback price (`price - 0.01 * production_buyback_margin`) |
+| `price_withtax` | float | EUR/kWh | Spot price including VAT (`value_added_tax * price`) |
 | `price_total` | float | EUR/kWh | Total consumer price including all fees and taxes |
 
-**Price formula for `price_total`:**
+**Price formula for `price_total`:** the keys are in config/config.yaml
+under `data_collection.spot_prices`. The margins, transfer and tax
+prices are in c/kWh; `value_added_tax` is a factor. The night window
+is local time.
 ```
-transfer_price = SPOT_TRANSFER_NIGHT_PRICE  (22:00-07:00)
-               = SPOT_TRANSFER_DAY_PRICE    (07:00-22:00)
-price_total = price_withtax + 0.01 * (SPOT_SELLERS_MARGIN + transfer_price + SPOT_TRANSFER_TAX_PRICE)
+transfer_price = transfer_night_price  (22:00-07:00)
+               = transfer_day_price    (07:00-22:00)
+price_total = price_withtax + 0.01 * (sellers_margin + transfer_price + transfer_tax_price)
 ```
 
 **Cadence:** One point per hour. Tomorrow's prices are typically available

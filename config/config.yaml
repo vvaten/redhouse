@@ -51,10 +51,10 @@ data_collection:
   spot_prices:
     value_added_tax: 1.255
     sellers_margin: 0.50
-    production_buyback_margin: 0.30
-    transfer_day_price: 2.59
-    transfer_night_price: 1.35
-    transfer_tax_price: 2.79372
+    production_buyback_margin: 0.24
+    transfer_day_price: 2.96
+    transfer_night_price: 1.56
+    transfer_tax_price: 2.9179
 
 scheduling:
   generate_program_time: "16:05"

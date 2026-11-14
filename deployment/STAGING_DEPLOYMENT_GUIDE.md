@@ -157,13 +157,8 @@ HEATING_CURVE_16=4
 EVUOFF_THRESHOLD_PRICE=0.20
 EVUOFF_MAX_CONTINUOUS_HOURS=4
 
-# Spot Price Configuration
-SPOT_VALUE_ADDED_TAX=1.255
-SPOT_SELLERS_MARGIN=0.50
-SPOT_PRODUCTION_BUYBACK_MARGIN=0.30
-SPOT_TRANSFER_DAY_PRICE=2.59
-SPOT_TRANSFER_NIGHT_PRICE=1.35
-SPOT_TRANSFER_TAX_PRICE=2.79372
+# Spot price margins, transfer and tax prices are not set here:
+# they are in config/config.yaml under data_collection.spot_prices.
 
 # Logging
 LOG_LEVEL=INFO
