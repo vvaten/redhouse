@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from src.common import control_lock
+from src.control import load_overrides as lo
 from src.monitoring.program_check import program_path
 
 REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
@@ -161,3 +162,75 @@ class TestControlLock:
             assert wrapper.main() == 1
         executor.execute_program.assert_not_called()
         executor.run_periodic_pulse.assert_not_called()
+
+
+class TestGuardHold:
+    """While the load guard holds the pump the program waits, then resumes."""
+
+    def _hold(self, path, since, until, command="ALE", restore_to=None):
+        entry = {
+            "load_id": "geothermal_pump",
+            "command": command,
+            "since": since,
+            "until": until,
+            "reason": "cap_guard_car_5kw",
+            "restore_to": restore_to,
+        }
+        path.write_text(json.dumps({"overrides": [entry]}))
+
+    def test_only_the_pulse_check_runs_while_the_hold_runs(self, tmp_path, monkeypatch):
+        now = int(datetime.datetime.now().timestamp())
+        self._hold(tmp_path / "o.json", now - 60, now + 600)
+        monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
+        fake = Mock()
+        fake.load_program = Mock(return_value={"version": "2.0.0", "loads": {}})
+        monkeypatch.setattr(wrapper, "HeatingProgramExecutor", lambda dry_run: fake)
+        monkeypatch.setattr(sys, "argv", ["x", "--base-dir", str(tmp_path)])
+        assert wrapper.main() == 0
+        fake.execute_program.assert_not_called()
+        fake.run_periodic_pulse.assert_called_once()
+
+    def _executor(self, last_command="ALE", last_time=1500, due=True):
+        pump = Mock(last_command_time=last_time, last_command=last_command)
+        pump.execute_command = Mock(return_value={"success": True})
+        executor = Mock()
+        executor.load_controller.pump_controller = pump
+        entry = {"command": "ON", "timestamp": 100} if due else None
+        executor.due_pump_entry = Mock(return_value=entry)
+        return executor, pump
+
+    def test_after_the_hold_the_due_state_is_applied(self, tmp_path, monkeypatch):
+        self._hold(tmp_path / "o.json", 1000, 2000)
+        monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
+        executor, pump = self._executor()
+        wrapper._restore_after_override(executor, [], 2005)
+        pump.execute_command.assert_called_once_with("ON", 100, 2005)
+
+    def test_after_a_reboot_the_hold_is_still_handed_back(self, tmp_path, monkeypatch):
+        """The boot restore re-applies the hold's ALE with a time after the hold."""
+        self._hold(tmp_path / "o.json", 1000, 2000)
+        monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
+        executor, pump = self._executor(last_time=2500)
+        wrapper._restore_after_override(executor, [], 2600)
+        pump.execute_command.assert_called_once_with("ON", 100, 2600)
+
+    def test_without_a_due_entry_the_state_before_the_hold_returns(self, tmp_path, monkeypatch):
+        self._hold(tmp_path / "o.json", 1000, 2000, command="EVU", restore_to="ON")
+        monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
+        executor, pump = self._executor(last_command="EVU", due=False)
+        wrapper._restore_after_override(executor, [], 2005)
+        pump.execute_command.assert_called_once_with("ON", 2005, 2005)
+
+    def test_a_pump_that_left_the_holds_state_is_left_alone(self, tmp_path, monkeypatch):
+        self._hold(tmp_path / "o.json", 1000, 2000)
+        monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
+        executor, pump = self._executor(last_command="ON")
+        wrapper._restore_after_override(executor, [], 2005)
+        pump.execute_command.assert_not_called()
+
+    def test_an_old_hold_is_not_handed_back_again(self, tmp_path, monkeypatch):
+        self._hold(tmp_path / "o.json", 1000, 2000)
+        monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
+        executor, pump = self._executor()
+        wrapper._restore_after_override(executor, [], 2000 + lo.RESTORE_WINDOW_S + 1)
+        pump.execute_command.assert_not_called()

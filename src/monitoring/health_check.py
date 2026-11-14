@@ -19,32 +19,13 @@ from src.common.config import get_config
 from src.common.logger import setup_logger
 from src.monitoring.email_sender import format_alert_body, send_alert_email
 from src.monitoring.influx_health import check_influxdb_performance
+from src.monitoring.services import REDHOUSE_SERVICES
 
 logger = setup_logger(__name__, "health_check.log")
 
 DISK_WARNING_PERCENT = 80
 DISK_CRITICAL_PERCENT = 90
 
-REDHOUSE_SERVICES = [
-    "redhouse-temperature",
-    "redhouse-weather",
-    "redhouse-spot-prices",
-    "redhouse-checkwatt",
-    "redhouse-shelly-em3",
-    "redhouse-windpower",
-    "redhouse-pinglogger",
-    "redhouse-aggregate-emeters-5min",
-    "redhouse-aggregate-analytics-15min",
-    "redhouse-aggregate-analytics-1hour",
-    "redhouse-aggregate-network-1hour",
-    "redhouse-solar-prediction",
-    "redhouse-generate-program",
-    "redhouse-execute-program",
-    "redhouse-garage-heater",
-    "redhouse-power-cap",
-    "redhouse-program-check",
-    "redhouse-program-fallback",
-]
 
 # Oneshot services that run at boot, with no timer to watch
 BOOT_SERVICES = ["redhouse-pump-restore"]

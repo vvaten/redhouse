@@ -63,6 +63,7 @@ WRITERS = {
         "redhouse-execute-program.timer",
         "redhouse-garage-heater.timer",
         "redhouse-power-cap.timer",
+        "redhouse-load-guard.timer",
     ],
     "windpower": ["redhouse-windpower.timer"],
     "spotprice": ["redhouse-spot-prices.timer"],

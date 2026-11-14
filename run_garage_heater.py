@@ -16,12 +16,14 @@ import sys
 import time
 from pathlib import Path
 
+from src.common.atomic_json import write_json
 from src.common.config import get_config
 from src.common.control_lock import ControlLockTimeout, control_lock
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
 from src.control import garage_controller as gc
 from src.control.hardware_implementations import GarageRelay, MockGarageRelay
+from src.control.load_overrides import GARAGE, active_override
 from src.data_collection.temperature import convert_internal_id_to_influxid
 from src.monitoring.email_sender import send_alert_email
 
@@ -31,6 +33,9 @@ logger = setup_logger(__name__, "garage_heater.log")
 LOCK_TIMEOUT_S = 90
 INFLUX_TIMEOUT_MS = 10_000
 ALERT_STATE = Path(__file__).resolve().parent / "data" / "garage_alert_state.json"
+OVERRIDES = Path(__file__).resolve().parent / "data" / "load_overrides.json"
+# The load guard reads whether the heaters are on from here
+GARAGE_STATE = Path(__file__).resolve().parent / "data" / "garage_state.json"
 ALERT_REPEAT_S = 6 * 3600
 COLD_MARGIN_K = 0.5
 
@@ -85,6 +90,7 @@ def _io(config, settings, influx, dry_run: bool) -> gc.GarageIO:
         fetch_inputs=lambda start: gc.fetch_inputs(influx, config, start),
         lock=lambda: control_lock(LOCK_TIMEOUT_S),
         write=write,
+        override_off=lambda now: active_override(OVERRIDES, GARAGE, now) is not None,
     )
 
 
@@ -106,6 +112,14 @@ def main() -> int:
     except OSError as e:
         logger.error(f"Relays not set, cannot open the control lock: {e}")
         return 1
+    # A manual dry run in production must not overwrite the real state
+    if not (args.dry_run and not _staging(config)):
+        try:
+            on = any(s is True for s in result.relay_states)
+            state = {"on": on, "t": time.time(), "reason": result.decision.reason}
+            write_json(GARAGE_STATE, state)
+        except OSError as e:
+            logger.error(f"Garage state not saved: {e}")
     stamp = datetime.datetime.now().isoformat(timespec="minutes")
     if result.decision.reason == "stale_reading":
         _alert(config, "stale reading", f"{stamp}: no fresh garage reading, heating ON")

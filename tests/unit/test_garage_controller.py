@@ -151,6 +151,16 @@ class TestTick:
         decision, _ = gc.tick(NOW, _settings(), (4.0, NOW + 3600), _series(0.1), _series(-5.0))
         assert decision.on and decision.reason == "stale_reading"
 
+    def test_a_guard_hold_keeps_the_heat_off_above_the_floor(self):
+        decision, _ = gc.tick(
+            NOW, _settings(), (2.5, NOW - 60), _series(0.1), _series(-20.0), override_off=True
+        )
+        assert not decision.on and decision.reason == "overridden_by_guard"
+        under, _ = gc.tick(
+            NOW, _settings(), (1.5, NOW - 60), _series(0.1), _series(-20.0), override_off=True
+        )
+        assert under.on
+
     def test_no_reading_heats(self):
         decision, _ = gc.tick(NOW, _settings(), (None, None), _series(0.1), _series(-5.0))
         assert decision.on and decision.reason == "stale_reading"
@@ -380,3 +390,25 @@ class TestWrapper:
         monkeypatch.setattr(module.gc, "run_once", locked)
         monkeypatch.setattr(sys, "argv", ["x"])
         assert module.main() == 1
+
+
+def test_a_shed_that_lands_while_the_tick_waits_for_the_lock_wins():
+    """The guard can shed between the tick's decision and its relay commands."""
+    held = []
+
+    @contextlib.contextmanager
+    def lock():
+        held.append(True)
+        yield
+
+    io = gc.GarageIO(
+        read_reading=lambda s: (2.5, NOW - 60),
+        fetch_inputs=lambda start: (_series(0.01), _series(-25.0)),
+        lock=lock,
+        write=lambda point: None,
+        override_off=lambda now: bool(held),
+    )
+    relays = [MockGarageRelay("a"), MockGarageRelay("b")]
+    result = gc.run_once(NOW, _settings(), relays, io)
+    assert result.decision.reason == "overridden_by_guard"
+    assert all(r.commands == [(False, 4500)] for r in relays)

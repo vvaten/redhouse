@@ -36,6 +36,7 @@ TIMERS=(
     "execute-program"
     "garage-heater"
     "power-cap"
+    "load-guard"
     "health-check"
     "program-check"
     "program-fallback"

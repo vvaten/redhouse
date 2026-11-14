@@ -227,6 +227,10 @@ class Config:
     def power_cap_section(self) -> dict:
         return dict(self._require_yaml("power_cap"))
 
+    @property
+    def load_guard_section(self) -> dict:
+        return dict(self._require_yaml("load_guard"))
+
     # Heating configuration (from config.yaml)
     @property
     def heating_curve(self) -> dict[int, float]:

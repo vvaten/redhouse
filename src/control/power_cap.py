@@ -7,11 +7,10 @@ from 22 to 07 local count at 80 %. An hour is named by its start.
 import datetime
 import json
 import math
-import os
-import tempfile
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+from src.common.atomic_json import write_json
 from src.common.local_time import HELSINKI
 
 TOP_N = 3
@@ -104,20 +103,8 @@ def state_dict(month: str, cap_kw: float, top: list, counted: dict, now: float) 
     }
 
 
-def write_state(path: Path, state: dict) -> None:
-    """Atomic: a reader sees the old file or the new one, never half of one."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(state, f, indent=1)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
+def write_state(path: Path, state: object) -> None:
+    write_json(path, state)
 
 
 def read_state(path: Path) -> dict:

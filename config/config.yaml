@@ -43,6 +43,13 @@ power_cap:
   # 3 x 50 A main fuse at 230 V: a bigger counter step is a reset or a glitch
   max_import_kw: 34.5
 
+load_guard:
+  # dry_run logs what it would shed; act sheds (staging: mocks only)
+  mode: dry_run
+  # The compressor above the base load; EVU also stops the pump's resistor
+  pump_ale_kw: 3.0
+  pump_evu_kw: 1.0
+
 hardware:
   pump_i2c_bus: 1
   pump_i2c_address: 0x10

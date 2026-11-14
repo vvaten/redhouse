@@ -35,6 +35,7 @@ def _load_wrapper(filename: str):
         "fallback_program.py",
         "run_garage_heater.py",
         "update_power_cap.py",
+        "run_load_guard.py",
         "restore_pump_state.py",
         "generate_heating_program_v2.py",
     ],

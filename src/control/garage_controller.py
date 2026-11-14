@@ -7,7 +7,7 @@ from garage_model, which the offline simulation also runs.
 
 import datetime
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -197,7 +197,12 @@ def fetch_inputs(influx, config, start: int) -> tuple:
 
 
 def tick(
-    now: float, settings: GarageSettings, reading: tuple, prices: dict, outdoor: dict
+    now: float,
+    settings: GarageSettings,
+    reading: tuple,
+    prices: dict,
+    outdoor: dict,
+    override_off: bool = False,
 ) -> tuple:
     """(decision, plan or None) for this tick; no IO."""
     reading_c, reading_time = reading
@@ -205,7 +210,7 @@ def tick(
     garage_plan = None
     if plausible(reading_c) and slots and slots[0].start == slot_start(now):
         garage_plan = plan(reading_c, slots, settings.params, settings.total_kw)
-    decision = decide(int(now), reading_c, reading_time, garage_plan, False, settings.params)
+    decision = decide(int(now), reading_c, reading_time, garage_plan, override_off, settings.params)
     return decision, garage_plan
 
 
@@ -251,8 +256,11 @@ def run_once(now: float, settings: GarageSettings, relays: list, io: "GarageIO")
     """One tick with its IO. The lock is held only while the relays switch."""
     reading = io.read_reading(settings)
     prices, outdoor = io.fetch_inputs(slot_start(now))
-    decision, garage_plan = tick(now, settings, reading, prices, outdoor)
+    decision, garage_plan = tick(now, settings, reading, prices, outdoor, io.override_off(now))
     with io.lock():
+        # The guard may have shed while this tick waited for the lock
+        if decision.reason == "plan_heat" and io.override_off(now):
+            decision = Decision(False, "overridden_by_guard")
         states = apply(decision, relays, settings.off_timer_s)
     success = all(s == decision.on for s in states)
     age = None if reading[1] is None else now - reading[1]
@@ -273,3 +281,5 @@ class GarageIO:
     fetch_inputs: Callable
     lock: Callable
     write: Callable
+    # True while the load guard holds the garage OFF
+    override_off: Callable = field(default=lambda now: False)
