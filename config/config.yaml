@@ -57,13 +57,13 @@ load_budget:
   sauna_end_hour: 22
 
 car_tip:
-  # 45 kWh before 07:00; a mail only when it saves 1 EUR against 22:00,
-  # power charge included. The other load comes from load_budget
+  # 45 kWh before 07:00; a mail only when it saves 1 EUR against charging
+  # at once from plug_in_hour, power charge included. Other load: load_budget
   session_kwh: 45
   kw_low: 5.5
   kw_high: 11.2
   deadline_hour: 7
-  naive_start_hour: 22
+  plug_in_hour: 17
   min_saving_eur: 1.0
 
 load_guard:

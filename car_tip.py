@@ -2,7 +2,7 @@
 """Car charging tip - wrapper script for systemd, daily after the prices.
 
 Mails the cheapest window to charge the car before the morning deadline,
-when it saves enough against the usual evening start. Staging only logs.
+when it saves enough against charging at once from plug-in. Staging only logs.
 
 Usage:
     python car_tip.py [--dry-run]

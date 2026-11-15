@@ -18,7 +18,7 @@ SETTINGS = ct.TipSettings(
     kw_low=5.5,
     kw_high=11.2,
     deadline_hour=7,
-    naive_start_hour=22,
+    plug_in_hour=17,
     min_saving_eur=1.0,
 )
 UTC = datetime.timezone.utc
@@ -43,10 +43,14 @@ def _ctx(other=3.1, month=None, start=None):
 
 
 NOW = _local(2026, 11, 14, 16) + datetime.timedelta(minutes=35)
-# Cheap from 17:00 to 02:00: a 22:00 start misses most of it
+# Cheap from 17:00 to 02:00
 EVENING = {_local(2026, 11, 14, h) for h in range(17, 24)} | {
     _local(2026, 11, 15, h) for h in range(0, 2)
 }
+# Cheap from 22:00 to 07:00: plugging in at 17:00 and charging at once misses it
+NIGHT = {_local(2026, 11, 14, h) for h in (22, 23)} | {_local(2026, 11, 15, h) for h in range(7)}
+# A month whose base already sits above any car hour, so nothing rises
+HIGH_BASE = {_local(2026, 11, 2, h): 9.0 for h in (8, 9, 10)}
 
 
 def test_a_session_splits_into_full_hours_and_a_rest():
@@ -76,8 +80,8 @@ def test_a_run_after_midnight_has_no_start_that_fits():
     assert ct.candidates(_local(2026, 11, 15, 1), 5.5, SETTINGS) == []
 
 
-def test_a_late_catch_up_run_sends_no_tip():
-    """At 10:30 the habit's 22:00 hours are tonight; without tomorrow's prices no tip."""
+def test_a_morning_catch_up_run_without_the_night_prices_sends_no_tip():
+    """At 10:30 the 17:00 session runs past the prices that exist."""
     now = _local(2026, 11, 14, 10) + datetime.timedelta(minutes=30)
     start = _local(2026, 11, 14, 10)
     prices = {t: 0.10 for t in _hours(start, 13)}
@@ -85,29 +89,50 @@ def test_a_late_catch_up_run_sends_no_tip():
     assert result is None and "missing" in reason
 
 
-# A month whose base already sits above any car hour, so nothing rises
-HIGH_BASE = {_local(2026, 11, 2, h): 9.0 for h in (8, 9, 10)}
+@pytest.mark.parametrize(
+    "now, why",
+    [
+        (_local(2026, 11, 14, 18) + datetime.timedelta(minutes=10), "after the plug-in"),
+        (_local(2026, 11, 14, 17) + datetime.timedelta(minutes=5), "after the plug-in"),
+        (_local(2026, 11, 15, 0) + datetime.timedelta(minutes=30), "by the deadline"),
+    ],
+)
+def test_a_late_catch_up_run_sends_no_tip(now, why):
+    result, reason = ct.tip(_prices(NIGHT), now, SETTINGS, CAP, _ctx(month=HIGH_BASE))
+    assert result is None and why in reason
 
 
 def test_the_cheapest_window_wins():
-    result, _ = ct.tip(_prices(EVENING), NOW, SETTINGS, CAP, _ctx(month=HIGH_BASE))
-    low, habit, high = result
-    assert low.start == _local(2026, 11, 14, 17)
-    assert habit.total_eur - low.total_eur >= 1.0
+    result, _ = ct.tip(_prices(NIGHT), NOW, SETTINGS, CAP, _ctx(month=HIGH_BASE))
+    low, plug_in, high = result
+    assert low.start == _local(2026, 11, 14, 22)
+    assert plug_in.start == _local(2026, 11, 14, 17)
+    assert plug_in.total_eur - low.total_eur >= 1.0
     assert high is not None and high.kw == 11.2
 
 
-def test_no_tip_when_the_habit_is_good_enough():
-    result, reason = ct.tip(_prices(), NOW, SETTINGS, CAP, _ctx())
+def test_no_window_starts_before_the_plug_in():
+    at_19 = ct.TipSettings(45.0, 5.5, 11.2, 7, 19, 1.0)
+    result, _ = ct.tip(_prices(NIGHT), NOW, at_19, CAP, _ctx(month=HIGH_BASE))
+    assert result[0].start == _local(2026, 11, 14, 22)
+    assert ct.best(_prices(EVENING), NOW, 5.5, at_19, CAP, _ctx(month=HIGH_BASE)).start == (
+        _local(2026, 11, 14, 19)
+    )
+
+
+def test_no_tip_when_the_plug_in_is_good_enough():
+    result, reason = ct.tip(_prices(), NOW, SETTINGS, CAP, _ctx(month=HIGH_BASE))
     assert result is None and "threshold" in reason
 
 
 def test_a_window_that_raises_the_base_moves_to_the_night():
     """At the floor, day hours with the car count 8.6 kW; night hours 6.9 kW."""
-    result, _ = ct.tip(_prices(EVENING), NOW, SETTINGS, CAP, _ctx())
-    low = result[0]
-    assert low.charge_rise_eur == 0.0
-    assert low.start.astimezone(HELSINKI).hour >= 20
+    prices = _prices(EVENING, cheap_price=0.10, dear=0.12)
+    result, _ = ct.tip(prices, NOW, SETTINGS, CAP, _ctx())
+    low, plug_in, _ = result
+    # Two day hours do not move the third-highest hour; five do
+    assert low.start.astimezone(HELSINKI).hour >= 20 and low.charge_rise_eur == 0.0
+    assert plug_in.charge_rise_eur > 0.0
 
 
 def test_a_rise_in_the_power_charge_counts_against_the_window():
@@ -115,8 +140,11 @@ def test_a_rise_in_the_power_charge_counts_against_the_window():
     month = {_local(2026, 11, 2, h): 7.6 for h in (8, 9, 10)}
     cheap = {_local(2026, 11, 14, h) for h in range(17, 22)}
     prices = _prices(cheap, cheap_price=0.10, dear=0.15)
-    result, reason = ct.tip(prices, NOW, SETTINGS, CAP, _ctx(other=6.0, month=month))
-    assert result is None, "a window that raises the power charge must not be tipped"
+    result, _ = ct.tip(prices, NOW, SETTINGS, CAP, _ctx(other=6.0, month=month))
+    low, plug_in, _ = result
+    assert low.start.astimezone(HELSINKI).hour >= 20
+    assert low.energy_eur > plug_in.energy_eur
+    assert low.charge_rise_eur < plug_in.charge_rise_eur
 
 
 def test_the_rise_uses_the_third_highest_hour():
@@ -131,9 +159,10 @@ def test_the_counted_peak_uses_the_night_factor_and_the_other_load():
 
 
 def test_the_mail_names_the_start_and_the_saving():
-    result, _ = ct.tip(_prices(EVENING), NOW, SETTINGS, CAP, _ctx(month=HIGH_BASE))
+    result, _ = ct.tip(_prices(NIGHT), NOW, SETTINGS, CAP, _ctx(month=HIGH_BASE))
     text = ct.describe(result)
-    assert "Start the car at" in text and "EUR more" in text
+    assert "Start the car at Sat 22:00" in text and "EUR more" in text
+    assert "Charging at once from Sat 17:00" in text
     assert "11.2 kW" in text
 
 

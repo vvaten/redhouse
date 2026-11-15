@@ -2,7 +2,7 @@
 
 Pure functions. A window costs its energy plus any rise in the month's
 power charge. A tip goes out only when the best window saves at least
-min_saving_eur against starting at naive_start_hour.
+min_saving_eur against charging at once from plug_in_hour.
 """
 
 import datetime
@@ -19,7 +19,7 @@ class TipSettings:
     kw_low: float
     kw_high: float
     deadline_hour: int
-    naive_start_hour: int
+    plug_in_hour: int
     min_saving_eur: float
 
 
@@ -33,7 +33,7 @@ def load_tip_settings(section: dict) -> TipSettings:
         kw_low=float(section["kw_low"]),
         kw_high=float(section["kw_high"]),
         deadline_hour=int(section["deadline_hour"]),
-        naive_start_hour=int(section["naive_start_hour"]),
+        plug_in_hour=int(section["plug_in_hour"]),
         min_saving_eur=float(section["min_saving_eur"]),
     )
 
@@ -89,12 +89,25 @@ def window_at(prices: dict, start, kw: float, s: TipSettings, cap: CapSettings, 
     return Window(start, kw, energy, counted, rise)
 
 
-def candidates(now: datetime.datetime, kw: float, s: TipSettings) -> list:
-    """Every whole-hour start from the next hour that still ends by the deadline."""
+def _next_hour(now: datetime.datetime) -> datetime.datetime:
     local = now.astimezone(HELSINKI)
-    first = HELSINKI.normalize(
+    return HELSINKI.normalize(
         local.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
     )
+
+
+def plug_in_start(now: datetime.datetime, s: TipSettings) -> datetime.datetime:
+    """Today's plug_in_hour in UTC."""
+    local = now.astimezone(HELSINKI)
+    start = HELSINKI.localize(
+        datetime.datetime.combine(local.date(), datetime.time(s.plug_in_hour))
+    )
+    return start.astimezone(datetime.timezone.utc)
+
+
+def candidates(now: datetime.datetime, kw: float, s: TipSettings) -> list:
+    """Every whole-hour start from the next hour that still ends by the deadline."""
+    first = _next_hour(now)
     deadline_day = first.date() + datetime.timedelta(days=0 if first.hour < s.deadline_hour else 1)
     deadline = HELSINKI.localize(
         datetime.datetime.combine(deadline_day, datetime.time(s.deadline_hour))
@@ -108,40 +121,47 @@ def candidates(now: datetime.datetime, kw: float, s: TipSettings) -> list:
     return starts
 
 
+def _starts(now, kw: float, s: TipSettings) -> list:
+    earliest = plug_in_start(now, s)
+    return [t for t in candidates(now, kw, s) if t >= earliest]
+
+
 def best(prices: dict, now, kw: float, s: TipSettings, cap: CapSettings, ctx: dict):
-    windows = [window_at(prices, t, kw, s, cap, ctx) for t in candidates(now, kw, s)]
+    """The cheapest window that starts at or after the plug-in."""
+    windows = [window_at(prices, t, kw, s, cap, ctx) for t in _starts(now, kw, s)]
     priced = [w for w in windows if w is not None]
     return min(priced, key=lambda w: (w.total_eur, w.start)) if priced else None
 
 
-def naive(prices: dict, now, kw: float, s: TipSettings, cap: CapSettings, ctx: dict):
-    """The session started at naive_start_hour tonight, the habit to beat."""
-    local = now.astimezone(HELSINKI)
-    start = HELSINKI.localize(
-        datetime.datetime.combine(local.date(), datetime.time(s.naive_start_hour))
-    )
-    return window_at(prices, start.astimezone(datetime.timezone.utc), kw, s, cap, ctx)
+def plug_in_window(prices: dict, now, kw: float, s: TipSettings, cap: CapSettings, ctx: dict):
+    """The session that starts when the car is plugged in tonight."""
+    return window_at(prices, plug_in_start(now, s), kw, s, cap, ctx)
 
 
 def tip(prices: dict, now, s: TipSettings, cap: CapSettings, ctx: dict):
-    """(best low-power window, habit window, best high-power window) when the
+    """(best low-power window, plug-in window, best high-power window) when the
     saving, power charge included, is worth a mail; else (None, reason)."""
+    if plug_in_start(now, s) < _next_hour(now).astimezone(datetime.timezone.utc):
+        return None, "the run is after the plug-in hour"
+    if not _starts(now, s.kw_low, s):
+        return None, "no session from the plug-in ends by the deadline"
     low = best(prices, now, s.kw_low, s, cap, ctx)
-    habit = naive(prices, now, s.kw_low, s, cap, ctx)
-    if low is None or habit is None:
+    plug_in = plug_in_window(prices, now, s.kw_low, s, cap, ctx)
+    if low is None or plug_in is None:
         return None, "prices or the planned load are missing"
-    if habit.total_eur - low.total_eur < s.min_saving_eur:
-        return None, f"saving {habit.total_eur - low.total_eur:.2f} EUR is under the threshold"
-    return (low, habit, best(prices, now, s.kw_high, s, cap, ctx)), ""
+    saving = plug_in.total_eur - low.total_eur
+    if saving < s.min_saving_eur:
+        return None, f"saving {saving:.2f} EUR is under the threshold"
+    return (low, plug_in, best(prices, now, s.kw_high, s, cap, ctx)), ""
 
 
 def describe(result: tuple) -> str:
-    low, habit, high = result
+    low, plug_in, high = result
     lines = [
         f"Start the car at {local_label(low.start)} at {low.kw:.1f} kW: "
-        f"about {low.energy_eur:.2f} EUR of energy.",
-        f"Starting at {local_label(habit.start)} would cost {habit.total_eur:.2f} EUR "
-        f"({habit.total_eur - low.total_eur:.2f} EUR more, power charge included).",
+        f"about {low.total_eur:.2f} EUR, power charge included.",
+        f"Charging at once from {local_label(plug_in.start)} would cost "
+        f"{plug_in.total_eur:.2f} EUR ({plug_in.total_eur - low.total_eur:.2f} EUR more).",
     ]
     if low.charge_rise_eur > 0:
         lines.append(
