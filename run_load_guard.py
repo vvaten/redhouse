@@ -15,7 +15,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import requests
 from influxdb_client import Point
@@ -25,6 +25,7 @@ from src.common.config import get_config
 from src.common.control_lock import ControlLockTimeout, control_lock
 from src.common.influx_client import InfluxClient
 from src.common.logger import setup_logger
+from src.common.watchdog import Watchdog
 from src.control import garage_controller as gc
 from src.control import load_guard as lg
 from src.control import load_overrides as lo
@@ -41,10 +42,14 @@ GARAGE_STATE = DATA / "garage_state.json"
 KEEP_S = 70 * 60
 HTTP_TIMEOUT_S = 5
 INFLUX_TIMEOUT_MS = 5_000
+# One short try per relay; the next minute tries again
+RELAY_TIMEOUT_S = 3.0
 # A garage state older than this is not trusted
 STATE_MAX_AGE_S = 1800
 OVERRIDES = DATA / "load_overrides.json"
 TEST_LIMIT_ENV = "LOAD_GUARD_TEST_LIMIT_KW"
+# Under the unit's TimeoutStartSec of 45 s, so the log names the stuck stage
+DEADLINE_S = 35
 MODES = ("dry_run", "act")
 
 
@@ -172,7 +177,18 @@ def _shed_pump(pump, command: str, now: float, until: float, reason: str) -> boo
     return False
 
 
-def act(verdict: lg.Verdict, now: float, garage_relays: list, off_timer_s: int, make_pump) -> list:
+def _no_mark(stage: str) -> None:
+    pass
+
+
+def act(
+    verdict: lg.Verdict,
+    now: float,
+    garage_relays: list,
+    off_timer_s: int,
+    make_pump,
+    mark: Callable[[str], None] = _no_mark,
+) -> list:
     """Shed for real under the lock, each shed held to the hour's end.
     Returns the loads shed; a busy lock raises ControlLockTimeout."""
     until = lg.hour_start(now) + 3600
@@ -180,9 +196,12 @@ def act(verdict: lg.Verdict, now: float, garage_relays: list, off_timer_s: int, 
     loads = {s.load for s in verdict.sheds}
     pump_cmd = "EVU" if "pump_evu" in loads else "ALE" if "pump_ale" in loads else None
     done = []
+    mark("control lock")
     with control_lock(0):
+        mark("garage relays")
         if "garage_off" in loads and _shed_garage(garage_relays, off_timer_s, now, until, reason):
             done.append("garage_off")
+        mark("pump")
         # The pump state file is read here, under the lock
         if pump_cmd is not None and _shed_pump(make_pump(), pump_cmd, now, until, reason):
             done.append(f"pump_{pump_cmd.lower()}")
@@ -207,13 +226,23 @@ def verdict_point(
     )
 
 
-def _act(config, verdict: lg.Verdict, now: float, staging: bool) -> list:
+def _relays(urls: list, staging: bool) -> list:
+    if staging:
+        return [MockGarageRelay(url) for url in urls]
+    return [GarageRelay(url, tries=1, timeout_s=RELAY_TIMEOUT_S) for url in urls]
+
+
+def _act(config, verdict: lg.Verdict, now: float, staging: bool, watchdog: Watchdog) -> list:
     garage = gc.load_settings(config.garage_section)
-    relay_type = MockGarageRelay if staging else GarageRelay
-    relays = [relay_type(url) for url in garage.relay_urls]
+    relays = _relays(garage.relay_urls, staging)
     try:
         done = act(
-            verdict, now, relays, garage.off_timer_s, lambda: PumpController(dry_run=staging)
+            verdict,
+            now,
+            relays,
+            garage.off_timer_s,
+            lambda: PumpController(dry_run=staging),
+            watchdog.mark,
         )
     except ControlLockTimeout:
         logger.warning("Control lock busy: nothing shed this minute")
@@ -225,20 +254,24 @@ def _act(config, verdict: lg.Verdict, now: float, staging: bool) -> list:
     return done
 
 
-def main() -> int:
+def main(watchdog: Watchdog) -> int:
+    watchdog.mark("config")
     config = get_config()
     settings = pc.load_cap_settings(config.power_cap_section)
     now = time.time()
+    watchdog.mark("3EM read")
     try:
         sample = read_meter(config.shelly_em3_url, now)
     except (requests.RequestException, ValueError, KeyError, TypeError) as e:
         logger.error(f"3EM unreadable, no guard this minute: {e}")
         return 1
+    watchdog.mark("minute log")
     samples = load_minutes(now) + [sample]
     try:
         save_minutes(samples)
     except OSError as e:
         logger.error(f"Minute log not saved, the guard goes on without it: {e}")
+    watchdog.mark("cap and states")
     hour = lg.utc(lg.hour_start(now))
     cap_kw = pc.read_cap_kw(CAP_STATE, hour, settings)
     limit_kw = pc.guard_limit_kw(cap_kw, settings)
@@ -264,15 +297,26 @@ def main() -> int:
             f"over {limit_kw:.2f} kW, step {verdict.step_class}"
         )
         if mode == "act":
-            done = _act(config, verdict, now, staging)
+            done = _act(config, verdict, now, staging, watchdog)
+    watchdog.mark("InfluxDB write")
     try:
         influx = InfluxClient(config, timeout_ms=INFLUX_TIMEOUT_MS)
         point = verdict_point(verdict, now, sample, mode, done)
-        influx.write_with_retry(bucket=config.influxdb_bucket_load_control, record=point)
+        # One try: a retry would not fit the deadline, and the next minute writes anew
+        influx.write_api.write(bucket=config.influxdb_bucket_load_control, record=point)
     except Exception as e:
         logger.error(f"load_guard point not written: {e}")
     return 0
 
 
+def run() -> int:
+    """main under a deadline, so a stuck run logs its stage before systemd kills it."""
+    watchdog = Watchdog(DEADLINE_S, log=logger).start()
+    try:
+        return main(watchdog)
+    finally:
+        watchdog.cancel()
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run())

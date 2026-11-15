@@ -150,32 +150,32 @@ class TestMain:
         monkeypatch.setattr(
             guard.requests, "get", Mock(side_effect=requests.ConnectionError("down"))
         )
-        assert guard.main() == 1
-        run.write_with_retry.assert_not_called()
+        assert guard.main(guard.Watchdog(60)) == 1
+        run.write_api.write.assert_not_called()
 
     def test_a_reading_goes_to_the_minute_log_and_a_point_is_written(self, run, data, monkeypatch):
         monkeypatch.setattr(guard.requests, "get", Mock(return_value=_response(STATUS)))
-        assert guard.main() == 0
+        assert guard.main(guard.Watchdog(60)) == 0
         assert len(json.loads((data / "guard_minutes.json").read_text())) == 1
-        point = run.write_with_retry.call_args.kwargs["record"]
+        point = run.write_api.write.call_args.kwargs["record"]
         assert point.to_line_protocol().startswith("load_guard,data_type=dry_run")
 
     def test_a_failed_write_still_ends_well(self, run, monkeypatch):
         monkeypatch.setattr(guard.requests, "get", Mock(return_value=_response(STATUS)))
-        run.write_with_retry = Mock(side_effect=RuntimeError("influx down"))
-        assert guard.main() == 0
+        run.write_api.write = Mock(side_effect=RuntimeError("influx down"))
+        assert guard.main(guard.Watchdog(60)) == 0
 
     def test_a_full_disk_does_not_stop_the_guard(self, run, monkeypatch):
         monkeypatch.setattr(guard.requests, "get", Mock(return_value=_response(STATUS)))
         monkeypatch.setattr(guard, "save_minutes", Mock(side_effect=OSError("no space")))
-        assert guard.main() == 0
-        run.write_with_retry.assert_called_once()
+        assert guard.main(guard.Watchdog(60)) == 0
+        run.write_api.write.assert_called_once()
 
     def test_the_test_limit_replaces_the_cap(self, run, monkeypatch):
         monkeypatch.setattr(guard.requests, "get", Mock(return_value=_response(STATUS)))
         monkeypatch.setenv("LOAD_GUARD_TEST_LIMIT_KW", "1.5")
-        assert guard.main() == 0
-        line = run.write_with_retry.call_args.kwargs["record"].to_line_protocol()
+        assert guard.main(guard.Watchdog(60)) == 0
+        line = run.write_api.write.call_args.kwargs["record"].to_line_protocol()
         assert "limit_kw=1.5" in line
 
     def test_staging_reads_the_mock_pump_state(self, run, data, monkeypatch):
@@ -183,7 +183,7 @@ class TestMain:
         monkeypatch.setenv("STAGING_MODE", "true")
         seen = []
         monkeypatch.setattr(guard, "pump_command", lambda path: seen.append(path.name))
-        assert guard.main() == 0
+        assert guard.main(guard.Watchdog(60)) == 0
         assert seen == ["pump_state_dry_run.json"]
 
 
@@ -274,3 +274,22 @@ class TestAct:
             with pytest.raises(guard.ControlLockTimeout):
                 guard.act(self._verdict(["pump_ale"]), self.NOW, [], 4500, lambda: pump)
         pump.execute_command.assert_not_called()
+
+    def test_each_shed_stage_is_marked(self, data, monkeypatch):
+        monkeypatch.setattr(guard, "OVERRIDES", data / "load_overrides.json")
+        stages = []
+        guard.act(self._verdict(["pump_ale"]), self.NOW, [], 4500, self._pump, stages.append)
+        assert stages == ["control lock", "garage relays", "pump"]
+
+
+def test_the_guard_makes_one_short_try_per_relay():
+    relays = guard._relays(["http://r1/relay/0"], staging=False)
+    assert relays[0].tries == 1 and relays[0].timeout_s == guard.RELAY_TIMEOUT_S
+    assert isinstance(guard._relays(["http://r1/relay/0"], staging=True)[0], guard.MockGarageRelay)
+
+
+def test_run_gives_main_the_deadline(monkeypatch):
+    seen = []
+    monkeypatch.setattr(guard, "main", lambda watchdog: seen.append(watchdog.limit_s) or 0)
+    assert guard.run() == 0
+    assert seen == [guard.DEADLINE_S]

@@ -199,15 +199,23 @@ class GarageRelay:
     RETRY_WAIT_S = 2.0
     TIMEOUT_S = 5.0
 
-    def __init__(self, url: str, sleep: Callable[[float], None] = time.sleep):
+    def __init__(
+        self,
+        url: str,
+        sleep: Callable[[float], None] = time.sleep,
+        tries: int = TRIES,
+        timeout_s: float = TIMEOUT_S,
+    ):
         self.url = url
         self._sleep = sleep
+        self.tries = tries
+        self.timeout_s = timeout_s
 
     def _get(self, query: str) -> Optional[dict]:
         """The relay's status reply, or None after every try failed."""
-        for attempt in range(1, self.TRIES + 1):
+        for attempt in range(1, self.tries + 1):
             try:
-                response = requests.get(self.url + query, timeout=self.TIMEOUT_S)
+                response = requests.get(self.url + query, timeout=self.timeout_s)
                 response.raise_for_status()
                 reply = response.json()
                 if not isinstance(reply, dict) or "ison" not in reply:
@@ -215,7 +223,7 @@ class GarageRelay:
                 return reply
             except (requests.RequestException, ValueError, TypeError) as e:
                 logger.warning(f"Garage relay {self.url} try {attempt}: {e}")
-                if attempt < self.TRIES:
+                if attempt < self.tries:
                     self._sleep(self.RETRY_WAIT_S)
         return None
 
