@@ -103,9 +103,13 @@ def test_network_ping_reads_the_hourly_bucket_for_long_or_old_ranges(name, hourl
     assert "rawStart = if useHours then 1970-01-01T00:00:00Z else v.timeRangeStart" in query
 
 
+# Panels of controllers that run only in staging until their cutover
+STAGING_ONLY = {"Garage Heating", "Power Cap", "Load Guard"}
+
+
 def test_production_and_staging_have_the_same_panels_and_queries():
     production, staging = _panels("production_dashboard.json"), _panels("staging_dashboard.json")
-    assert production.keys() == staging.keys()
+    assert production.keys() == staging.keys() - STAGING_ONLY
     for title, panel in production.items():
         refs = sorted(t["refId"] for t in panel.get("targets", []))
         assert refs == sorted(t["refId"] for t in staging[title].get("targets", [])), title
