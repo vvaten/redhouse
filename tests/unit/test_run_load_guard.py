@@ -288,6 +288,13 @@ def test_the_guard_makes_one_short_try_per_relay():
     assert isinstance(guard._relays(["http://r1/relay/0"], staging=True)[0], guard.MockGarageRelay)
 
 
+def test_the_minute_log_goes_to_the_runtime_directory(monkeypatch, tmp_path):
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path))
+    assert _wrapper().MINUTE_LOG == tmp_path / "guard_minutes.json"
+    monkeypatch.delenv("RUNTIME_DIRECTORY")
+    assert _wrapper().MINUTE_LOG == guard.DATA / "guard_minutes.json"
+
+
 def test_run_gives_main_the_deadline(monkeypatch):
     seen = []
     monkeypatch.setattr(guard, "main", lambda watchdog: seen.append(watchdog.limit_s) or 0)

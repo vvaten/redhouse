@@ -5,8 +5,8 @@ Reads the Shelly 3EM over HTTP (not InfluxDB, so it works while the
 database is down) and projects the hour's counted import. In mode
 dry_run it logs what it would shed; in mode act it sheds.
 
-Usage:
-    python run_load_guard.py
+Usage, by hand with the timer's minute log:
+    sudo -u pi RUNTIME_DIRECTORY=/run/redhouse-load-guard venv/bin/python run_load_guard.py
 """
 
 import datetime
@@ -36,7 +36,16 @@ from src.control.pump_controller import PumpController
 logger = setup_logger(__name__, "load_guard.log")
 
 DATA = Path(__file__).resolve().parent / "data"
-MINUTE_LOG = DATA / "guard_minutes.json"
+
+
+def _run_dir() -> Path:
+    """systemd's RuntimeDirectory, in RAM; outside systemd the data folder."""
+    if "RUNTIME_DIRECTORY" in os.environ:
+        return Path(os.environ["RUNTIME_DIRECTORY"])
+    return DATA
+
+
+MINUTE_LOG = _run_dir() / "guard_minutes.json"
 CAP_STATE = DATA / "power_cap_state.json"
 GARAGE_STATE = DATA / "garage_state.json"
 KEEP_S = 70 * 60

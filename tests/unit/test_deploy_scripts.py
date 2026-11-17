@@ -192,6 +192,38 @@ class TestStagingScheduleDoesNotCollide:
         assert prod % 15 != 0, "health check is back on the quarter hour"
 
 
+GUARD_UNIT = REPO / "deployment" / "systemd" / "redhouse-load-guard.service"
+
+
+def test_the_guard_keeps_its_minute_log_in_ram_between_runs():
+    """Without Preserve systemd empties the folder after each run, and the
+    guard could never confirm an hour over the limit."""
+    text = GUARD_UNIT.read_text(encoding="utf-8")
+    assert _values(text, "RuntimeDirectory") == ["redhouse-load-guard"]
+    assert _values(text, "RuntimeDirectoryPreserve") == ["yes"]
+
+
+@pytest.mark.skipif(BASH is None, reason="bash not available")
+def test_staging_gets_its_own_runtime_directory(tmp_path):
+    """A shared RAM folder would let staging and production write one minute log."""
+    text = (REPO / "deployment" / "generate_staging_systemd.sh").read_text(encoding="utf-8")
+    block = re.search(r"    sed \\\n(.*?)\"\$src_file\"", text, re.DOTALL)
+    assert block, "generator sed block not found"
+    exprs = re.findall(r"-e '([^']+)'", block.group(1))
+    target = tmp_path / "guard.service"
+    target.write_text(GUARD_UNIT.read_text(encoding="utf-8"), encoding="utf-8")
+    args = " ".join(f"-e '{e}'" for e in exprs)
+    result = subprocess.run(
+        [BASH, "-c", f"sed -i {args} '{target.as_posix()}'"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    staging = _values(target.read_text(encoding="utf-8"), "RuntimeDirectory")
+    assert staging == ["redhouse-staging-load-guard"]
+
+
 class TestStagingTimersScript:
     SCRIPT = REPO / "deployment" / "staging_timers.sh"
 
