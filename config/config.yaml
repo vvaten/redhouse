@@ -45,7 +45,7 @@ power_cap:
 
 load_budget:
   # Moves pump ON hours that would not fit under the month's cap
-  enabled: false
+  enabled: true
   base_kw: 1.6
   battery_allowance_kw: 1.5
   pump_on_kw: 3.4
