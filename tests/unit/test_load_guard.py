@@ -21,7 +21,7 @@ def _samples(minutes, kw_per_phase, start=HOUR, wh0=0.0, import0=None):
     return out
 
 
-SETTINGS = lg.GuardSettings(garage_kw=2.13, pump_ale_kw=3.0, pump_evu_kw=1.0)
+SETTINGS = lg.GuardSettings(garage_kw=2.13, pump_ale_kw=3.0)
 
 
 def _series(totals_kw):
@@ -36,7 +36,7 @@ def _series(totals_kw):
 # 9 kW until a shed at :20; the shed shows from :21:30
 SHED_AT = HOUR + 20 * 60
 AFTER = SHED_AT + 90
-EVU = [lg.Shed("pump_evu", 1.0)]
+GARAGE = [lg.Shed("garage_off", 2.13)]
 
 
 class TestAfterAShed:
@@ -46,16 +46,16 @@ class TestAfterAShed:
         plain = lg.projected_hour_kw(samples, now)
         after = lg.projected_hour_kw(samples, now, AFTER)
         limit = (plain + after) / 2
-        assert lg.judge(samples, now, 1.0, limit, EVU).sheds == tuple(EVU)
-        verdict = lg.judge(samples, now, 1.0, limit, EVU, AFTER)
+        assert lg.judge(samples, now, 1.0, limit, GARAGE).sheds == tuple(GARAGE)
+        verdict = lg.judge(samples, now, 1.0, limit, GARAGE, AFTER)
         assert not verdict.over and verdict.sheds == ()
         assert verdict.projected_kw == pytest.approx(after)
 
-    @pytest.mark.parametrize("at_22, sheds", [(3.0, ()), (9.0, tuple(EVU))])
+    @pytest.mark.parametrize("at_22, sheds", [(3.0, ()), (9.0, tuple(GARAGE))])
     def test_one_high_reading_after_a_shed_confirms_nothing(self, at_22, sheds):
         """A compressor start at :23 alone sheds nothing; high at :22 and :23 does."""
         samples = _series([9.0] * 21 + [3.0, at_22, 9.0])
-        verdict = lg.judge(samples, HOUR + 23 * 60, 1.0, 6.0, EVU, AFTER)
+        verdict = lg.judge(samples, HOUR + 23 * 60, 1.0, 6.0, GARAGE, AFTER)
         assert verdict.sheds == sheds
 
 
@@ -193,6 +193,17 @@ class TestSheds:
         assert verdict.sheds == ()
         assert verdict.counted_kw == pytest.approx(verdict.projected_kw * 0.8)
 
-    def test_only_loads_that_run_can_be_shed(self):
-        assert lg.available_sheds(SETTINGS, False, "EVU") == []
-        assert [s.load for s in lg.available_sheds(SETTINGS, False, "ALE")] == ["pump_evu"]
+    @pytest.mark.parametrize(
+        "garage, pump, loads",
+        [
+            (True, "ON", ["garage_off", "pump_ale"]),
+            (False, "ON", ["pump_ale"]),
+            # ALE draws nothing to shed, and EVU is never a shed
+            (False, "ALE", []),
+            (True, "ALE", ["garage_off"]),
+            (False, "EVU", []),
+            (False, None, []),
+        ],
+    )
+    def test_only_loads_that_run_can_be_shed_and_never_to_evu(self, garage, pump, loads):
+        assert [s.load for s in lg.available_sheds(SETTINGS, garage, pump)] == loads

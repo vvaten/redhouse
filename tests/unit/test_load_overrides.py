@@ -32,7 +32,9 @@ def test_a_bad_command_or_load_is_ignored(tmp_path):
         [
             {"load_id": lo.PUMP, "command": "ON", "since": 0, "until": 100, "reason": "x"},
             {"load_id": "car", "command": "OFF", "since": 0, "until": 100, "reason": "x"},
-            {"load_id": lo.PUMP, "command": "EVU", "since": 0, "until": "soon", "reason": "x"},
+            {"load_id": lo.PUMP, "command": "ALE", "since": 0, "until": "soon", "reason": "x"},
+            # The guard never holds the pump in EVU
+            {"load_id": lo.PUMP, "command": "EVU", "since": 0, "until": 100, "reason": "x"},
         ],
     )
     assert lo.read_overrides(path) == []
@@ -40,7 +42,7 @@ def test_a_bad_command_or_load_is_ignored(tmp_path):
 
 def test_an_override_longer_than_two_hours_never_runs(tmp_path):
     path = tmp_path / "o.json"
-    _write(path, [{"load_id": lo.PUMP, "command": "EVU", "since": 0, "until": 9000, "reason": "x"}])
+    _write(path, [{"load_id": lo.PUMP, "command": "ALE", "since": 0, "until": 9000, "reason": "x"}])
     assert lo.active_override(path, lo.PUMP, 10) is None
 
 
@@ -55,8 +57,8 @@ def test_the_newest_running_override_wins(tmp_path):
     _write(
         path,
         [
-            {"load_id": lo.PUMP, "command": "ALE", "since": 0, "until": 100, "reason": "x"},
-            {"load_id": lo.PUMP, "command": "EVU", "since": 10, "until": 100, "reason": "x"},
+            {"load_id": lo.PUMP, "command": "ALE", "since": 0, "until": 100, "reason": "old"},
+            {"load_id": lo.PUMP, "command": "ALE", "since": 10, "until": 100, "reason": "new"},
         ],
     )
-    assert lo.active_override(path, lo.PUMP, 50).command == "EVU"
+    assert lo.active_override(path, lo.PUMP, 50).reason == "new"

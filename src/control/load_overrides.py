@@ -15,7 +15,8 @@ from src.control.program_shape import PUMP_LOAD
 
 PUMP = PUMP_LOAD
 GARAGE = "garage_heater"
-COMMANDS = {PUMP: {"ALE", "EVU"}, GARAGE: {"OFF"}}
+# The guard never holds the pump in EVU, so such an entry is ignored
+COMMANDS = {PUMP: {"ALE"}, GARAGE: {"OFF"}}
 PUMP_STATES = {"ON", "ALE", "EVU"}
 # No override may run longer than this, whatever the file says
 MAX_OVERRIDE_S = 2 * 3600

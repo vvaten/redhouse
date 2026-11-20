@@ -126,7 +126,7 @@ class TestMain:
                 "max_import_kw": 34.5,
             }
         )
-        config.load_guard_section = {"mode": "dry_run", "pump_ale_kw": 3.0, "pump_evu_kw": 1.0}
+        config.load_guard_section = {"mode": "dry_run", "pump_ale_kw": 3.0}
         config.garage_section = {
             "relay_urls": ["http://r1/relay/0", "http://r2/relay/0"],
             "heater_kw": [1.07, 1.06],
@@ -227,8 +227,8 @@ class TestMain:
 @pytest.mark.parametrize(
     "section",
     [
-        {"mode": "act", "pump_ale_kw": 3.0},
-        {"mode": "live", "pump_ale_kw": 3.0, "pump_evu_kw": 1.0},
+        {"mode": "act"},
+        {"mode": "live", "pump_ale_kw": 3.0},
     ],
 )
 def test_a_bad_guard_section_is_refused(section):
@@ -273,35 +273,28 @@ class TestAct:
         assert all(o.until == guard.lg.hour_start(self.NOW) + 3600 for o in held)
         assert [o.restore_to for o in held if o.load_id == "geothermal_pump"] == ["ON"]
 
-    def test_evu_wins_over_ale_and_a_pump_already_there_is_left(self, data, monkeypatch):
-        monkeypatch.setattr(guard, "OVERRIDES", data / "load_overrides.json")
+    def test_a_pump_already_in_ale_is_left(self, data):
         pump = self._pump()
-        verdict = self._verdict(["pump_ale", "pump_evu"])
-        assert guard.act(verdict, self.NOW, [], 4500, lambda: pump) == ["pump_evu"]
-        pump.last_command = "EVU"
+        verdict = self._verdict(["pump_ale"])
+        assert guard.act(verdict, self.NOW, [], 4500, lambda: pump) == ["pump_ale"]
+        pump.last_command = "ALE"
         assert guard.act(verdict, self.NOW + 60, [], 4500, lambda: pump) == []
         assert pump.execute_command.call_count == 1
 
-    def test_an_escalation_to_evu_keeps_the_state_before_the_first_shed(self, data):
-        path = data / "load_overrides.json"
-        pump = self._pump(last="ON")
-        assert guard.act(self._verdict(["pump_ale"]), self.NOW, [], 4500, lambda: pump)
-        pump.last_command = "ALE"
-        later = self.NOW + 300
-        assert guard.act(self._verdict(["pump_evu"]), later, [], 4500, lambda: pump)
-        held = guard.lo.active_override(path, "geothermal_pump", later)
-        assert held.command == "EVU" and held.restore_to == "ON"
+    @pytest.mark.parametrize("last", ["EVU", "ALE", None])
+    def test_only_a_pump_that_is_on_is_shed(self, data, last):
+        """A program EVU or ALE written after the verdict stays as it is."""
+        pump = self._pump(last=last)
+        assert guard.act(self._verdict(["pump_ale"]), self.NOW, [], 4500, lambda: pump) == []
+        pump.execute_command.assert_not_called()
+        assert guard.lo.read_overrides(data / "load_overrides.json") == []
 
-    def test_a_failed_escalation_keeps_the_first_hold(self, data):
-        path = data / "load_overrides.json"
-        pump = self._pump(last="ON")
-        assert guard.act(self._verdict(["pump_ale"]), self.NOW, [], 4500, lambda: pump)
-        pump.last_command = "ALE"
-        pump.execute_command = Mock(return_value={"success": False, "error": "i2c"})
-        later = self.NOW + 300
-        assert guard.act(self._verdict(["pump_evu"]), later, [], 4500, lambda: pump) == []
-        held = guard.lo.active_override(path, "geothermal_pump", later)
-        assert held.command == "ALE" and held.restore_to == "ON"
+    @pytest.mark.parametrize("last", ["ON", "ALE"])
+    def test_the_guard_never_sends_evu(self, data, last):
+        pump = self._pump(last=last)
+        assert guard.act(self._verdict(["pump_evu"]), self.NOW, [], 4500, lambda: pump) == []
+        pump.execute_command.assert_not_called()
+        assert guard.lo.read_overrides(data / "load_overrides.json") == []
 
     def test_a_failed_pump_command_leaves_no_hold(self, data, monkeypatch):
         monkeypatch.setattr(guard, "OVERRIDES", data / "load_overrides.json")

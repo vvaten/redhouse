@@ -148,16 +148,13 @@ def _staging(config) -> bool:
 
 def guard_settings(section: dict, garage_kw: float) -> tuple:
     """(mode, GuardSettings) from the config.yaml load_guard section."""
-    keys = ("mode", "pump_ale_kw", "pump_evu_kw")
+    keys = ("mode", "pump_ale_kw")
     missing = [k for k in keys if k not in section]
     if missing:
         raise ValueError(f"config.yaml load_guard section lacks {missing}")
     if section["mode"] not in MODES:
         raise ValueError(f"load_guard mode must be one of {MODES}")
-    settings = lg.GuardSettings(
-        garage_kw, float(section["pump_ale_kw"]), float(section["pump_evu_kw"])
-    )
-    return section["mode"], settings
+    return section["mode"], lg.GuardSettings(garage_kw, float(section["pump_ale_kw"]))
 
 
 def _record(hold: lo.Override, now: float) -> None:
@@ -187,23 +184,18 @@ def _shed_garage(relays: list, off_timer_s: int, now: float, until: float, reaso
     return False
 
 
-def _shed_pump(pump, command: str, now: float, until: float, reason: str) -> bool:
-    if pump.last_command == command:
+def _shed_pump(pump, now: float, until: float, reason: str) -> bool:
+    """ON to ALE only. The state is read under the lock, so a program EVU or
+    ALE written since the verdict is left as it is."""
+    if pump.last_command != "ON":
         return False
-    # An ALE to EVU escalation keeps the state before the first shed
-    held = lo.active_override(OVERRIDES, lo.PUMP, now)
-    first = held is not None and held.restore_to is not None
-    restore_to = held.restore_to if first else pump.last_command
-    hold = lo.Override(lo.PUMP, command, now, until, reason, restore_to)
+    hold = lo.Override(lo.PUMP, "ALE", now, until, reason, "ON")
     _record(hold, now)
-    result = pump.execute_command(command, int(now), int(now))
+    result = pump.execute_command("ALE", int(now), int(now))
     if result["success"]:
         return True
-    logger.error(f"Pump shed to {command} failed: {result['error']}")
+    logger.error(f"Pump shed to ALE failed: {result['error']}")
     _forget(hold, now)
-    if held is not None:
-        # The earlier hold still runs; it keeps the hand-back
-        _record(held, now)
     return False
 
 
@@ -224,7 +216,6 @@ def act(
     until = lg.hour_start(now) + 3600
     reason = f"cap_guard_{verdict.step_class or 'unknown'}"
     loads = {s.load for s in verdict.sheds}
-    pump_cmd = "EVU" if "pump_evu" in loads else "ALE" if "pump_ale" in loads else None
     done = []
     mark("control lock")
     with control_lock(0):
@@ -232,9 +223,9 @@ def act(
         if "garage_off" in loads and _shed_garage(garage_relays, off_timer_s, now, until, reason):
             done.append("garage_off")
         mark("pump")
-        # The pump state file is read here, under the lock
-        if pump_cmd is not None and _shed_pump(make_pump(), pump_cmd, now, until, reason):
-            done.append(f"pump_{pump_cmd.lower()}")
+        # The pump state file is read here, under the lock; never to EVU
+        if "pump_ale" in loads and _shed_pump(make_pump(), now, until, reason):
+            done.append("pump_ale")
     return done
 
 

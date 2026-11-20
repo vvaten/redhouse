@@ -2,7 +2,8 @@
 
 Pure functions. The guard projects the hour from the 3EM energy counter
 and the last minutes' power, names a new load step by its per-phase size,
-and lists what to shed (garage, then the pump to ALE, then EVU).
+and lists what to shed (garage, then the pump to ALE). Never EVU: ALE
+draws nothing until the pump heats water, and EVU only blocks that.
 """
 
 import datetime
@@ -46,7 +47,6 @@ class Shed:
 class GuardSettings:
     garage_kw: float
     pump_ale_kw: float
-    pump_evu_kw: float
 
 
 @dataclass(frozen=True)
@@ -221,8 +221,6 @@ def available_sheds(settings: GuardSettings, garage_on: bool, pump_command: Opti
         sheds.append(Shed("garage_off", settings.garage_kw))
     if pump_command == "ON":
         sheds.append(Shed("pump_ale", settings.pump_ale_kw))
-    if pump_command in ("ON", "ALE"):
-        sheds.append(Shed("pump_evu", settings.pump_evu_kw))
     return sheds
 
 

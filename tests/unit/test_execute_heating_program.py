@@ -215,11 +215,21 @@ class TestGuardHold:
         pump.execute_command.assert_called_once_with("ON", 100, 2600)
 
     def test_without_a_due_entry_the_state_before_the_hold_returns(self, tmp_path, monkeypatch):
-        self._hold(tmp_path / "o.json", 1000, 2000, command="EVU", restore_to="ON")
+        self._hold(tmp_path / "o.json", 1000, 2000, command="ALE", restore_to="ON")
         monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
-        executor, pump = self._executor(last_command="EVU", due=False)
+        executor, pump = self._executor(last_command="ALE", due=False)
         wrapper._restore_after_override(executor, [], 2005)
         pump.execute_command.assert_called_once_with("ON", 2005, 2005)
+
+    def test_an_evu_hold_in_the_file_is_ignored(self, tmp_path, monkeypatch):
+        """The guard never holds the pump in EVU, so such an entry drives nothing."""
+        now = int(datetime.datetime.now().timestamp())
+        self._hold(tmp_path / "o.json", now - 60, now + 600, command="EVU", restore_to="ON")
+        monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
+        assert wrapper.active_override(tmp_path / "o.json", wrapper.PUMP_LOAD, now) is None
+        executor, pump = self._executor(last_command="EVU")
+        wrapper._restore_after_override(executor, [], now + 700)
+        pump.execute_command.assert_not_called()
 
     def test_a_pump_that_left_the_holds_state_is_left_alone(self, tmp_path, monkeypatch):
         self._hold(tmp_path / "o.json", 1000, 2000)

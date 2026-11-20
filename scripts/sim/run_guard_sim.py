@@ -28,7 +28,7 @@ SETTINGS = pc.CapSettings(
     tariff_eur_per_kw=1.97,
     max_import_kw=34.5,
 )
-GUARD = lg.GuardSettings(garage_kw=2.13, pump_ale_kw=3.0, pump_evu_kw=1.0)
+GUARD = lg.GuardSettings(garage_kw=2.13, pump_ale_kw=3.0)
 
 
 def load(name):
@@ -66,9 +66,9 @@ def main():
         "",
         "Limits of the replay: 'after_shed_kw' assumes the first sheds run at",
         "their nominal kW for the rest of the hour and ignores later escalation,",
-        "so the saved count is an optimistic bound. ALE can still run the 6.4 kW",
-        "resistor, and EVU, which stops it, is counted at 1 kW only. The live",
-        "guard misses the rename minutes (:09 :24 :39 :54); the replay does not.",
+        "so the saved count is an optimistic bound. The replay sheds only the",
+        "pump, from ON to ALE, never to EVU, and never the garage. The live guard",
+        "misses the rename minutes (:09 :24 :39 :54); the replay does not.",
         "",
         f"Hours that ended over the guard limit: {len(over)}.",
         f"  of them the guard acted in: {int((over['action_min'] >= 0).sum())}",
