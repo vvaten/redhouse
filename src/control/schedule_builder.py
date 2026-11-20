@@ -29,13 +29,13 @@ class ScheduleBuilder:
         },
         "garage_heater": {
             "priority": 2,
-            "power_kw": 2.0,
+            "power_kw": 2.13,
             "control_type": "shelly_relay",
             "enabled": False,
         },
         "ev_charger": {
             "priority": 3,
-            "power_kw": 11.0,
+            "power_kw": 5.5,
             "control_type": "ocpp",
             "enabled": False,
         },

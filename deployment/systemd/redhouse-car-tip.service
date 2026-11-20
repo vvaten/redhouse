@@ -1,0 +1,17 @@
+[Unit]
+Description=RedHouse Car Charging Tip
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/car_tip.py
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-car-tip
+
+[Install]
+WantedBy=multi-user.target

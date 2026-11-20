@@ -26,7 +26,7 @@ class HeatingProgramExecutor:
     Features:
     - Load v2.0 JSON programs
     - Execute commands at scheduled times
-    - Multi-load support (pump, garage, EV)
+    - Runs the pump only; other loads' entries are plans for their own controllers
     - Mark commands as executed
     - Write actual execution to InfluxDB
     - Handle day transitions
@@ -37,6 +37,9 @@ class HeatingProgramExecutor:
 
     # Maximum delay to execute commands (seconds)
     MAX_EXECUTION_DELAY = 1800  # 30 minutes
+
+    # Other loads have their own controllers; their entries are plans only
+    EXECUTOR_LOADS = frozenset({PUMP_LOAD})
 
     def __init__(self, config: Optional[dict] = None, dry_run: bool = False):
         """
@@ -224,9 +227,14 @@ class HeatingProgramExecutor:
             # Save program after each execution
             self.save_program(program, base_dir)
 
-            # Write to InfluxDB
+            # A missing power must not stop the commands, so only the point is lost
+            load_id = cmd_info["load_id"]
+            if "power_kw" not in program["loads"][load_id]:
+                logger.error(f"Load {load_id} has no power_kw: no actual point written")
+                return "executed"
+            load_power_kw = float(program["loads"][load_id]["power_kw"])
             self._write_execution_to_influx(
-                program["program_date"], cmd_info["load_id"], entry, result
+                program["program_date"], load_id, entry, result, load_power_kw
             )
             return "executed"
         else:
@@ -237,9 +245,11 @@ class HeatingProgramExecutor:
             return "failed"
 
     def _collect_and_sort_commands(self, program: dict) -> list:
-        """All commands of all loads as load_id, entry, timestamp, by time."""
+        """All commands of the executor's loads as load_id, entry, timestamp, by time."""
         all_commands = []
         for load_id, load_data in program["loads"].items():
+            if load_id not in self.EXECUTOR_LOADS:
+                continue
             for entry in load_data["schedule"]:
                 all_commands.append(
                     {
@@ -308,22 +318,7 @@ class HeatingProgramExecutor:
         evu_cycle_performed: bool,
         current_time: int,
     ) -> dict:
-        """
-        Update program state and generate execution summary.
-
-        Args:
-            program: Program dict to update
-            all_commands: All commands list
-            executed_count: Number of executed commands
-            skipped_count: Number of skipped commands
-            failed_count: Number of failed commands
-            next_execution_time: Next scheduled command time
-            evu_cycle_performed: Whether EVU cycle was performed
-            current_time: Current time (epoch)
-
-        Returns:
-            Execution summary dict
-        """
+        """Store the run's execution_status in the program and return the summary."""
         total_commands = len([c for c in all_commands if not c["entry"].get("executed_at")])
         program["execution_status"] = {
             "executed_intervals": executed_count,
@@ -344,18 +339,7 @@ class HeatingProgramExecutor:
     def _execute_command(
         self, load_id: str, entry: dict, scheduled_time: int, actual_time: int
     ) -> dict:
-        """
-        Execute a single command.
-
-        Args:
-            load_id: Load identifier
-            entry: Schedule entry dict
-            scheduled_time: When command was scheduled
-            actual_time: Current time
-
-        Returns:
-            Execution result dict
-        """
+        """Run one command through the load controller; an exception is a failed result."""
         command = entry["command"]
 
         logger.info(
@@ -387,7 +371,7 @@ class HeatingProgramExecutor:
             }
 
     def _write_execution_to_influx(
-        self, program_date: str, load_id: str, entry: dict, result: dict
+        self, program_date: str, load_id: str, entry: dict, result: dict, load_power_kw: float
     ):
         """Write an executed command to the load_control bucket as an "actual" point."""
         if self.dry_run:
@@ -404,7 +388,7 @@ class HeatingProgramExecutor:
             # Determine if load is ON
             is_on = command == "ON"
             is_evu_off = command == "EVU"
-            power_kw = entry.get("power_kw", 0.0) if is_on else 0.0
+            power_kw = load_power_kw if is_on else 0.0
 
             point = (
                 Point("load_control")
@@ -446,16 +430,8 @@ class HeatingProgramExecutor:
     def handle_day_transition(
         self, today_program: dict, yesterday_program: Optional[dict] = None
     ) -> dict:
-        """
-        Handle day transition - merge yesterday's unexecuted commands.
-
-        Args:
-            today_program: Today's program
-            yesterday_program: Yesterday's program (optional)
-
-        Returns:
-            Updated today's program with merged commands
-        """
+        """Append yesterday's unexecuted commands of the executor's loads to today's
+        program, unless today has an entry at the same time. Returns today's program."""
         if yesterday_program is None:
             logger.debug("No yesterday program provided, skipping day transition")
             return today_program
@@ -466,6 +442,8 @@ class HeatingProgramExecutor:
 
         # Check each load in yesterday's program
         for load_id, yesterday_load in yesterday_program.get("loads", {}).items():
+            if load_id not in self.EXECUTOR_LOADS:
+                continue
             if load_id not in today_program["loads"]:
                 logger.warning(f"Load {load_id} in yesterday but not in today's program")
                 continue

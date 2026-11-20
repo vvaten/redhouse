@@ -90,6 +90,16 @@ ALERT_RULES = [
         "max_age_minutes": 180,
         "eval_interval_seconds": 1800,
     },
+    {
+        "name": "Garage heater control stale",
+        "timer": "redhouse-garage-heater",
+        "bucket": "load_control",
+        "measurement": "load_control",
+        # Only the controller's own points: the generator may add garage plans
+        "tags": {"load_id": "garage_heater", "data_type": "actual"},
+        "max_age_minutes": 40,
+        "eval_interval_seconds": 600,
+    },
 ]
 
 # Bucket name mapping from production to staging
@@ -102,4 +112,5 @@ STAGING_BUCKET_MAP = {
     "emeters_5min": "emeters_5min_staging",
     "analytics_15min": "analytics_15min_staging",
     "analytics_1hour": "analytics_1hour_staging",
+    "load_control": "load_control_staging",
 }

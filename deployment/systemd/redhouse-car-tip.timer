@@ -1,0 +1,12 @@
+[Unit]
+Description=RedHouse Car Charging Tip Timer
+
+[Timer]
+# Local time, after tomorrow's prices and the 16:06 program
+OnCalendar=*-*-* 16:35:00
+# Once a day, so a reboot across 16:35 would otherwise skip that day
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

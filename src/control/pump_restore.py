@@ -11,6 +11,7 @@ import subprocess
 import time
 from typing import Optional
 
+from src.common.control_lock import ControlLockTimeout, control_lock
 from src.common.logger import setup_logger
 from src.control.hardware_implementations import MockHardwareInterface
 from src.control.program_fallback import load_valid_program
@@ -27,6 +28,7 @@ PUMP_LOAD = "geothermal_pump"
 CLOCK_SYNC_TIMEOUT = 120
 LATE_SYNC_TIMEOUT = 900
 CLOCK_SYNC_POLL = 5
+LOCK_TIMEOUT_S = 120
 
 
 def due_command(now: int, base_dir: str) -> Optional[dict]:
@@ -88,6 +90,15 @@ def choose_command(
 
 def restore(now: int, base_dir: str, controller: PumpController, clock_ok: bool) -> int:
     """Exit status 0 when a state was applied, 1 when none could be."""
+    try:
+        with control_lock(LOCK_TIMEOUT_S):
+            return _restore(now, base_dir, controller, clock_ok)
+    except ControlLockTimeout as e:
+        logger.error(f"Nothing applied, the control lock is taken: {e}")
+        return 1
+
+
+def _restore(now: int, base_dir: str, controller: PumpController, clock_ok: bool) -> int:
     command = choose_command(now, base_dir, controller, clock_ok)
     if command is None:
         logger.error("No program entry is due and no last known state: nothing applied")

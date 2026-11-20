@@ -40,6 +40,7 @@ for src_file in "$SOURCE_DIR"/redhouse-*.service "$SOURCE_DIR"/redhouse-*.timer;
         -e 's|/opt/redhouse/|/opt/redhouse-staging/|g' \
         -e 's|/opt/redhouse$|/opt/redhouse-staging|g' \
         -e 's|SyslogIdentifier=redhouse-|SyslogIdentifier=redhouse-staging-|g' \
+        -e 's|RuntimeDirectory=redhouse-|RuntimeDirectory=redhouse-staging-|g' \
         -e 's|Description=RedHouse |Description=RedHouse Staging |g' \
         "$src_file" > "/etc/systemd/system/$staging_name"
 

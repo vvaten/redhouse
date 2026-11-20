@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Garage Heater Control Timer
+
+[Timer]
+# Every 15 minutes, 20 s into each price slot, so a decision covers its slot
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:00,15,30,45:20 UTC
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

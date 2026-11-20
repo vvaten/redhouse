@@ -9,6 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from src.common.control_lock import control_lock
 from src.control import pump_restore as pr
 from src.control.hardware_implementations import MockHardwareInterface
 from src.control.pump_controller import PumpController
@@ -317,3 +318,11 @@ class TestRestore:
         )
         assert reloaded.last_command == "ON"
         assert reloaded.on_since == now + controller.EVU_CYCLE_DURATION
+
+
+def test_a_taken_control_lock_applies_nothing(base, controller, monkeypatch):
+    _write(base, D12, [(_at(2026, 10, 12, 8), "ON")])
+    monkeypatch.setattr(pr, "LOCK_TIMEOUT_S", 0)
+    with control_lock(0):
+        assert pr.restore(_at(2026, 10, 12, 9), str(base), controller, True) == 1
+    assert controller.last_command is None

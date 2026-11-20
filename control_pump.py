@@ -13,10 +13,13 @@ import argparse
 import sys
 import time
 
+from src.common.control_lock import ControlLockTimeout, control_lock
 from src.common.logger import setup_logger
 from src.control.pump_controller import PumpController
 
 logger = setup_logger(__name__, "pump_control.log")
+
+LOCK_TIMEOUT_S = 120
 
 
 def main():
@@ -36,8 +39,16 @@ def main():
     )
 
     args = parser.parse_args()
+    try:
+        with control_lock(LOCK_TIMEOUT_S):
+            return _run(args)
+    except ControlLockTimeout as e:
+        print(f"[FAILED] The control lock is taken: {e}")
+        return 1
 
-    # Initialize controller
+
+def _run(args) -> int:
+    # The pump state file is read here, so it must be under the lock
     controller = PumpController(dry_run=args.dry_run)
 
     if args.command == "status":

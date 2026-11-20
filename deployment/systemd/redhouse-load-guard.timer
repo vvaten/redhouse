@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Load Guard Timer
+
+[Timer]
+# Every minute, 30 s in, but not in the bucket rename minutes
+# (:09, :24, :39, :54). In UTC: local time skips the autumn hour
+OnCalendar=*:00..08,10..23,25..38,40..53,55..59:30 UTC
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

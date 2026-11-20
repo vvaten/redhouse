@@ -35,6 +35,7 @@ from typing import Optional
 import pytz
 
 from src.common.local_time import HELSINKI, helsinki_date
+from src.control.program_shape import PUMP_LOAD
 
 
 def find_program_file(target: str) -> Optional[Path]:
@@ -211,9 +212,8 @@ def add_entry(program: dict, start_time: str, end_time: str, mode: str) -> dict:
 
     new_entry = _create_schedule_entry(start_dt, duration_minutes, mode)
 
-    # Add to first load (geothermal_pump typically)
-    load_id = list(program["loads"].keys())[0]
-    schedule = program["loads"][load_id]["schedule"]
+    # The executor runs only the pump's entries
+    schedule = program["loads"][PUMP_LOAD]["schedule"]
 
     # Calculate new entry's time range
     new_start = int(start_dt.timestamp())
@@ -225,7 +225,7 @@ def add_entry(program: dict, start_time: str, end_time: str, mode: str) -> dict:
     filtered_schedule.sort(key=lambda x: x["timestamp"])
 
     # Update schedule
-    program["loads"][load_id]["schedule"] = filtered_schedule
+    program["loads"][PUMP_LOAD]["schedule"] = filtered_schedule
 
     if removed_count > 0:
         print(f"Removed {removed_count} overlapping entry/entries")

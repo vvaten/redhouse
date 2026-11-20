@@ -35,15 +35,22 @@ Examples:
 import argparse
 import datetime
 import sys
+from pathlib import Path
 
+from src.common.control_lock import ControlLockTimeout, control_lock
 from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
+from src.control.load_overrides import active_override, ended_override
 from src.control.program_executor import HeatingProgramExecutor
 from src.control.program_fallback import load_valid_program
-from src.control.program_shape import program_is_well_formed
+from src.control.program_shape import PUMP_LOAD, program_is_well_formed
 from src.monitoring.program_check import program_path
 
 logger = setup_logger(__name__)
+
+# Covers another executor run still in its EVU pulse or a slow write
+LOCK_TIMEOUT_S = 120
+OVERRIDES = Path(__file__).resolve().parent / "data" / "load_overrides.json"
 
 
 def parse_args():
@@ -119,6 +126,30 @@ def _handle_day_transition_if_needed(executor, program, previous_program):
     return program
 
 
+def _restore_after_override(executor, programs: list, now: int) -> None:
+    """Hand the pump back after a guard hold: while it still has the hold's
+    command, apply the program's due state, or the state before the hold."""
+    hold = ended_override(OVERRIDES, PUMP_LOAD, now)
+    if hold is None:
+        return
+    pump = executor.load_controller.pump_controller
+    if pump.last_command != hold.command:
+        return
+    due = executor.due_pump_entry([p for p in programs if p is not None], now)
+    if due is not None:
+        command, scheduled = due["command"], due["timestamp"]
+    elif hold.restore_to is not None:
+        command, scheduled = hold.restore_to, now
+    else:
+        return
+    if command == pump.last_command:
+        return
+    logger.warning(f"Guard hold over: applying {command}")
+    result = pump.execute_command(command, scheduled, now)
+    if not result["success"]:
+        logger.error(f"Could not apply {command} after the hold: {result['error']}")
+
+
 def _print_execution_summary(summary: dict, program_date: str, dry_run: bool):
     """Print execution summary with statistics and next execution time."""
     print("\n" + "=" * 60)
@@ -154,11 +185,26 @@ def main():
     logger.info("=" * 60)
 
     try:
+        with control_lock(LOCK_TIMEOUT_S):
+            return _run(args)
+    except ControlLockTimeout as e:
+        logger.error(f"Not run, the control lock is taken: {e}")
+        return 1
+    except OSError as e:
+        logger.error(f"Not run, cannot open the control lock: {e}")
+        return 1
+
+
+def _run(args) -> int:
+    """Execute the program under the control lock."""
+    try:
         executor = HeatingProgramExecutor(dry_run=args.dry_run)
 
         # Determine date
         program_date = args.date if args.date else helsinki_date().isoformat()
-        logger.info(f"Executing program for {'specified date' if args.date else 'today'}: {program_date}")
+        logger.info(
+            f"Executing program for {'specified date' if args.date else 'today'}: {program_date}"
+        )
 
         # Load programs. Without one the pump keeps its state, so it still
         # needs its EVU pulse while ON, decided by its own last command.
@@ -172,13 +218,22 @@ def main():
             logger.error(f"Program for {program_date} is not well formed")
             program = None
         if program is None:
-            executor.run_periodic_pulse(
-                int(datetime.datetime.now().timestamp()), previous_program=previous_program
-            )
+            now = int(datetime.datetime.now().timestamp())
+            if args.date is None and active_override(OVERRIDES, PUMP_LOAD, now) is None:
+                _restore_after_override(executor, [previous_program], now)
+            executor.run_periodic_pulse(now, previous_program=previous_program)
             return 1
 
         # Handle day transition
         program = _handle_day_transition_if_needed(executor, program, previous_program)
+
+        now = int(datetime.datetime.now().timestamp())
+        held = active_override(OVERRIDES, PUMP_LOAD, now)
+        if held is not None:
+            logger.warning(f"The load guard holds the pump at {held.command} until {held.until}")
+            # Safe in a hold: it pulses an ON pump or applies a due ALE or EVU
+            executor.run_periodic_pulse(now, program, previous_program)
+            return 0
 
         # Apply force flag
         if args.force:
@@ -189,6 +244,9 @@ def main():
         summary = executor.execute_program(
             program, base_dir=args.base_dir, previous_program=previous_program
         )
+
+        if args.date is None:
+            _restore_after_override(executor, [previous_program, program], now)
 
         # Print summary
         _print_execution_summary(summary, program_date, args.dry_run)

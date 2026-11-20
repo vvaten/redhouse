@@ -4,6 +4,7 @@
 import datetime
 import json
 import os
+from pathlib import Path
 from typing import Optional
 
 from src.common.config import get_config
@@ -14,9 +15,11 @@ from src.control.evu_optimizer import EvuOptimizer
 from src.control.heating_curve import HeatingCurve
 from src.control.heating_data_fetcher import HeatingDataFetcher
 from src.control.heating_optimizer import HeatingOptimizer
+from src.control.load_budget import budget_priorities
 from src.control.schedule_builder import ScheduleBuilder
 
 logger = setup_logger(__name__)
+CAP_STATE = Path(__file__).resolve().parents[2] / "data" / "power_cap_state.json"
 
 
 class HeatingProgramGenerator:
@@ -82,13 +85,16 @@ class HeatingProgramGenerator:
         df = self._fetch_and_validate_data(date_offset, program_date.date())
         avg_temperature, hours_to_heat = self._calculate_heating_requirements(df, date_offset)
         day_priorities = self._calculate_and_filter_priorities(df, date_offset)
+        day_priorities = budget_priorities(day_priorities, self.config, CAP_STATE, program_date)
 
         # Select cheapest hours for heating
         selected_hours = self.optimizer.select_cheapest_hours(day_priorities, hours_to_heat)
 
         # Calculate EVU-OFF periods
+        # With a budget the heating hours are not the cheapest, so EVU skips them
+        keep = selected_hours.index if "over_cap" in day_priorities else None
         evu_off_periods = self.evu_optimizer.generate_evu_off_periods(
-            df, self.optimizer.calculate_heating_priorities(df), hours_to_heat, date_offset
+            df, self.optimizer.calculate_heating_priorities(df), hours_to_heat, date_offset, keep
         )
 
         # Generate schedules for each load

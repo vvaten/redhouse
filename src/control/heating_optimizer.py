@@ -274,8 +274,11 @@ class HeatingOptimizer:
             logger.warning("Empty DataFrame provided to select_cheapest_hours")
             return pd.DataFrame()
 
-        # Sort by priority (lowest = cheapest)
-        sorted_df = priorities_df.sort_values("heating_prio")
+        # Cheapest first; with a power budget, hours over the cap come last
+        if "over_cap" in priorities_df:
+            sorted_df = priorities_df.sort_values(["over_cap", "heating_prio"], kind="stable")
+        else:
+            sorted_df = priorities_df.sort_values("heating_prio")
 
         # Select ceil(num_hours) slots; last one may be partial
         num_hours_int = math.ceil(num_hours)
