@@ -56,6 +56,10 @@ RELAY_TIMEOUT_S = 3.0
 # A garage state older than this is not trusted
 STATE_MAX_AGE_S = 1800
 OVERRIDES = DATA / "load_overrides.json"
+# A shed shows in the 3EM power this long after the switch
+SHED_DELAY_S = 90
+# Until then the projection's 5-minute mean still holds readings from before a shed
+SETTLE_S = lg.RECENT_MIN * 60 + SHED_DELAY_S
 TEST_LIMIT_ENV = "LOAD_GUARD_TEST_LIMIT_KW"
 # Under the unit's TimeoutStartSec of 45 s, so the log names the stuck stage
 DEADLINE_S = 35
@@ -119,6 +123,16 @@ def garage_sheddable(now: float) -> bool:
     return state["on"] and fresh and state["reason"] == "plan_heat"
 
 
+def fresh_shed(now: float) -> Optional[float]:
+    """The start of the newest running hold that began less than SETTLE_S ago."""
+    starts = [
+        o.since
+        for o in lo.read_overrides(OVERRIDES)
+        if o.active(now) and now - o.since < SETTLE_S
+    ]
+    return max(starts) if starts else None
+
+
 def pump_command(path: Path) -> Optional[str]:
     state = _json_state(path)
     if state is None or "last_command" not in state:
@@ -176,13 +190,20 @@ def _shed_garage(relays: list, off_timer_s: int, now: float, until: float, reaso
 def _shed_pump(pump, command: str, now: float, until: float, reason: str) -> bool:
     if pump.last_command == command:
         return False
-    hold = lo.Override(lo.PUMP, command, now, until, reason, pump.last_command)
+    # An ALE to EVU escalation keeps the state before the first shed
+    held = lo.active_override(OVERRIDES, lo.PUMP, now)
+    first = held is not None and held.restore_to is not None
+    restore_to = held.restore_to if first else pump.last_command
+    hold = lo.Override(lo.PUMP, command, now, until, reason, restore_to)
     _record(hold, now)
     result = pump.execute_command(command, int(now), int(now))
     if result["success"]:
         return True
     logger.error(f"Pump shed to {command} failed: {result['error']}")
     _forget(hold, now)
+    if held is not None:
+        # The earlier hold still runs; it keeps the hand-back
+        _record(held, now)
     return False
 
 
@@ -218,12 +239,13 @@ def act(
 
 
 def verdict_point(
-    verdict: lg.Verdict, now: float, sample: lg.Sample, mode: str, done: list
+    verdict: lg.Verdict, now: float, sample: lg.Sample, mode: str, done: list, waiting: bool
 ) -> Point:
     return (
         Point("load_guard")
         .tag("data_type", "actual" if mode == "act" else "dry_run")
         .field("over", verdict.over)
+        .field("waiting", waiting)
         .field("done", ",".join(done))
         .field("projected_kw", float(verdict.projected_kw))
         .field("counted_kw", float(verdict.counted_kw))
@@ -263,6 +285,26 @@ def _act(config, verdict: lg.Verdict, now: float, staging: bool, watchdog: Watch
     return done
 
 
+def _limit_kw(hour: datetime.datetime, settings: pc.CapSettings) -> float:
+    if TEST_LIMIT_ENV in os.environ:
+        # Only for the supervised cutover test: a low limit makes the guard act
+        limit_kw = float(os.environ[TEST_LIMIT_ENV])
+        logger.warning(f"Test limit {limit_kw} kW from {TEST_LIMIT_ENV}")
+        return limit_kw
+    return pc.guard_limit_kw(pc.read_cap_kw(CAP_STATE, hour, settings), settings)
+
+
+def _sheds_now(now: float, samples: list, guard: lg.GuardSettings, pump_file: Path) -> tuple:
+    """(available sheds, power_after, waiting). After a fresh shed only the
+    later readings show the load, and two are needed before the next shed."""
+    shed_at = fresh_shed(now)
+    power_after = None if shed_at is None else shed_at + SHED_DELAY_S
+    if power_after is not None and len([s for s in samples if s.t > power_after]) < 2:
+        return [], power_after, True
+    available = lg.available_sheds(guard, garage_sheddable(now), pump_command(pump_file))
+    return available, power_after, False
+
+
 def main(watchdog: Watchdog) -> int:
     watchdog.mark("config")
     config = get_config()
@@ -282,24 +324,20 @@ def main(watchdog: Watchdog) -> int:
         logger.error(f"Minute log not saved, the guard goes on without it: {e}")
     watchdog.mark("cap and states")
     hour = lg.utc(lg.hour_start(now))
-    cap_kw = pc.read_cap_kw(CAP_STATE, hour, settings)
-    limit_kw = pc.guard_limit_kw(cap_kw, settings)
-    if TEST_LIMIT_ENV in os.environ:
-        # Only for the supervised cutover test: a low limit makes the guard act
-        limit_kw = float(os.environ[TEST_LIMIT_ENV])
-        logger.warning(f"Test limit {limit_kw} kW from {TEST_LIMIT_ENV}")
+    limit_kw = _limit_kw(hour, settings)
     staging = _staging(config)
     pump_file = DATA / ("pump_state_dry_run.json" if staging else "pump_state.json")
     garage_kw = gc.load_settings(config.garage_section).total_kw
     mode, guard = guard_settings(config.load_guard_section, garage_kw)
-    available = lg.available_sheds(guard, garage_sheddable(now), pump_command(pump_file))
-    verdict = lg.judge(samples, now, pc.factor(hour, settings), limit_kw, available)
+    available, power_after, waiting = _sheds_now(now, samples, guard, pump_file)
+    verdict = lg.judge(samples, now, pc.factor(hour, settings), limit_kw, available, power_after)
     if verdict is None:
         logger.warning("No projection: no sample this hour, or the counter jumped")
         return 0
     done: list = []
     if verdict.over and not verdict.sheds:
-        logger.warning(f"Over the limit at {verdict.counted_kw:.2f} kW with nothing to shed")
+        why = "the last shed does not show yet" if waiting else "nothing to shed"
+        logger.warning(f"Over the limit at {verdict.counted_kw:.2f} kW: {why}")
     if verdict.sheds:
         logger.warning(
             f"{mode}: shed {[s.load for s in verdict.sheds]}: counted {verdict.counted_kw:.2f} kW "
@@ -310,7 +348,7 @@ def main(watchdog: Watchdog) -> int:
     watchdog.mark("InfluxDB write")
     try:
         influx = InfluxClient(config, timeout_ms=INFLUX_TIMEOUT_MS)
-        point = verdict_point(verdict, now, sample, mode, done)
+        point = verdict_point(verdict, now, sample, mode, done, waiting)
         # One try: a retry would not fit the deadline, and the next minute writes anew
         influx.write_api.write(bucket=config.influxdb_bucket_load_control, record=point)
     except Exception as e:

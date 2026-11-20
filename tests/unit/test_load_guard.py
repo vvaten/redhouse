@@ -24,6 +24,41 @@ def _samples(minutes, kw_per_phase, start=HOUR, wh0=0.0, import0=None):
 SETTINGS = lg.GuardSettings(garage_kw=2.13, pump_ale_kw=3.0, pump_evu_kw=1.0)
 
 
+def _series(totals_kw):
+    """One sample a minute from the hour's start, with the given total kW each minute."""
+    out, wh = [], 0.0
+    for m, kw in enumerate(totals_kw):
+        out.append(lg.Sample(HOUR + m * 60, (kw / 3,) * 3, wh, wh))
+        wh += kw * 1000 / 60
+    return out
+
+
+# 9 kW until a shed at :20; the shed shows from :21:30
+SHED_AT = HOUR + 20 * 60
+AFTER = SHED_AT + 90
+EVU = [lg.Shed("pump_evu", 1.0)]
+
+
+class TestAfterAShed:
+    def test_a_shed_that_works_ends_the_excess(self):
+        samples = _series([9.0] * 21 + [3.0] * 3)
+        now = HOUR + 23 * 60
+        plain = lg.projected_hour_kw(samples, now)
+        after = lg.projected_hour_kw(samples, now, AFTER)
+        limit = (plain + after) / 2
+        assert lg.judge(samples, now, 1.0, limit, EVU).sheds == tuple(EVU)
+        verdict = lg.judge(samples, now, 1.0, limit, EVU, AFTER)
+        assert not verdict.over and verdict.sheds == ()
+        assert verdict.projected_kw == pytest.approx(after)
+
+    @pytest.mark.parametrize("at_22, sheds", [(3.0, ()), (9.0, tuple(EVU))])
+    def test_one_high_reading_after_a_shed_confirms_nothing(self, at_22, sheds):
+        """A compressor start at :23 alone sheds nothing; high at :22 and :23 does."""
+        samples = _series([9.0] * 21 + [3.0, at_22, 9.0])
+        verdict = lg.judge(samples, HOUR + 23 * 60, 1.0, 6.0, EVU, AFTER)
+        assert verdict.sheds == sheds
+
+
 class TestProjection:
     def test_a_steady_load_projects_itself(self):
         samples = _samples(31, (1.0, 1.0, 1.0))
@@ -34,6 +69,17 @@ class TestProjection:
         late = _samples(5, (3.0, 3.0, 3.0), start=HOUR + 30 * 60, wh0=early[-1].net_wh + 50)
         projected = lg.projected_hour_kw(early + late, HOUR + 34 * 60)
         assert 5.5 < projected < 6.5
+
+    def test_after_a_shed_only_the_later_power_counts(self):
+        """3 kW a phase until :20, then 1 kW: the 5-minute mean still holds the 3 kW."""
+        high = _samples(21, (3.0, 3.0, 3.0))
+        low = _samples(3, (1.0, 1.0, 1.0), start=HOUR + 21 * 60, wh0=high[-1].net_wh + 150)
+        now = HOUR + 23 * 60
+        mixed = lg.projected_hour_kw(high + low, now)
+        after = lg.projected_hour_kw(high + low, now, power_after=HOUR + 20 * 60 + 30)
+        rest_h = (3600 - 23 * 60) / 3600
+        assert after == pytest.approx(mixed - (9.0 - 3.0) * 2 / 5 * rest_h, abs=0.01)
+        assert after < mixed
 
     def test_no_sample_in_the_hour_gives_none(self):
         samples = _samples(10, (1.0, 1.0, 1.0), start=HOUR - 3600)

@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -36,6 +37,7 @@ def data(tmp_path, monkeypatch):
     monkeypatch.setattr(guard, "CAP_STATE", tmp_path / "power_cap_state.json")
     monkeypatch.setattr(guard, "GARAGE_STATE", tmp_path / "garage_state.json")
     monkeypatch.setattr(guard, "DATA", tmp_path)
+    monkeypatch.setattr(guard, "OVERRIDES", tmp_path / "load_overrides.json")
     return tmp_path
 
 
@@ -178,6 +180,41 @@ class TestMain:
         line = run.write_api.write.call_args.kwargs["record"].to_line_protocol()
         assert "limit_kw=1.5" in line
 
+    @pytest.mark.parametrize(
+        "age_s, earlier_s, blocked, after",
+        [
+            # One minute after a shed no reading shows it yet: nothing more is shed
+            (60, None, True, True),
+            # The earlier reading is before the shed shows: one is not enough
+            (130, 60, True, True),
+            # Two readings after the shed: they alone give the power
+            (200, 60, False, True),
+            (guard.SETTLE_S + 60, None, False, False),
+        ],
+    )
+    def test_after_a_shed_only_the_later_readings_count(
+        self, run, data, monkeypatch, age_s, earlier_s, blocked, after
+    ):
+        monkeypatch.setattr(guard.requests, "get", Mock(return_value=_response(STATUS)))
+        now = time.time()
+        (data / "pump_state.json").write_text(json.dumps({"last_command": "ALE"}))
+        _garage(data, now=now)
+        if earlier_s is not None:
+            row = [now - earlier_s, 2.0, 2.0, 2.0, 16990.0, 17990.0]
+            (data / "guard_minutes.json").write_text(json.dumps([row]))
+        hold = guard.lo.Override("geothermal_pump", "ALE", now - age_s, now + 900, "x", "ON")
+        guard.lo.write_overrides(data / "load_overrides.json", [hold], now)
+        judge = Mock(wraps=guard.lg.judge)
+        monkeypatch.setattr(guard.lg, "judge", judge)
+        assert guard.main(guard.Watchdog(60)) == 0
+        available, power_after = judge.call_args.args[4], judge.call_args.args[5]
+        assert (available == []) is blocked
+        assert (power_after is not None) is after
+        if after:
+            assert power_after == pytest.approx(now - age_s + guard.SHED_DELAY_S, abs=1)
+        line = run.write_api.write.call_args.kwargs["record"].to_line_protocol()
+        assert f"waiting={'true' if blocked else 'false'}" in line
+
     def test_staging_reads_the_mock_pump_state(self, run, data, monkeypatch):
         monkeypatch.setattr(guard.requests, "get", Mock(return_value=_response(STATUS)))
         monkeypatch.setenv("STAGING_MODE", "true")
@@ -245,6 +282,27 @@ class TestAct:
         assert guard.act(verdict, self.NOW + 60, [], 4500, lambda: pump) == []
         assert pump.execute_command.call_count == 1
 
+    def test_an_escalation_to_evu_keeps_the_state_before_the_first_shed(self, data):
+        path = data / "load_overrides.json"
+        pump = self._pump(last="ON")
+        assert guard.act(self._verdict(["pump_ale"]), self.NOW, [], 4500, lambda: pump)
+        pump.last_command = "ALE"
+        later = self.NOW + 300
+        assert guard.act(self._verdict(["pump_evu"]), later, [], 4500, lambda: pump)
+        held = guard.lo.active_override(path, "geothermal_pump", later)
+        assert held.command == "EVU" and held.restore_to == "ON"
+
+    def test_a_failed_escalation_keeps_the_first_hold(self, data):
+        path = data / "load_overrides.json"
+        pump = self._pump(last="ON")
+        assert guard.act(self._verdict(["pump_ale"]), self.NOW, [], 4500, lambda: pump)
+        pump.last_command = "ALE"
+        pump.execute_command = Mock(return_value={"success": False, "error": "i2c"})
+        later = self.NOW + 300
+        assert guard.act(self._verdict(["pump_evu"]), later, [], 4500, lambda: pump) == []
+        held = guard.lo.active_override(path, "geothermal_pump", later)
+        assert held.command == "ALE" and held.restore_to == "ON"
+
     def test_a_failed_pump_command_leaves_no_hold(self, data, monkeypatch):
         monkeypatch.setattr(guard, "OVERRIDES", data / "load_overrides.json")
         pump = self._pump(ok=False)
@@ -286,6 +344,31 @@ def test_the_guard_makes_one_short_try_per_relay():
     relays = guard._relays(["http://r1/relay/0"], staging=False)
     assert relays[0].tries == 1 and relays[0].timeout_s == guard.RELAY_TIMEOUT_S
     assert isinstance(guard._relays(["http://r1/relay/0"], staging=True)[0], guard.MockGarageRelay)
+
+
+NOW = 1_800_000_000.0
+
+
+@pytest.mark.parametrize(
+    "holds, expected",
+    [
+        ([("garage_heater", -60, 600)], NOW - 60),
+        ([("garage_heater", -guard.SETTLE_S + 5, 600)], NOW - guard.SETTLE_S + 5),
+        ([("garage_heater", -guard.SETTLE_S - 5, 600)], None),
+        # An ended hold and a hold not yet begun settle nothing
+        ([("garage_heater", -1200, -60)], None),
+        ([("garage_heater", 60, 600)], None),
+        # The newest fresh hold counts
+        ([("garage_heater", -300, 600), ("geothermal_pump", -120, 600)], NOW - 120),
+    ],
+)
+def test_the_fresh_shed_is_the_newest_running_hold_within_settle(data, holds, expected):
+    overrides = [
+        guard.lo.Override(load, "OFF" if load == "garage_heater" else "ALE", NOW + s, NOW + u, "x")
+        for load, s, u in holds
+    ]
+    guard.lo.write_overrides(data / "load_overrides.json", overrides, NOW)
+    assert guard.fresh_shed(NOW) == expected
 
 
 def test_the_minute_log_goes_to_the_runtime_directory(monkeypatch, tmp_path):

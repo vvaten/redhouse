@@ -76,8 +76,11 @@ def _energy_at_start(samples: list, start: float, first: Sample) -> float:
     return first.net_wh - max(first.total_kw, 0.0) * (first.t - start) / 3.6
 
 
-def projected_hour_kw(samples: list, now: float) -> Optional[float]:
-    """The hour's mean import if the last RECENT_MIN minutes' power holds.
+def projected_hour_kw(
+    samples: list, now: float, power_after: Optional[float] = None
+) -> Optional[float]:
+    """The hour's mean import if the last RECENT_MIN minutes' power holds;
+    with power_after, only the power of samples after it counts.
 
     None with no sample in the hour, an import counter that fell (a 3EM
     reboot) or one that rose faster than any real load (a glitch)."""
@@ -91,7 +94,10 @@ def projected_hour_kw(samples: list, now: float) -> Optional[float]:
     span_h = max(last.t - first.t, 60.0) / 3600
     if (last.import_wh - first.import_wh) / 1000 / span_h > MAX_IMPORT_KW:
         return None
-    recent = [s for s in in_hour if s.t > now - RECENT_MIN * 60] or [last]
+    recent = [s for s in in_hour if s.t > now - RECENT_MIN * 60]
+    if power_after is not None:
+        recent = [s for s in recent if s.t > power_after]
+    recent = recent or [last]
     power_kw = max(sum(s.total_kw for s in recent) / len(recent), 0.0)
     so_far_kwh = max((last.net_wh - _energy_at_start(samples, start, first)) / 1000, 0.0)
     rest_kwh = power_kw * (start + 3600 - last.t) / 3600
@@ -175,28 +181,34 @@ def judge(
     factor: float,
     limit_kw: float,
     available: list,
+    power_after: Optional[float] = None,
 ) -> Optional[Verdict]:
-    """This minute's verdict, or None without a projection."""
-    projected = projected_hour_kw(samples, now)
+    """This minute's verdict, or None without a projection. power_after
+    limits the projection's power to the samples after a shed."""
+    projected = projected_hour_kw(samples, now, power_after)
     if projected is None:
         return None
     step = phase_step(samples, now)
     label = classify_step(step) if step is not None else None
     counted = projected * factor
-    over = counted > limit_kw and _confirmed(samples, now, factor, limit_kw)
+    over = counted > limit_kw and _confirmed(samples, now, factor, limit_kw, power_after)
     sheds = sheds_needed(projected, factor, limit_kw, now, available) if over else ()
     return Verdict(hour_start(now), projected, counted, limit_kw, label, sheds, over)
 
 
-def _confirmed(samples: list, now: float, factor: float, limit_kw: float) -> bool:
+def _confirmed(
+    samples: list, now: float, factor: float, limit_kw: float, power_after: Optional[float]
+) -> bool:
     """The projection was also over the limit in the minutes before, in this
-    hour: a spike of a minute or two sheds nothing."""
+    hour: a spike of a minute or two sheds nothing. Minutes after power_after
+    count only the power after it, so a fresh shed is judged on its own."""
     for back in range(1, CONFIRM_MIN):
         # Half a minute of slack: the runs do not start at the exact second
         t = now - back * 60 + 30
         if hour_start(t) != hour_start(now):
             return False
-        earlier = projected_hour_kw([s for s in samples if s.t <= t], t)
+        after = power_after if power_after is not None and t > power_after else None
+        earlier = projected_hour_kw([s for s in samples if s.t <= t], t, after)
         if earlier is None or earlier * factor <= limit_kw:
             return False
     return True
