@@ -68,7 +68,7 @@ car_tip:
 
 load_guard:
   # dry_run logs what it would shed; act sheds (staging: mocks only)
-  mode: dry_run
+  mode: act
   # The compressor above the base load; EVU also stops the pump's resistor
   pump_ale_kw: 3.0
   pump_evu_kw: 1.0
