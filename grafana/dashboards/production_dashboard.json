@@ -960,6 +960,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -1389,6 +1390,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -1413,6 +1415,417 @@
                 }
             ],
             "title": "Local Weather Forecast",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 10,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "spanNulls": true,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "watt"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Production"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Actual production"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "dark-green",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Hourly forecast"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "light-green",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Daily forecast"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-green",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "FMI forecast"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 16
+            },
+            "id": 22,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "none"
+                },
+                "yAxis": {
+                    "softMax": 5500,
+                    "softMin": 0
+                }
+            },
+            "pluginVersion": "11.5.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"windpower\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"windpower\")\n  |> filter(fn: (r) => r[\"_field\"] != \"Max capacity\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
+                }
+            ],
+            "title": "Wind Power (Finland) MW",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "description": "Raw < 48h, 15min < 8d, 1hour > 8d",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 5,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "celsius"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "air_temperature"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "FMI forecast"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "dark-blue",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
+                            },
+                            {
+                                "id": "custom.spanNulls",
+                                "value": true
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Ulkolämpö"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Outdoor"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Autotalli"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Garage"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-green",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 16
+            },
+            "id": 15,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "pluginVersion": "11.5.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "pastStop = if v.timeRangeStop > now() then now() else v.timeRangeStop\nwindowDuration = int(v: pastStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"temperatures\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"temperatures\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /Ulkol.mp.$/ or r[\"_field\"] == \"Autotalli\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /Ulkol.mp.$/ or r[\"_field\"] == \"Autotalli\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt3 = from(bucket: \"analytics_1hour\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /Ulkol.mp.$/ or r[\"_field\"] == \"Autotalli\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"sensors\")",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"weather\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"weather\")\n  |> filter(fn: (r) => r[\"_field\"] == \"air_temperature\" or r[\"_field\"] == \"Air temperature\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"forecast\")",
+                    "refId": "B"
+                }
+            ],
+            "title": "Outdoor Temperatures",
             "type": "timeseries"
         },
         {
@@ -1704,7 +2117,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 16
+                "y": 24
             },
             "id": 14,
             "options": {
@@ -1718,6 +2131,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -1757,462 +2171,7 @@
                 "type": "influxdb",
                 "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
             },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "palette-classic"
-                    },
-                    "custom": {
-                        "axisBorderShow": false,
-                        "axisCenteredZero": false,
-                        "axisColorMode": "text",
-                        "axisLabel": "",
-                        "axisPlacement": "auto",
-                        "barAlignment": 0,
-                        "barWidthFactor": 0.6,
-                        "drawStyle": "line",
-                        "fillOpacity": 5,
-                        "gradientMode": "none",
-                        "hideFrom": {
-                            "legend": false,
-                            "tooltip": false,
-                            "viz": false
-                        },
-                        "insertNulls": false,
-                        "lineInterpolation": "linear",
-                        "lineWidth": 1,
-                        "pointSize": 5,
-                        "scaleDistribution": {
-                            "type": "linear"
-                        },
-                        "showPoints": "auto",
-                        "spanNulls": false,
-                        "stacking": {
-                            "group": "A",
-                            "mode": "none"
-                        },
-                        "thresholdsStyle": {
-                            "mode": "off"
-                        }
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": null
-                            },
-                            {
-                                "color": "red",
-                                "value": 80
-                            }
-                        ]
-                    },
-                    "unit": "celsius"
-                },
-                "overrides": [
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "air_temperature"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "FMI forecast"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "dark-blue",
-                                    "mode": "fixed"
-                                }
-                            },
-                            {
-                                "id": "custom.lineWidth",
-                                "value": 2
-                            },
-                            {
-                                "id": "custom.spanNulls",
-                                "value": true
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "Ulkolämpö"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Outdoor"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "semi-dark-orange",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "Autotalli"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Garage"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "semi-dark-green",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    }
-                ]
-            },
-            "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 16
-            },
-            "id": 15,
-            "options": {
-                "legend": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "displayMode": "list",
-                    "placement": "bottom",
-                    "showLegend": true
-                },
-                "tooltip": {
-                    "mode": "multi",
-                    "sort": "none"
-                }
-            },
-            "pluginVersion": "11.5.2",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "influxdb",
-                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-                    },
-                    "query": "pastStop = if v.timeRangeStop > now() then now() else v.timeRangeStop\nwindowDuration = int(v: pastStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"temperatures\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"temperatures\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /Ulkol.mp.$/ or r[\"_field\"] == \"Autotalli\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /Ulkol.mp.$/ or r[\"_field\"] == \"Autotalli\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt3 = from(bucket: \"analytics_1hour\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /Ulkol.mp.$/ or r[\"_field\"] == \"Autotalli\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"sensors\")",
-                    "refId": "A"
-                },
-                {
-                    "datasource": {
-                        "type": "influxdb",
-                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-                    },
-                    "query": "from(bucket: \"weather\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"weather\")\n  |> filter(fn: (r) => r[\"_field\"] == \"air_temperature\" or r[\"_field\"] == \"Air temperature\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"forecast\")",
-                    "refId": "B"
-                }
-            ],
-            "title": "Outdoor Temperatures",
-            "type": "timeseries",
-            "description": "Raw < 48h, 15min < 8d, 1hour > 8d"
-        },
-        {
-            "datasource": {
-                "type": "influxdb",
-                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "palette-classic"
-                    },
-                    "custom": {
-                        "axisBorderShow": false,
-                        "axisCenteredZero": false,
-                        "axisColorMode": "text",
-                        "axisLabel": "",
-                        "axisPlacement": "auto",
-                        "barAlignment": 0,
-                        "barWidthFactor": 0.6,
-                        "drawStyle": "line",
-                        "fillOpacity": 5,
-                        "gradientMode": "none",
-                        "hideFrom": {
-                            "legend": false,
-                            "tooltip": false,
-                            "viz": false
-                        },
-                        "insertNulls": false,
-                        "lineInterpolation": "linear",
-                        "lineWidth": 1,
-                        "pointSize": 5,
-                        "scaleDistribution": {
-                            "type": "linear"
-                        },
-                        "showPoints": "never",
-                        "spanNulls": false,
-                        "stacking": {
-                            "group": "A",
-                            "mode": "none"
-                        },
-                        "thresholdsStyle": {
-                            "mode": "off"
-                        }
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": null
-                            },
-                            {
-                                "color": "red",
-                                "value": 80
-                            }
-                        ]
-                    },
-                    "unit": "watt"
-                },
-                "overrides": [
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "Battery_SoC"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Battery SoC %"
-                            },
-                            {
-                                "id": "unit",
-                                "value": "percent"
-                            },
-                            {
-                                "id": "custom.axisPlacement",
-                                "value": "right"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "semi-dark-green",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "SolarYield"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Solar"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "super-light-yellow",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "BatteryCharge"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Battery charge"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "green",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "BatteryDischarge"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Battery discharge"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "orange",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "EnergyImport"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Grid import"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "dark-red",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "EnergyExport"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Grid export"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "dark-blue",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byFrameRefID",
-                            "options": "Now"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Now"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "#8F8F8F",
-                                    "mode": "fixed"
-                                }
-                            },
-                            {
-                                "id": "custom.lineWidth",
-                                "value": 1
-                            },
-                            {
-                                "id": "custom.fillOpacity",
-                                "value": 0
-                            },
-                            {
-                                "id": "custom.lineStyle",
-                                "value": {
-                                    "dash": [
-                                        4,
-                                        4
-                                    ],
-                                    "fill": "dash"
-                                }
-                            },
-                            {
-                                "id": "custom.hideFrom",
-                                "value": {
-                                    "legend": true,
-                                    "tooltip": true,
-                                    "viz": false
-                                }
-                            },
-                            {
-                                "id": "custom.axisPlacement",
-                                "value": "hidden"
-                            },
-                            {
-                                "id": "min",
-                                "value": 0
-                            },
-                            {
-                                "id": "max",
-                                "value": 1
-                            }
-                        ]
-                    }
-                ]
-            },
-            "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 24
-            },
-            "id": 16,
-            "options": {
-                "legend": {
-                    "calcs": [
-                        "mean",
-                        "max"
-                    ],
-                    "displayMode": "list",
-                    "placement": "bottom",
-                    "showLegend": true
-                },
-                "tooltip": {
-                    "mode": "multi",
-                    "sort": "none"
-                }
-            },
-            "pluginVersion": "11.5.2",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "influxdb",
-                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-                    },
-                    "query": "pastStop = if v.timeRangeStop > now() then now() else v.timeRangeStop\nwindowDuration = int(v: pastStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"checkwatt\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"checkwatt\")\n  |> filter(fn: (r) => r[\"_field\"] == \"SolarYield\" or r[\"_field\"] == \"BatteryCharge\" or r[\"_field\"] == \"BatteryDischarge\" or r[\"_field\"] == \"EnergyImport\" or r[\"_field\"] == \"EnergyExport\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"emeters_5min\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy\")\n  |> filter(fn: (r) => r[\"_field\"] == \"solar_yield_avg\" or r[\"_field\"] == \"battery_charge_avg\" or r[\"_field\"] == \"battery_discharge_avg\" or r[\"_field\"] == \"energy_import_avg\" or r[\"_field\"] == \"energy_export_avg\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: if r._field == \"solar_yield_avg\" then \"SolarYield\" else if r._field == \"battery_charge_avg\" then \"BatteryCharge\" else if r._field == \"battery_discharge_avg\" then \"BatteryDischarge\" else if r._field == \"energy_import_avg\" then \"EnergyImport\" else if r._field == \"energy_export_avg\" then \"EnergyExport\" else r._field}))\n\nt3 = from(bucket: \"analytics_15min\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"solar_yield_avg\" or r[\"_field\"] == \"battery_charge_avg\" or r[\"_field\"] == \"battery_discharge_avg\" or r[\"_field\"] == \"energy_import_avg\" or r[\"_field\"] == \"energy_export_avg\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: if r._field == \"solar_yield_avg\" then \"SolarYield\" else if r._field == \"battery_charge_avg\" then \"BatteryCharge\" else if r._field == \"battery_discharge_avg\" then \"BatteryDischarge\" else if r._field == \"energy_import_avg\" then \"EnergyImport\" else if r._field == \"energy_export_avg\" then \"EnergyExport\" else r._field}))\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
-                    "refId": "A"
-                },
-                {
-                    "datasource": {
-                        "type": "influxdb",
-                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-                    },
-                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
-                    "refId": "Now"
-                }
-            ],
-            "title": "CheckWatt",
-            "type": "timeseries"
-        },
-        {
-            "datasource": {
-                "type": "influxdb",
-                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-            },
+            "description": "Raw < 48h, 15min < 8d, 1hour > 8d",
             "fieldConfig": {
                 "defaults": {
                     "color": {
@@ -2527,6 +2486,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -2543,8 +2503,7 @@
                 }
             ],
             "title": "Indoor Temperatures",
-            "type": "timeseries",
-            "description": "Raw < 48h, 15min < 8d, 1hour > 8d"
+            "type": "timeseries"
         },
         {
             "datasource": {
@@ -2564,8 +2523,8 @@
                         "axisPlacement": "auto",
                         "barAlignment": 0,
                         "barWidthFactor": 0.6,
-                        "drawStyle": "bars",
-                        "fillOpacity": 80,
+                        "drawStyle": "line",
+                        "fillOpacity": 5,
                         "gradientMode": "none",
                         "hideFrom": {
                             "legend": false,
@@ -2603,23 +2562,31 @@
                             }
                         ]
                     },
-                    "unit": "currencyEUR"
+                    "unit": "watt"
                 },
                 "overrides": [
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "net_cost"
+                            "options": "Battery_SoC"
                         },
                         "properties": [
                             {
                                 "id": "displayName",
-                                "value": "Net cost"
+                                "value": "Battery SoC %"
+                            },
+                            {
+                                "id": "unit",
+                                "value": "percent"
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "right"
                             },
                             {
                                 "id": "color",
                                 "value": {
-                                    "fixedColor": "dark-red",
+                                    "fixedColor": "semi-dark-green",
                                     "mode": "fixed"
                                 }
                             }
@@ -2628,31 +2595,12 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "total_electricity_cost"
+                            "options": "SolarYield"
                         },
                         "properties": [
                             {
                                 "id": "displayName",
-                                "value": "Grid cost"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "orange",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "total_solar_savings"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Solar savings"
+                                "value": "Solar"
                             },
                             {
                                 "id": "color",
@@ -2666,19 +2614,133 @@
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "battery_arbitrage"
+                            "options": "BatteryCharge"
                         },
                         "properties": [
                             {
                                 "id": "displayName",
-                                "value": "Battery arbitrage"
+                                "value": "Battery charge"
                             },
                             {
                                 "id": "color",
                                 "value": {
-                                    "fixedColor": "semi-dark-green",
+                                    "fixedColor": "green",
                                     "mode": "fixed"
                                 }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "BatteryDischarge"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Battery discharge"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "orange",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "EnergyImport"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Grid import"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "dark-red",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "EnergyExport"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Grid export"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "dark-blue",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID",
+                            "options": "Now"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Now"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#8F8F8F",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        4,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": true,
+                                    "tooltip": true,
+                                    "viz": false
+                                }
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "hidden"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
                             }
                         ]
                     }
@@ -2690,17 +2752,19 @@
                 "x": 0,
                 "y": 32
             },
-            "id": 18,
+            "id": 16,
             "options": {
                 "legend": {
                     "calcs": [
-                        "sum"
+                        "mean",
+                        "max"
                     ],
                     "displayMode": "list",
                     "placement": "bottom",
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -2712,11 +2776,19 @@
                         "type": "influxdb",
                         "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
                     },
-                    "query": "from(bucket: \"analytics_1hour\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"net_cost\" or r[\"_field\"] == \"total_electricity_cost\" or r[\"_field\"] == \"total_solar_savings\" or r[\"_field\"] == \"battery_arbitrage\")\n  |> yield(name: \"costs\")",
+                    "query": "pastStop = if v.timeRangeStop > now() then now() else v.timeRangeStop\nwindowDuration = int(v: pastStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"checkwatt\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"checkwatt\")\n  |> filter(fn: (r) => r[\"_field\"] == \"SolarYield\" or r[\"_field\"] == \"BatteryCharge\" or r[\"_field\"] == \"BatteryDischarge\" or r[\"_field\"] == \"EnergyImport\" or r[\"_field\"] == \"EnergyExport\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"emeters_5min\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy\")\n  |> filter(fn: (r) => r[\"_field\"] == \"solar_yield_avg\" or r[\"_field\"] == \"battery_charge_avg\" or r[\"_field\"] == \"battery_discharge_avg\" or r[\"_field\"] == \"energy_import_avg\" or r[\"_field\"] == \"energy_export_avg\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: if r._field == \"solar_yield_avg\" then \"SolarYield\" else if r._field == \"battery_charge_avg\" then \"BatteryCharge\" else if r._field == \"battery_discharge_avg\" then \"BatteryDischarge\" else if r._field == \"energy_import_avg\" then \"EnergyImport\" else if r._field == \"energy_export_avg\" then \"EnergyExport\" else r._field}))\n\nt3 = from(bucket: \"analytics_15min\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"solar_yield_avg\" or r[\"_field\"] == \"battery_charge_avg\" or r[\"_field\"] == \"battery_discharge_avg\" or r[\"_field\"] == \"energy_import_avg\" or r[\"_field\"] == \"energy_export_avg\" or r[\"_field\"] == \"Battery_SoC\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: if r._field == \"solar_yield_avg\" then \"SolarYield\" else if r._field == \"battery_charge_avg\" then \"BatteryCharge\" else if r._field == \"battery_discharge_avg\" then \"BatteryDischarge\" else if r._field == \"energy_import_avg\" then \"EnergyImport\" else if r._field == \"energy_export_avg\" then \"EnergyExport\" else r._field}))\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
+                    "refId": "Now"
                 }
             ],
-            "title": "Cost per Hour",
+            "title": "CheckWatt",
             "type": "timeseries"
         },
         {
@@ -2724,6 +2796,7 @@
                 "type": "influxdb",
                 "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
             },
+            "description": "Raw < 48h, 15min < 8d, 1hour > 8d",
             "fieldConfig": {
                 "defaults": {
                     "color": {
@@ -2895,6 +2968,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -2919,8 +2993,279 @@
                 }
             ],
             "title": "Water Temperature",
-            "type": "timeseries",
-            "description": "Raw < 48h, 15min < 8d, 1hour > 8d"
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "bars",
+                        "fillOpacity": 80,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "currencyEUR"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "net_cost"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Net cost"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "dark-red",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "total_electricity_cost"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Grid cost"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "orange",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "total_solar_savings"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Solar savings"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "super-light-yellow",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "battery_arbitrage"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Battery arbitrage"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-green",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 40
+            },
+            "id": 18,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "sum"
+                    ],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "pluginVersion": "11.5.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"analytics_1hour\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"net_cost\" or r[\"_field\"] == \"total_electricity_cost\" or r[\"_field\"] == \"total_solar_savings\" or r[\"_field\"] == \"battery_arbitrage\")\n  |> yield(name: \"costs\")",
+                    "refId": "A"
+                }
+            ],
+            "title": "Cost per Hour",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "description": "Raw < 48h, 15min < 8d, 1hour > 8d",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 5,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "percent"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 40
+            },
+            "id": 21,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "pluginVersion": "11.5.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "import \"strings\"\n\npastStop = if v.timeRangeStop > now() then now() else v.timeRangeStop\nwindowDuration = int(v: pastStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"temperatures\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"humidities\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^hum_/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: strings.trimPrefix(v: r._field, prefix: \"hum_\")}))\n\nt3 = from(bucket: \"analytics_1hour\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^hum_/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: strings.trimPrefix(v: r._field, prefix: \"hum_\")}))\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
+                    "refId": "A"
+                }
+            ],
+            "title": "Humidity",
+            "type": "timeseries"
         },
         {
             "datasource": {
@@ -3083,7 +3428,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 40
+                "y": 48
             },
             "id": 20,
             "options": {
@@ -3096,6 +3441,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -3112,341 +3458,6 @@
                 }
             ],
             "title": "Solar & Battery Energy Flow",
-            "type": "timeseries"
-        },
-        {
-            "datasource": {
-                "type": "influxdb",
-                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "palette-classic"
-                    },
-                    "custom": {
-                        "axisBorderShow": false,
-                        "axisCenteredZero": false,
-                        "axisColorMode": "text",
-                        "axisLabel": "",
-                        "axisPlacement": "auto",
-                        "barAlignment": 0,
-                        "barWidthFactor": 0.6,
-                        "drawStyle": "line",
-                        "fillOpacity": 5,
-                        "gradientMode": "none",
-                        "hideFrom": {
-                            "legend": false,
-                            "tooltip": false,
-                            "viz": false
-                        },
-                        "insertNulls": false,
-                        "lineInterpolation": "linear",
-                        "lineWidth": 1,
-                        "pointSize": 5,
-                        "scaleDistribution": {
-                            "type": "linear"
-                        },
-                        "showPoints": "auto",
-                        "spanNulls": false,
-                        "stacking": {
-                            "group": "A",
-                            "mode": "none"
-                        },
-                        "thresholdsStyle": {
-                            "mode": "off"
-                        }
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": null
-                            },
-                            {
-                                "color": "red",
-                                "value": 80
-                            }
-                        ]
-                    },
-                    "unit": "percent"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 40
-            },
-            "id": 21,
-            "options": {
-                "legend": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "displayMode": "list",
-                    "placement": "bottom",
-                    "showLegend": true
-                },
-                "tooltip": {
-                    "mode": "multi",
-                    "sort": "none"
-                }
-            },
-            "pluginVersion": "11.5.2",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "influxdb",
-                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-                    },
-                    "query": "import \"strings\"\n\npastStop = if v.timeRangeStop > now() then now() else v.timeRangeStop\nwindowDuration = int(v: pastStop) - int(v: v.timeRangeStart)\ntwoDaysNs = int(v: 48h)\neighDaysNs = int(v: 8d)\n\nrawStart = if windowDuration <= twoDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nrawStop = if windowDuration <= twoDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt2Start = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt2Stop = if windowDuration > twoDaysNs and windowDuration <= eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\nt3Start = if windowDuration > eighDaysNs then v.timeRangeStart else 1970-01-01T00:00:00Z\nt3Stop = if windowDuration > eighDaysNs then v.timeRangeStop else 1970-01-01T00:00:01Z\n\nraw = from(bucket: \"temperatures\")\n  |> range(start: rawStart, stop: rawStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"humidities\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nt2 = from(bucket: \"analytics_15min\")\n  |> range(start: t2Start, stop: t2Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^hum_/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: strings.trimPrefix(v: r._field, prefix: \"hum_\")}))\n\nt3 = from(bucket: \"analytics_1hour\")\n  |> range(start: t3Start, stop: t3Stop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"analytics\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^hum_/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: strings.trimPrefix(v: r._field, prefix: \"hum_\")}))\n\nunion(tables: [raw, t2, t3])\n  |> yield(name: \"mean\")",
-                    "refId": "A"
-                }
-            ],
-            "title": "Humidity",
-            "type": "timeseries",
-            "description": "Raw < 48h, 15min < 8d, 1hour > 8d"
-        },
-        {
-            "datasource": {
-                "type": "influxdb",
-                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "palette-classic"
-                    },
-                    "custom": {
-                        "axisBorderShow": false,
-                        "axisCenteredZero": false,
-                        "axisColorMode": "text",
-                        "axisLabel": "",
-                        "axisPlacement": "auto",
-                        "barAlignment": 0,
-                        "barWidthFactor": 0.6,
-                        "drawStyle": "line",
-                        "fillOpacity": 10,
-                        "gradientMode": "none",
-                        "hideFrom": {
-                            "legend": false,
-                            "tooltip": false,
-                            "viz": false
-                        },
-                        "insertNulls": false,
-                        "lineInterpolation": "linear",
-                        "lineWidth": 1,
-                        "pointSize": 5,
-                        "scaleDistribution": {
-                            "type": "linear"
-                        },
-                        "showPoints": "never",
-                        "spanNulls": true,
-                        "stacking": {
-                            "group": "A",
-                            "mode": "none"
-                        },
-                        "thresholdsStyle": {
-                            "mode": "off"
-                        }
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": null
-                            },
-                            {
-                                "color": "red",
-                                "value": 80
-                            }
-                        ]
-                    },
-                    "unit": "watt"
-                },
-                "overrides": [
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "Production"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Actual production"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "dark-green",
-                                    "mode": "fixed"
-                                }
-                            },
-                            {
-                                "id": "custom.lineWidth",
-                                "value": 2
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "Hourly forecast"
-                        },
-                        "properties": [
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "light-green",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "Daily forecast"
-                        },
-                        "properties": [
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "semi-dark-green",
-                                    "mode": "fixed"
-                                }
-                            },
-                            {
-                                "id": "custom.lineWidth",
-                                "value": 2
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byName",
-                            "options": "FMI forecast"
-                        },
-                        "properties": [
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "blue",
-                                    "mode": "fixed"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "matcher": {
-                            "id": "byFrameRefID",
-                            "options": "Now"
-                        },
-                        "properties": [
-                            {
-                                "id": "displayName",
-                                "value": "Now"
-                            },
-                            {
-                                "id": "color",
-                                "value": {
-                                    "fixedColor": "#8F8F8F",
-                                    "mode": "fixed"
-                                }
-                            },
-                            {
-                                "id": "custom.lineWidth",
-                                "value": 1
-                            },
-                            {
-                                "id": "custom.fillOpacity",
-                                "value": 0
-                            },
-                            {
-                                "id": "custom.lineStyle",
-                                "value": {
-                                    "dash": [
-                                        4,
-                                        4
-                                    ],
-                                    "fill": "dash"
-                                }
-                            },
-                            {
-                                "id": "custom.hideFrom",
-                                "value": {
-                                    "legend": true,
-                                    "tooltip": true,
-                                    "viz": false
-                                }
-                            },
-                            {
-                                "id": "custom.axisPlacement",
-                                "value": "hidden"
-                            },
-                            {
-                                "id": "min",
-                                "value": 0
-                            },
-                            {
-                                "id": "max",
-                                "value": 1
-                            }
-                        ]
-                    }
-                ]
-            },
-            "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 48
-            },
-            "id": 22,
-            "options": {
-                "legend": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "displayMode": "list",
-                    "placement": "bottom",
-                    "showLegend": true
-                },
-                "tooltip": {
-                    "mode": "multi",
-                    "sort": "none"
-                },
-                "yAxis": {
-                    "softMin": 0,
-                    "softMax": 5500
-                }
-            },
-            "pluginVersion": "11.5.2",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "influxdb",
-                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-                    },
-                    "query": "from(bucket: \"windpower\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"windpower\")\n  |> filter(fn: (r) => r[\"_field\"] != \"Max capacity\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
-                    "refId": "A"
-                },
-                {
-                    "datasource": {
-                        "type": "influxdb",
-                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
-                    },
-                    "query": "import \"array\"\nimport \"date\"\n\narray.from(rows: [{time: now(), current_time: 0}, {time: date.add(d: 1s, to: now()), current_time: 1}])",
-                    "refId": "Now"
-                }
-            ],
-            "title": "Wind Power (Finland) MW",
             "type": "timeseries"
         },
         {
@@ -3661,6 +3672,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -3700,6 +3712,7 @@
                 "type": "influxdb",
                 "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
             },
+            "description": "Raw phase data -- zoom to < 48h for data",
             "fieldConfig": {
                 "defaults": {
                     "color": {
@@ -3855,6 +3868,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -3870,7 +3884,6 @@
                     "refId": "A"
                 }
             ],
-            "description": "Raw phase data -- zoom to < 48h for data",
             "title": "Shelly EM3 Phase Power",
             "type": "timeseries"
         },
@@ -4010,6 +4023,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
+                    "hideZeros": false,
                     "mode": "multi",
                     "sort": "none"
                 }
@@ -4077,7 +4091,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": null
                             },
                             {
                                 "color": "red",
@@ -4211,6 +4226,7 @@
                     "sort": "none"
                 }
             },
+            "pluginVersion": "11.5.2",
             "targets": [
                 {
                     "datasource": {
@@ -4223,8 +4239,453 @@
             ],
             "title": "Network Ping",
             "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "drawStyle": "line",
+                        "lineWidth": 2,
+                        "fillOpacity": 0,
+                        "showPoints": "never",
+                        "spanNulls": true,
+                        "lineInterpolation": "linear"
+                    },
+                    "unit": "celsius"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Autotalli"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Garage C"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Air temperature"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Outdoor forecast C"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "plan_min_c"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Plan lowest C"
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        6,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "relay1_on"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Relay .185 on"
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "right"
+                            },
+                            {
+                                "id": "custom.lineInterpolation",
+                                "value": "stepAfter"
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 20
+                            },
+                            {
+                                "id": "custom.spanNulls",
+                                "value": 900000
+                            },
+                            {
+                                "id": "min",
+                                "value": -1
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            },
+                            {
+                                "id": "unit",
+                                "value": "none"
+                            },
+                            {
+                                "id": "mappings",
+                                "value": [
+                                    {
+                                        "type": "value",
+                                        "options": {
+                                            "-1": {
+                                                "text": "no answer",
+                                                "color": "red"
+                                            }
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "orange",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "relay2_on"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Relay .186 on"
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "right"
+                            },
+                            {
+                                "id": "custom.lineInterpolation",
+                                "value": "stepAfter"
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 20
+                            },
+                            {
+                                "id": "custom.spanNulls",
+                                "value": 900000
+                            },
+                            {
+                                "id": "min",
+                                "value": -1
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            },
+                            {
+                                "id": "unit",
+                                "value": "none"
+                            },
+                            {
+                                "id": "mappings",
+                                "value": [
+                                    {
+                                        "type": "value",
+                                        "options": {
+                                            "-1": {
+                                                "text": "no answer",
+                                                "color": "red"
+                                            }
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "red",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 72
+            },
+            "id": 27,
+            "options": {
+                "legend": {
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"temperatures\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"temperatures\" and r._field == \"Autotalli\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"weather\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"weather\" and r._field == \"Air temperature\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])",
+                    "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"load_control\" and r.load_id == \"garage_heater\" and r.data_type == \"actual\")\n  |> filter(fn: (r) => r._field == \"relay1_on\" or r._field == \"relay2_on\" or r._field == \"plan_min_c\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])",
+                    "refId": "C"
+                }
+            ],
+            "title": "Garage Heating",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "drawStyle": "line",
+                        "lineWidth": 2,
+                        "fillOpacity": 0,
+                        "showPoints": "never",
+                        "spanNulls": true,
+                        "lineInterpolation": "linear"
+                    },
+                    "unit": "kwatt"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "counted_kw"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Counted hourly import kW"
+                            },
+                            {
+                                "id": "custom.drawStyle",
+                                "value": "bars"
+                            },
+                            {
+                                "id": "custom.barAlignment",
+                                "value": 1
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 60
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "cap_kw"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Cap (3rd highest or floor)"
+                            },
+                            {
+                                "id": "custom.lineInterpolation",
+                                "value": "stepAfter"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "red",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 72
+            },
+            "id": 28,
+            "options": {
+                "legend": {
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"power_cap\" and r.kind == \"hour\" and r._field == \"counted_kw\")\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"power_cap\" and r.kind == \"cap\" and r._field == \"cap_kw\")\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])",
+                    "refId": "B"
+                }
+            ],
+            "title": "Power Cap",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "drawStyle": "line",
+                        "lineWidth": 2,
+                        "fillOpacity": 0,
+                        "showPoints": "never",
+                        "spanNulls": true,
+                        "lineInterpolation": "linear"
+                    },
+                    "unit": "kwatt"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "counted_kw"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Projected hour, counted (max)"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "limit_kw"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Guard limit"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "red",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "total_kw"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Power now (max)"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 80
+            },
+            "id": 29,
+            "options": {
+                "legend": {
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"load_guard\" and (r._field == \"counted_kw\" or r._field == \"limit_kw\" or r._field == \"total_kw\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])",
+                    "refId": "A"
+                }
+            ],
+            "title": "Load Guard",
+            "type": "timeseries"
         }
     ],
+    "preload": false,
     "refresh": "5m",
     "schemaVersion": 40,
     "tags": [
@@ -4235,12 +4696,13 @@
         "list": []
     },
     "time": {
-        "from": "now/d",
-        "to": "now/d+1d"
+        "from": "now-24h",
+        "to": "now+72h"
     },
     "timepicker": {},
     "timezone": "Europe/Helsinki",
     "title": "RedHouse Energy Monitor",
     "uid": "redhouse-production-v1",
-    "version": 1
+    "version": 1,
+    "weekStart": ""
 }
