@@ -4865,7 +4865,7 @@
             },
             "gridPos": {
                 "h": 8,
-                "w": 24,
+                "w": 20,
                 "x": 0,
                 "y": 88
             },
@@ -5033,6 +5033,109 @@
             ],
             "title": "Hot Water Decisions",
             "type": "table"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "description": "Next timer expiry: the next legionella timer expiry. Boost due: an expiry has passed and its boost, the first hot water cycle after it, has not run yet. Run hotwater anchor after each pump restart, or the time is wrong. No data: the controller has not ticked in the last hour.",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "fixedColor": "text",
+                        "mode": "fixed"
+                    },
+                    "mappings": [],
+                    "unit": "none"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "next_expiry"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Next timer expiry"
+                            },
+                            {
+                                "id": "unit",
+                                "value": "dateTimeAsIso"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "boost_due"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Boost due"
+                            },
+                            {
+                                "id": "mappings",
+                                "value": [
+                                    {
+                                        "options": {
+                                            "0": {
+                                                "index": 0,
+                                                "text": "No"
+                                            },
+                                            "1": {
+                                                "color": "orange",
+                                                "index": 1,
+                                                "text": "Yes, due now"
+                                            }
+                                        },
+                                        "type": "value"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 4,
+                "x": 20,
+                "y": 88
+            },
+            "id": 33,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "orientation": "horizontal",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "value_and_name",
+                "wideLayout": true
+            },
+            "pluginVersion": "11.5.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"hot_water\" and r.data_type == \"actual\" and (r._field == \"next_expiry\" or r._field == \"pending\"))\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({_time: r._time, next_expiry: int(v: time(v: r.next_expiry)) / 1000000, boost_due: if r.pending then 1 else 0}))",
+                    "refId": "A"
+                }
+            ],
+            "title": "Next Legionella Boost",
+            "type": "stat"
         }
     ],
     "preload": false,
