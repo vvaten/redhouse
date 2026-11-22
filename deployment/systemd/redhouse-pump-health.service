@@ -1,0 +1,18 @@
+[Unit]
+Description=RedHouse Heat Pump Health Check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+# Mails when the pump is ON with no compressor and no boost
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/run_pump_health.py
+TimeoutStartSec=60
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-pump-health
+
+[Install]
+WantedBy=multi-user.target

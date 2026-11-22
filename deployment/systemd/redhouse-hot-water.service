@@ -1,0 +1,21 @@
+[Unit]
+Description=RedHouse Hot Water Control
+After=network-online.target redhouse-pump-restore.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+# The hot_water modes in config.yaml decide which relay rules act
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/run_hot_water.py
+TimeoutStartSec=50
+# The per-minute state and the CLI requests live in RAM; kept between runs
+RuntimeDirectory=redhouse-hot-water
+RuntimeDirectoryPreserve=yes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-hot-water
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=RedHouse Heat Pump Health Check Timer
+
+[Timer]
+# Every 5 min, off the bucket rename minutes and the deploy windows
+OnCalendar=*:01/5:40 UTC
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

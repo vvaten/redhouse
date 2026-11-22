@@ -72,6 +72,53 @@ load_guard:
   # The compressor above the base load; the guard never uses EVU
   pump_ale_kw: 3.0
 
+hot_water:
+  # The circulation pump relay (Shelly 1 Gen1); never the ventilation .5
+  relay_url: http://192.168.1.188/relay/0
+  # Every ON carries this auto-off timer, so a stopped tick leaves it OFF
+  relay_on_timer_s: 180
+  manual_on_keep_s: 1800
+  manual_off_suspend_s: 1800
+  circulate_max_min: 60
+  tank_top_field: "Käyttövesi ylh"
+  tank_bottom_field: "Käyttövesi alh"
+  data_stale_s: 300
+  # Pump display settings; the bottom sensor reads about 0.7 C over the start
+  pump_start_setting_c: 42.0
+  start_offset_c: 0.7
+  hot_water_time_min: 20
+  floor_c: 38.0
+  # off, dry_run or act; the cutover table of design 10 (a test checks it)
+  modes:
+    relay_default: act
+    boost_trigger: dry_run
+    flush: dry_run
+    preheat: dry_run
+    pre_on: dry_run
+    comfort: "off"
+  boost:
+    # Pump restart Fri 2026-11-27 22:00 local; hotwater anchor overrides it
+    anchor_utc: "2026-11-27T20:00:00Z"
+    interval_days: 14
+    slot_minutes: 180
+    trigger_attempt_min: 30
+    retry_gap_min: 30
+    unexpected_after_h: 36
+  flush: {start_c: 65.0, minutes: 45}
+  preheat: {price_c_kwh: 20.0, horizon_h: 12, reach_c: 2.0}
+  pre_on: {lead_min: 20, max_extra_c_kwh: 3.0}
+  comfort: {minutes: 15, price_c_kwh: 15.0, slots: {fri: "21:40", sat: "19:30", other: "21:00"}}
+  alerts: {start_drift_c: 1.0}
+  # The boost's heater in the hour budget, on with the boost trigger's act
+  boost_budget: false
+  boost_kw: 6.5
+  planner_link: false
+
+pump_health:
+  # Pump ON, no compressor, heater with no tank rise: the high-pressure alarm
+  no_compressor_min: 45
+  below_outdoor_c: 8.0
+
 hardware:
   pump_i2c_bus: 1
   pump_i2c_address: 0x10

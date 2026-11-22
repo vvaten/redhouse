@@ -19,6 +19,8 @@ REDHOUSE_SERVICES = [
     "redhouse-power-cap",
     "redhouse-load-guard",
     "redhouse-car-tip",
+    "redhouse-hot-water",
+    "redhouse-pump-health",
     "redhouse-program-check",
     "redhouse-program-fallback",
 ]
