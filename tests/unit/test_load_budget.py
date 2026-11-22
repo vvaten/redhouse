@@ -69,8 +69,24 @@ def test_an_over_cap_hour_is_used_when_the_day_needs_it():
     assert len(HeatingOptimizer().select_cheapest_hours(budgeted, 22)) == 22
 
 
+HOT_WATER_OFF = {
+    "boost_budget": False,
+    "boost_kw": 6.5,
+    "planner_link": False,
+    "boost": {
+        "anchor_utc": "2026-11-27T20:00:00Z",
+        "interval_days": 14,
+        "slot_minutes": 180,
+        "trigger_attempt_min": 30,
+        "retry_gap_min": 30,
+        "unexpected_after_h": 36,
+    },
+}
+
+
 def _config(enabled=True):
     config = Mock(load_budget_section={**SECTION, "enabled": enabled})
+    config.hot_water_section = HOT_WATER_OFF
     config.power_cap_section = {
         "night_factor": 0.8,
         "night_start_hour": 22,

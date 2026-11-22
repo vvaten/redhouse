@@ -15,6 +15,7 @@ from src.control.evu_optimizer import EvuOptimizer
 from src.control.heating_curve import HeatingCurve
 from src.control.heating_data_fetcher import HeatingDataFetcher
 from src.control.heating_optimizer import HeatingOptimizer
+from src.control.hot_water_planner import lost_heating_hours
 from src.control.load_budget import budget_priorities
 from src.control.schedule_builder import ScheduleBuilder
 
@@ -84,6 +85,7 @@ class HeatingProgramGenerator:
         program_date_str, program_date = self._calculate_program_date(base_date, date_offset)
         df = self._fetch_and_validate_data(date_offset, program_date.date())
         avg_temperature, hours_to_heat = self._calculate_heating_requirements(df, date_offset)
+        hours_to_heat += lost_heating_hours(self.config, self.influx, program_date_str)
         day_priorities = self._calculate_and_filter_priorities(df, date_offset)
         day_priorities = budget_priorities(day_priorities, self.config, CAP_STATE, program_date)
 
