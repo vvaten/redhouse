@@ -5135,7 +5135,40 @@
         "from": "now/d",
         "to": "now/d+1d"
     },
-    "timepicker": {},
+    "timepicker": {
+        "quick_ranges": [
+            {"display": "Today and tomorrow", "from": "now/d", "to": "now+1d/d"},
+            {"display": "Today to day after tomorrow", "from": "now/d", "to": "now+2d/d"},
+            {
+                "display": "Day before yesterday to 2 days after tomorrow",
+                "from": "now-2d/d",
+                "to": "now+3d/d"
+            },
+            {"display": "Last and next 30 minutes", "from": "now-30m", "to": "now+30m"},
+            {"display": "Last and next 1 hour", "from": "now-1h", "to": "now+1h"},
+            {"display": "Last and next 3 hours", "from": "now-3h", "to": "now+3h"},
+            {"display": "Last and next 6 hours", "from": "now-6h", "to": "now+6h"},
+            {"display": "Last and next 12 hours", "from": "now-12h", "to": "now+12h"},
+            {"display": "Last and next 24 hours", "from": "now-24h", "to": "now+24h"},
+            {"display": "Yesterday", "from": "now-1d/d", "to": "now-1d/d"},
+            {"display": "Today", "from": "now/d", "to": "now/d"},
+            {"display": "Last 7 days", "from": "now-7d", "to": "now"},
+            {"display": "Last 30 days", "from": "now-30d", "to": "now"},
+            {"display": "Last 90 days", "from": "now-90d", "to": "now"},
+            {"display": "Last 6 months", "from": "now-6M", "to": "now"},
+            {"display": "Last 1 year", "from": "now-1y", "to": "now"},
+            {"display": "Last 2 years", "from": "now-2y", "to": "now"},
+            {"display": "Last 5 years", "from": "now-5y", "to": "now"},
+            {"display": "Previous week", "from": "now-1w/w", "to": "now-1w/w"},
+            {"display": "Previous month", "from": "now-1M/M", "to": "now-1M/M"},
+            {"display": "Previous year", "from": "now-1y/y", "to": "now-1y/y"},
+            {"display": "This week", "from": "now/w", "to": "now/w"},
+            {"display": "This month", "from": "now/M", "to": "now/M"},
+            {"display": "This month to day after tomorrow", "from": "now/M", "to": "now+2d/d"},
+            {"display": "This year", "from": "now/y", "to": "now/y"},
+            {"display": "This year to day after tomorrow", "from": "now/y", "to": "now+2d/d"}
+        ]
+    },
     "timezone": "Europe/Helsinki",
     "title": "RedHouse Energy Monitor (Staging)",
     "uid": "redhouse-staging-v1",
