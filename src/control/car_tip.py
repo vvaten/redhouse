@@ -1,8 +1,9 @@
 """The evening car charging tip: the cheapest window before the deadline.
 
-Pure functions. A window costs its energy plus any rise in the month's
-power charge. A tip goes out only when the best window saves at least
-min_saving_eur against charging at once from plug_in_hour.
+Pure functions. A window starts on a quarter and costs each quarter's
+energy at that quarter's price, plus any rise in the month's power charge,
+which counts whole hours. A tip goes out only when the best window saves
+at least min_saving_eur against charging at once from plug_in_hour.
 """
 
 import datetime
@@ -11,6 +12,8 @@ from dataclasses import dataclass, fields
 
 from src.common.local_time import HELSINKI
 from src.control.power_cap import CapSettings, factor, month_cap
+
+QUARTER = datetime.timedelta(minutes=15)
 
 
 @dataclass(frozen=True)
@@ -56,11 +59,18 @@ class Window:
         return max(self.counted.values())
 
 
-def _hour_loads(kw: float, kwh: float) -> list:
-    """The car's kWh in each hour of a session that starts on the hour."""
-    full = int(kwh // kw)
-    rest = kwh - full * kw
-    return [kw] * full + ([rest] if rest > 1e-9 else [])
+def _quarter_loads(kw: float, kwh: float) -> list:
+    """The car's kWh in each quarter of a session that starts on a quarter."""
+    full = _quarter_count(kw, kwh) - 1
+    return [kw / 4] * full + [kwh - full * kw / 4]
+
+
+def _quarter_count(kw: float, kwh: float) -> int:
+    return max(1, math.ceil(kwh / (kw / 4) - 1e-9))
+
+
+def floor_hour(t: datetime.datetime) -> datetime.datetime:
+    return t.replace(minute=0, second=0, microsecond=0)
 
 
 def charge_rise_kw(window_counted: dict, month_counted: dict, cap: CapSettings) -> float:
@@ -75,25 +85,27 @@ def charge_rise_kw(window_counted: dict, month_counted: dict, cap: CapSettings) 
 
 
 def window_at(prices: dict, start, kw: float, s: TipSettings, cap: CapSettings, ctx: dict):
-    """The session from start, or None if a needed hour has no price.
-    ctx: other_kw {hour: kW}, month_counted {hour: counted kW}."""
-    counted = {}
+    """The session from start, or None if a needed quarter has no price.
+    prices: {quarter start: EUR/kWh}. ctx: other_kw {hour: kW},
+    month_counted {hour: counted kW}."""
+    car_kwh: dict = {}
     energy = 0.0
-    for i, kwh in enumerate(_hour_loads(kw, s.session_kwh)):
-        hour = start + datetime.timedelta(hours=i)
-        if hour not in prices or hour not in ctx["other_kw"]:
+    for i, kwh in enumerate(_quarter_loads(kw, s.session_kwh)):
+        quarter = start + i * QUARTER
+        hour = floor_hour(quarter)
+        if quarter not in prices or hour not in ctx["other_kw"]:
             return None
-        energy += prices[hour] * kwh
-        counted[hour] = (ctx["other_kw"][hour] + kwh) * factor(hour, cap)
+        energy += prices[quarter] * kwh
+        car_kwh[hour] = (car_kwh[hour] if hour in car_kwh else 0.0) + kwh
+    counted = {h: (ctx["other_kw"][h] + e) * factor(h, cap) for h, e in car_kwh.items()}
     rise = charge_rise_kw(counted, ctx["month_counted"], cap) * cap.tariff_eur_per_kw
     return Window(start, kw, energy, counted, rise)
 
 
-def _next_hour(now: datetime.datetime) -> datetime.datetime:
-    local = now.astimezone(HELSINKI)
-    return HELSINKI.normalize(
-        local.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
-    )
+def _next_quarter(now: datetime.datetime) -> datetime.datetime:
+    """The next quarter start in UTC; Helsinki keeps whole-hour offsets."""
+    utc = now.astimezone(datetime.timezone.utc).replace(second=0, microsecond=0)
+    return utc.replace(minute=utc.minute - utc.minute % 15) + QUARTER
 
 
 def plug_in_start(now: datetime.datetime, s: TipSettings) -> datetime.datetime:
@@ -106,18 +118,19 @@ def plug_in_start(now: datetime.datetime, s: TipSettings) -> datetime.datetime:
 
 
 def candidates(now: datetime.datetime, kw: float, s: TipSettings) -> list:
-    """Every whole-hour start from the next hour that still ends by the deadline."""
-    first = _next_hour(now)
-    deadline_day = first.date() + datetime.timedelta(days=0 if first.hour < s.deadline_hour else 1)
+    """Every quarter start from the next quarter that still ends by the deadline."""
+    first = _next_quarter(now)
+    local = first.astimezone(HELSINKI)
+    deadline_day = local.date() + datetime.timedelta(days=0 if local.hour < s.deadline_hour else 1)
     deadline = HELSINKI.localize(
         datetime.datetime.combine(deadline_day, datetime.time(s.deadline_hour))
-    )
-    hours = math.ceil(s.session_kwh / kw)
+    ).astimezone(datetime.timezone.utc)
+    length = _quarter_count(kw, s.session_kwh) * QUARTER
     starts = []
-    t = first.astimezone(datetime.timezone.utc)
-    while t + datetime.timedelta(hours=hours) <= deadline.astimezone(datetime.timezone.utc):
+    t = first
+    while t + length <= deadline:
         starts.append(t)
-        t += datetime.timedelta(hours=1)
+        t += QUARTER
     return starts
 
 
@@ -141,7 +154,7 @@ def plug_in_window(prices: dict, now, kw: float, s: TipSettings, cap: CapSetting
 def tip(prices: dict, now, s: TipSettings, cap: CapSettings, ctx: dict):
     """(best low-power window, plug-in window, best high-power window) when the
     saving, power charge included, is worth a mail; else (None, reason)."""
-    if plug_in_start(now, s) < _next_hour(now).astimezone(datetime.timezone.utc):
+    if plug_in_start(now, s) < _next_quarter(now):
         return None, "the run is after the plug-in hour"
     if not _starts(now, s.kw_low, s):
         return None, "no session from the plug-in ends by the deadline"
