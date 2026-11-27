@@ -68,14 +68,20 @@ QUARTER_SPOTS = [_spot(9, 45, 0.90)] + [_spot(10, 15 * i, 0.1 * (i + 1)) for i i
 QUARTER_SPOTS.append(_spot(11, 0, 0.80))
 
 
-def test_each_15min_window_takes_the_bill_price_of_its_hour():
+@pytest.fixture
+def hour_netting(monkeypatch):
+    """A meter that nets by the hour at all times."""
+    monkeypatch.setattr(quarter_prices, "QUARTER_NETTING_FROM", None)
+
+
+def test_each_15min_window_takes_the_bill_price_of_its_hour(hour_netting):
     seen = _prices_seen(Analytics15MinAggregator(MagicMock(), MagicMock()), 15, QUARTER_SPOTS)
     assert [(s, p) for s, p, _ in seen] == [
         (_at(10, 15 * i), pytest.approx(0.25)) for i in range(4)
     ]
 
 
-def test_an_hourly_window_costs_the_hour_at_its_bill_price():
+def test_an_hourly_window_costs_the_hour_at_its_bill_price(hour_netting):
     seen = _prices_seen(Analytics1HourAggregator(MagicMock(), MagicMock()), 60, QUARTER_SPOTS)
     ((start, price, cost),) = seen
     assert start == _at(10)
