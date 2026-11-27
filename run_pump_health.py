@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 """Pump health check - wrapper script for systemd, every 5 minutes.
 
-Mails when the pump is ON but heats with the heater alone and the tank does
-not climb: the state after the high-pressure alarm of 2026-11-16. Staging
-only logs.
+Mails when the pump is ON but runs nothing: the state after the
+high-pressure alarm of 2026-11-16. Staging only logs.
 """
 
 import datetime
@@ -76,6 +75,31 @@ def outdoor_now(influx, config, now: int) -> Optional[float]:
     return min(values)[1] if values else None
 
 
+def minute_now(t: float) -> int:
+    """The minute data sits on whole minutes; the timer fires at :40 s."""
+    return int(t) // 60 * 60
+
+
+def behind_kw(influx, config, start: int, stop: int) -> dict:
+    """{minute start: kW} behind the 3EM: battery charge - discharge - solar."""
+    fields = " or ".join(f'r._field == "{f}"' for f in ph.BEHIND_SIGN)
+    flux = f"""
+        from(bucket: "{config.influxdb_bucket_checkwatt}")
+          |> range(start: {hio.rfc3339(start)}, stop: {hio.rfc3339(stop)})
+          |> filter(fn: (r) => r._measurement == "checkwatt" and ({fields}))
+          |> aggregateWindow(every: 1m, fn: mean, createEmpty: false, timeSrc: "_start")
+    """
+    out: dict = {}
+    for table in influx.query_with_retry(flux):
+        for rec in table.records:
+            if rec.get_value() is None:
+                continue
+            t = int(rec.get_time().timestamp())
+            kw = ph.BEHIND_SIGN[rec.get_field()] * float(rec.get_value()) / 1000
+            out[t] = (out[t] if t in out else 0.0) + kw
+    return out
+
+
 def should_mail(now: float) -> bool:
     try:
         sent = float(json.loads(ALERT_STATE.read_text())["sent"])
@@ -89,30 +113,32 @@ def main() -> int:
     settings = ph.load_health_settings(config.pump_health_section)
     hw = hwc.load_settings(config.hot_water_section, is_staging(config))
     staging = is_staging(config)
-    now = int(time.time())
+    now = minute_now(time.time())
     influx = InfluxClient(config, timeout_ms=INFLUX_TIMEOUT_MS)
     try:
         minutes = hio.read_minutes(influx, config, hw, now - ph.BASE_WINDOW_S, now + 60)
+        behind = behind_kw(influx, config, now - ph.BASE_WINDOW_S, now + 60)
         outdoor = outdoor_now(influx, config, now)
     except Exception as e:
         logger.error(f"Pump health data unavailable: {e}")
         return 1
     state_file = DATA / ("pump_state_dry_run.json" if staging else "pump_state.json")
     on_since = pump_on_since(state_file, hio.program_entries(now), now)
-    verdict = ph.judge(minutes, now, on_since, outdoor, settings)
+    verdict = ph.judge(minutes, behind, now, on_since, outdoor, settings)
     logger.info(
-        f"Pump health: {verdict.reason} (heater {verdict.heater_min} min, outdoor {outdoor})"
+        f"Pump health: {verdict.reason} (idle {verdict.idle_min} min, "
+        f"L2 base {verdict.base_kw}, outdoor {outdoor})"
     )
     if not verdict.alarm or not should_mail(now):
         return 0
     stamp = datetime.datetime.now().isoformat(timespec="minutes")
     body = (
-        f"{stamp}: the pump is ON but has heated with the heater alone for "
-        f"{verdict.heater_min} of the last {settings.no_compressor_min} min, and the tank "
-        "does not climb. Check the pump display for an alarm (high pressure: clean the "
-        "filter, check the network pressure, reset the alarm)."
+        f"{stamp}: the pump has been ON for {settings.no_step_min} min, but the meter "
+        "shows no compressor and no heater: the house gets no heat. Check the pump "
+        "display for an alarm (high pressure: clean the filter, check the network "
+        "pressure, reset the alarm)."
     )
-    if mailer(config, staging)("[RedHouse WARNING] Heat pump: heater only", body):
+    if mailer(config, staging)("[RedHouse WARNING] Heat pump: ON but idle", body):
         DATA.mkdir(parents=True, exist_ok=True)
         ALERT_STATE.write_text(json.dumps({"sent": now}))
     return 0

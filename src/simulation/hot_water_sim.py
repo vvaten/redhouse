@@ -32,6 +32,17 @@ def minute_frame(tank: pd.DataFrame, em3: pd.DataFrame) -> pd.DataFrame:
     return t.join(p, how="outer")
 
 
+def behind_minutes(battery: pd.DataFrame) -> dict:
+    """{minute start: kW} behind the 3EM, as run_pump_health reads it."""
+    missing = [c for c in ph.BEHIND_SIGN if c not in battery.columns]
+    if missing:
+        raise ValueError(f"battery_minute lacks {missing}: rebuild the dataset")
+    signs = pd.Series(ph.BEHIND_SIGN)
+    net = (battery[list(signs.index)] * signs).sum(axis=1, min_count=len(signs)) / 1000
+    net = net.resample("1min").mean().dropna()
+    return {int(t.timestamp()): float(v) for t, v in net.items()}
+
+
 def minutes(frame: pd.DataFrame) -> list:
     out = []
     columns = frame[["top", "bottom", "p1", "p2", "p3"]]
@@ -125,17 +136,19 @@ def on_since_at(commands: pd.DataFrame) -> Callable[[int], Optional[int]]:
     return at
 
 
-def health_replay(mins: list, commands: pd.DataFrame, outdoor: dict, settings) -> list:
+def health_replay(
+    mins: list, behind: dict, commands: pd.DataFrame, outdoor: dict, settings
+) -> list:
     """(time, verdict) of each 5-min pump health run over the minutes."""
     on_since = on_since_at(commands)
-    first, last = mins[0].t + 3 * 3600, mins[-1].t
+    first, last = mins[0].t + ph.BASE_WINDOW_S, mins[-1].t
     out = []
     by_t = {m.t - m.t % 60: m for m in mins}
     for now in range(first - first % 300, last, 300):
-        window = [by_t[t] for t in range(now - 3 * 3600, now + 1, 60) if t in by_t]
+        window = [by_t[t] for t in range(now - ph.BASE_WINDOW_S, now + 1, 60) if t in by_t]
         hour = now - now % 3600
         temp = outdoor[hour] if hour in outdoor else None
-        out.append((now, ph.judge(window, now, on_since(now), temp, settings)))
+        out.append((now, ph.judge(window, behind, now, on_since(now), temp, settings)))
     return out
 
 

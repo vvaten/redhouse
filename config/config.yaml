@@ -115,8 +115,8 @@ hot_water:
   planner_link: false
 
 pump_health:
-  # Pump ON, no compressor, heater with no tank rise: the high-pressure alarm
-  no_compressor_min: 45
+  # Pump ON and no compressor or heater this long: the high-pressure alarm
+  no_step_min: 90
   below_outdoor_c: 8.0
 
 hardware:

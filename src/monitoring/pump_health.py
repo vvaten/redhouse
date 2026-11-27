@@ -1,9 +1,11 @@
-"""Pump health: the pump is ON but heats with the heater only (pure core).
+"""Pump health: the pump is ON but runs nothing (pure core).
 
-After the high-pressure alarm of 2026-11-16 the pump heated the house with
-its heater, unseen. A full heater step (both stages, about 6.4 kW, balanced
-over the phases) for most of the window, with no tank rise, is that state.
-A heater step with the tank top climbing from cool is a boost, not an alarm.
+On 2026-11-16 a high-pressure alarm stopped the pump for 144 min of ON
+hours, unseen. Normal ON idles last up to 16 min at night, 77 min by day.
+
+L2 carries the compressor and the heater but not the garage heaters. The
+3EM also sees the battery and the solar panels behind it, both balanced
+over the phases, so a third of their net power comes off L2.
 """
 
 from dataclasses import dataclass
@@ -11,86 +13,111 @@ from typing import Optional
 
 from src.control import hot_water_detect as hd
 
-BASE_WINDOW_S = 3 * 3600
-FULL_STEP_KW = 5.0
-# The heater loads the phases evenly; the compressor loads L1 more than L2
-BALANCE_KW = 0.15
-FULL_SHARE = 0.4
-# A boost climbs from a cool tank; the alarm of 2026-11-16 heated a 65 C one
-BOOST_RISE_C = 2.0
-BOOST_FROM_UNDER_C = 60.0
+BASE_WINDOW_S = 24 * 3600
+# The quiet base: this share from the bottom of the last 24 h of L2
+BASE_SHARE = 0.05
+BASE_MIN_ROWS = 6 * 60
+STEP_KW = 0.5
+# A run this short inside an idle stretch is a blip, not the pump
+BLIP_MIN = 2
+# CheckWatt data arrives up to about 8 min late; those minutes are skipped
+MIN_DATA_SHARE = 0.85
+# The 3EM sees a CheckWatt step 1 to 2 min after its time stamp
+BEHIND_LAG_MIN = 2
+# CheckWatt fields (W) and their sign in the power behind the 3EM
+BEHIND_SIGN = {"BatteryCharge": 1.0, "BatteryDischarge": -1.0, "SolarYield": -1.0}
 
 
 @dataclass(frozen=True)
 class HealthSettings:
-    no_compressor_min: int
+    no_step_min: int
     below_outdoor_c: float
 
 
 def load_health_settings(section: dict) -> HealthSettings:
-    missing = [k for k in ("no_compressor_min", "below_outdoor_c") if k not in section]
+    missing = [k for k in ("no_step_min", "below_outdoor_c") if k not in section]
     if missing:
         raise ValueError(f"config.yaml pump_health section lacks {missing}")
-    return HealthSettings(int(section["no_compressor_min"]), float(section["below_outdoor_c"]))
-
-
-def quiet_base(series: hd.Series, now: int) -> Optional[tuple]:
-    """Per-phase 10th percentile of the last 3 h: the house with the pump idle."""
-    rows = [
-        m.phases
-        for t in range(now - BASE_WINDOW_S, now + 1, hd.MIN_S)
-        if (m := series.get(t)) is not None and m.phases is not None
-    ]
-    if len(rows) < 60:
-        return None
-    return tuple(sorted(r[i] for r in rows)[len(rows) // 10] for i in range(3))
-
-
-def heater_only(phases: tuple, base: tuple) -> bool:
-    step = tuple(phases[i] - base[i] for i in range(3))
-    return sum(step) >= FULL_STEP_KW and step[0] - step[1] <= BALANCE_KW
+    return HealthSettings(int(section["no_step_min"]), float(section["below_outdoor_c"]))
 
 
 @dataclass(frozen=True)
 class Verdict:
     alarm: bool
     reason: str
-    heater_min: int
-    top_rise_c: Optional[float]
+    idle_min: int
+    base_kw: Optional[float]
+
+
+def _behind(behind: dict, t: int) -> Optional[float]:
+    found = [
+        behind[u] for u in range(t - BEHIND_LAG_MIN * hd.MIN_S, t + 1, hd.MIN_S) if u in behind
+    ]
+    return sum(found) / len(found) if found else None
+
+
+def _l2(series: hd.Series, behind: dict, t: int) -> Optional[float]:
+    """L2 without the battery and the solar panels; None without both data."""
+    m = series.get(t)
+    net = _behind(behind, t)
+    if m is None or m.phases is None or net is None:
+        return None
+    return m.phases[1] - net / 3
+
+
+def quiet_base(series: hd.Series, behind: dict, now: int) -> Optional[float]:
+    """L2 with the pump idle: a low percentile of the last 24 h."""
+    rows = sorted(
+        v
+        for t in range(now - BASE_WINDOW_S, now + 1, hd.MIN_S)
+        if (v := _l2(series, behind, t)) is not None
+    )
+    if len(rows) < BASE_MIN_ROWS:
+        return None
+    return rows[int(len(rows) * BASE_SHARE)]
 
 
 def judge(
-    minutes: list, now: int, on_since: Optional[int], outdoor_c: Optional[float], s: HealthSettings
+    minutes: list,
+    behind: dict,
+    now: int,
+    on_since: Optional[int],
+    outdoor_c: Optional[float],
+    s: HealthSettings,
 ) -> Verdict:
-    """Alarm when the pump was ON the whole window, it is cold outside, the
-    heater alone ran most of the window and the tank top did not rise."""
-    window_s = s.no_compressor_min * 60
+    """Alarm when the pump was ON the whole window, it is cold outside and
+    L2 never rose above its quiet base for longer than a blip. behind is
+    {minute start: kW}, battery charge minus discharge minus solar yield."""
+    now -= now % hd.MIN_S
+    window_s = s.no_step_min * 60
     if on_since is None or now - on_since < window_s:
         return Verdict(False, "pump not ON for the whole window", 0, None)
-    if outdoor_c is None or outdoor_c >= s.below_outdoor_c:
+    if outdoor_c is None:
+        return Verdict(False, "no outdoor reading", 0, None)
+    if outdoor_c >= s.below_outdoor_c:
         return Verdict(False, "not cold enough outside", 0, None)
     series = hd.Series(minutes)
-    base = quiet_base(series, now)
+    base = quiet_base(series, behind, now)
     if base is None:
-        return Verdict(False, "too little 3EM data", 0, None)
-    return _window(series, now - window_s, now, base, s)
+        return Verdict(False, "too little data for the base", 0, None)
+    return _window(series, behind, now - window_s + hd.MIN_S, now, base)
 
 
-def _heater_minutes(series: hd.Series, start: int, stop: int, base: tuple) -> int:
-    count = 0
-    for t in range(start, stop + 1, hd.MIN_S):
-        m = series.get(t)
-        if m is not None and m.phases is not None and heater_only(m.phases, base):
-            count += 1
-    return count
-
-
-def _window(series: hd.Series, start: int, now: int, base: tuple, s: HealthSettings) -> Verdict:
-    heater = _heater_minutes(series, start, now, base)
-    tops = series.values(start, now, "top")
-    rise = max(tops) - tops[0] if tops else None
-    if rise is not None and rise >= BOOST_RISE_C and tops[0] < BOOST_FROM_UNDER_C:
-        return Verdict(False, "a boost: the tank top climbs from cool", heater, rise)
-    if heater >= FULL_SHARE * s.no_compressor_min:
-        return Verdict(True, "heater only, no tank rise", heater, rise)
-    return Verdict(False, "the compressor runs", heater, rise)
+def _window(series: hd.Series, behind: dict, start: int, now: int, base: float) -> Verdict:
+    seen = idle = run = 0
+    for t in range(start, now + 1, hd.MIN_S):
+        v = _l2(series, behind, t)
+        if v is None:
+            continue
+        seen += 1
+        if v - base >= STEP_KW:
+            run += 1
+            if run > BLIP_MIN:
+                return Verdict(False, "the pump runs", idle, base)
+        else:
+            run = 0
+            idle += 1
+    total = (now - start) // hd.MIN_S + 1
+    if seen < MIN_DATA_SHARE * total:
+        return Verdict(False, "too little data in the window", idle, base)
+    return Verdict(True, "ON and nothing runs", idle, base)

@@ -164,21 +164,22 @@ def r5(hourly: pd.DataFrame, boosts: list) -> list:
     ]
 
 
-def r6_lines(minutes, commands, outdoor) -> list:
+def r6_lines(minutes, behind, commands, outdoor) -> list:
     lines = ["", "## R6 pump health", ""]
+    trip_from, trip_to = hs.local_epoch("2026-11-16 02:20"), hs.local_epoch("2026-11-16 04:45")
     for below in (5.0, 8.0):
-        results = hs.health_replay(minutes, commands, outdoor, ph.HealthSettings(45, below))
+        results = hs.health_replay(minutes, behind, commands, outdoor, ph.HealthSettings(90, below))
         alerts, last = [], None
         for t, v in results:
             if v.alarm and (last is None or t - last > 6 * 3600):
                 alerts.append(t)
                 last = t
-        night = [t for t in alerts if hs.local_epoch("2026-11-16 00:00") <= t <= hs.local_epoch("2026-11-16 01:00")]
+        night = [t for t in alerts if trip_from <= t <= trip_to]
         weeks = (minutes[-1].t - minutes[0].t) / (7 * 86400)
         false = len(alerts) - len(night)
         lines.append(
-            f"- below_outdoor_c {below}: alerts {[fmt(t) for t in alerts]}; alarm night by 00:50: "
-            f"{'PASS' if night and min(night) <= hs.local_epoch('2026-11-16 00:50') else 'FAIL'}; "
+            f"- below_outdoor_c {below}: alerts {[fmt(t) for t in alerts]}; alarm night by 03:55: "
+            f"{'PASS' if night and min(night) <= hs.local_epoch('2026-11-16 03:55') else 'FAIL'}; "
             f"false {false} in {weeks:.1f} weeks (gate 1 a week): {'PASS' if false <= weeks else 'FAIL'}."
         )
     return lines
@@ -209,7 +210,7 @@ def main() -> int:
     winters = pd.concat([hourly[(hourly.index >= f"{y}-11-01") & (hourly.index < f"{y + 1}-04-01")] for y in (2024, 2025)])
     lines = [f"# Hot water replays {datetime.date.today()}", "", f"Data: {data}, {fmt(minutes[0].t)} to {fmt(minutes[-1].t)}.", ""]
     lines += r1_lines(table, gates) + r2_lines(cycles_csv, labelled) + r3_lines(counts)
-    lines += r5(winters, boosts) + r6_lines(minutes, commands, outdoor)
+    lines += r5(winters, boosts) + r6_lines(minutes, hs.behind_minutes(hs.load_csv(data / "battery_minute.csv.gz")), commands, outdoor)
     regular = table[table["kind"] == "regular"]
     lines += ["", f"Regular runs per day: {len(regular) / ((minutes[-1].t - minutes[0].t) / 86400):.2f} (06: about 2.4); kWh median {statistics.median(regular['kwh']):.2f}."]
     (out / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

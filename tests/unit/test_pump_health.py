@@ -1,5 +1,7 @@
-"""Pump health: the 2026-11-16 alarm night gives an alert, a boost does not."""
+"""Pump health: the 2026-11-16 trip alarms, normal idles in ON do not."""
 
+import csv
+import datetime
 import json
 
 import pytest
@@ -7,66 +9,172 @@ import pytest
 import run_pump_health as rph
 from src.control import hot_water_detect as hd
 from src.monitoring import pump_health as ph
-from tests.unit.test_hot_water_detect import frame, local
+from tests.unit.test_hot_water_detect import FIXTURES, frame, local
 
-SETTINGS = ph.HealthSettings(no_compressor_min=45, below_outdoor_c=8.0)
-# The program put the pump ON at 00:00 local on 2026-11-16
-ON_SINCE = local("2026-11-16 00:00")
+SETTINGS = ph.HealthSettings(no_step_min=90, below_outdoor_c=8.0)
+# The program put the pump ON at 00:00 local on 2026-11-16; it stopped at 02:20
+TRIP_ON = local("2026-11-16 00:00")
 
 
-class TestAlarmNight:
-    def test_the_house_part_alerts_by_00_50(self):
-        minutes = frame("alarm_boost")
-        verdict = ph.judge(minutes, local("2026-11-16 00:50"), ON_SINCE, 6.3, SETTINGS)
+def behind(name: str) -> dict:
+    """{minute: kW} behind the 3EM in the fixture: battery minus solar."""
+    with open(FIXTURES / f"{name}.csv", newline="") as f:
+        return {
+            int(r["t"]): float(r["battery"]) - float(r["solar"])
+            for r in csv.DictReader(f)
+            if r["battery"] and r["solar"]
+        }
+
+
+def trip(now: str, **kwargs) -> ph.Verdict:
+    args = {"on_since": TRIP_ON, "outdoor_c": 6.3, "s": SETTINGS}
+    args.update(kwargs)
+    return ph.judge(frame("pump_idle_nov16"), behind("pump_idle_nov16"), local(now), **args)
+
+
+def flat(n: int, l2: float = 0.1) -> list:
+    return [hd.Minute(t * 60, 50.0, 50.0, (0.9, l2, 0.2)) for t in range(n)]
+
+
+def zero(n: int) -> dict:
+    return {t * 60: 0.0 for t in range(n)}
+
+
+class TestTheTripNight:
+    def test_alarms_90_min_after_the_pump_stopped(self):
+        verdict = trip("2026-11-16 03:55")
+        assert verdict.alarm, verdict
+        assert verdict.reason == "ON and nothing runs"
+
+    def test_no_alarm_before_90_idle_min(self):
+        assert not trip("2026-11-16 03:30").alarm
+
+    def test_no_alarm_while_the_boost_and_the_compressor_ran(self):
+        for now in ("2026-11-16 01:30", "2026-11-16 02:15"):
+            verdict = trip(now)
+            assert not verdict.alarm and verdict.reason == "the pump runs", (now, verdict)
+
+    def test_a_time_between_whole_minutes_still_judges(self):
+        """The timer fires at :40 s; the minute data sits on whole minutes."""
+        minutes, net = frame("pump_idle_nov16"), behind("pump_idle_nov16")
+        now = local("2026-11-16 03:55") + 40
+        assert ph.judge(minutes, net, now, TRIP_ON, 6.3, SETTINGS).alarm
+        assert rph.minute_now(now) == local("2026-11-16 03:55")
+
+    def test_the_quiet_base_is_the_house_alone(self):
+        base = trip("2026-11-16 03:55").base_kw
+        assert base is not None and 0.0 < base < 0.4
+
+
+class TestSolarAndBattery:
+    def test_a_sunny_day_does_not_pull_the_base_down(self):
+        """On 2026-11-05 the panels gave 3.5 kW and raw L2 went to -0.7 kW."""
+        minutes, net = frame("day_idle_nov05"), behind("day_idle_nov05")
+        verdict = ph.judge(minutes, net, local("2026-11-05 13:00"), 0, 4.7, SETTINGS)
+        assert verdict.base_kw is not None and verdict.base_kw > 0.0, verdict
+        raw = ph.judge(minutes, {t: 0.0 for t in net}, local("2026-11-05 13:00"), 0, 4.7, SETTINGS)
+        assert raw.base_kw is not None and raw.base_kw < 0.0
+
+    def test_the_trip_still_alarms_after_a_day_of_solar_export(self):
+        minutes = frame("pump_idle_nov16")
+        net = behind("pump_idle_nov16")
+        sunny = range(local("2026-11-15 11:00"), local("2026-11-15 13:00"), 60)
+        shifted = [
+            (
+                hd.Minute(m.t, m.top, m.bottom, (m.phases[0], m.phases[1] - 1.0, m.phases[2]))
+                if m.t in sunny and m.phases is not None
+                else m
+            )
+            for m in minutes
+        ]
+        net.update({t: net[t] - 3.0 for t in sunny if t in net})
+        verdict = ph.judge(shifted, net, local("2026-11-16 03:55"), TRIP_ON, 6.3, SETTINGS)
         assert verdict.alarm, verdict
 
-    def test_the_boost_part_gives_no_alert(self):
-        minutes = [m for m in frame("alarm_boost") if m.t <= local("2026-11-15 23:40")]
-        on_since = local("2026-11-15 22:20")
-        verdict = ph.judge(minutes, local("2026-11-15 23:40"), on_since, 6.3, SETTINGS)
-        assert not verdict.alarm and "boost" in verdict.reason
+    def test_battery_charging_is_taken_off_l2(self):
+        rows = flat(250) + [hd.Minute(t * 60, 50.0, 50.0, (0.9, 0.9, 0.2)) for t in range(250, 400)]
+        charging = zero(250) | {t * 60: 2.4 for t in range(250, 400)}
+        assert ph.judge(rows, charging, 399 * 60, 0, 0.0, SETTINGS).alarm
+        assert not ph.judge(rows, zero(400), 399 * 60, 0, 0.0, SETTINGS).alarm
 
-    def test_a_normal_boost_gives_no_alert(self):
-        minutes = frame("boost")
-        now = local("2026-11-22 10:30")
-        verdict = ph.judge(minutes, now, now - 3600, 2.0, SETTINGS)
-        assert not verdict.alarm
+    def test_late_checkwatt_minutes_are_skipped(self):
+        """CheckWatt arrives minutes late: the last minutes have no battery data."""
+        rows = flat(400)
+        late = {t: v for t, v in zero(400).items() if t <= 392 * 60}
+        assert ph.judge(rows, late, 399 * 60, 0, 0.0, SETTINGS).alarm
 
-    def test_normal_on_hours_give_no_alert(self):
+    def test_no_checkwatt_data_judges_nothing(self):
+        verdict = ph.judge(flat(400), {}, 399 * 60, 0, 0.0, SETTINGS)
+        assert not verdict.alarm and verdict.reason == "too little data for the base"
+
+
+class TestNormalIdles:
+    def test_the_77_min_daytime_idle_of_nov_5_gives_no_alarm(self):
+        minutes, net = frame("day_idle_nov05"), behind("day_idle_nov05")
+        on = local("2026-11-05 11:00")
+        reasons = set()
+        for now in range(local("2026-11-05 12:30"), local("2026-11-05 13:01"), 300):
+            verdict = ph.judge(minutes, net, now, on, 4.7, SETTINGS)
+            assert not verdict.alarm, (now, verdict)
+            reasons.add(verdict.reason)
+        assert reasons == {"the pump runs"}
+
+    def test_normal_on_hours_give_no_alarm(self):
+        now = local("2026-11-17 05:45")
         minutes = frame("stages_nov17")
-        for t in ("2026-11-17 00:50", "2026-11-17 05:40"):
-            verdict = ph.judge(minutes, local(t), local(t) - 3000, 2.0, SETTINGS)
-            assert not verdict.alarm, (t, verdict)
+        net = {m.t - m.t % 60: 0.0 for m in minutes}
+        verdict = ph.judge(minutes, net, now, now - 6000, 2.0, SETTINGS)
+        assert not verdict.alarm and verdict.reason == "the pump runs", verdict
+
+    def test_a_blip_does_not_end_an_idle_stretch(self):
+        rows = flat(400)
+        for t in (350, 351):
+            rows[t] = hd.Minute(t * 60, 50.0, 50.0, (0.9, 1.1, 0.2))
+        assert ph.judge(rows, zero(400), 399 * 60, 0, 0.0, SETTINGS).alarm
+        rows[352] = hd.Minute(352 * 60, 50.0, 50.0, (0.9, 1.1, 0.2))
+        assert not ph.judge(rows, zero(400), 399 * 60, 0, 0.0, SETTINGS).alarm
 
 
 class TestGuards:
     def test_not_on_for_the_whole_window(self):
-        verdict = ph.judge(frame("alarm_boost"), local("2026-11-16 00:40"), ON_SINCE, 6.3, SETTINGS)
+        verdict = trip("2026-11-16 03:55", on_since=local("2026-11-16 02:30"))
         assert not verdict.alarm and "not ON" in verdict.reason
 
     def test_mild_weather(self):
-        verdict = ph.judge(frame("alarm_boost"), local("2026-11-16 00:50"), ON_SINCE, 9.0, SETTINGS)
+        verdict = trip("2026-11-16 03:55", outdoor_c=9.0)
         assert not verdict.alarm and "cold" in verdict.reason
 
     def test_no_outdoor_reading(self):
-        verdict = ph.judge(
-            frame("alarm_boost"), local("2026-11-16 00:50"), ON_SINCE, None, SETTINGS
-        )
-        assert not verdict.alarm
+        verdict = trip("2026-11-16 03:55", outdoor_c=None)
+        assert not verdict.alarm and verdict.reason == "no outdoor reading"
 
-    def test_too_little_data(self):
-        minutes = [hd.Minute(0, 50.0, 50.0, (1.0, 1.0, 1.0))]
-        assert not ph.judge(minutes, 3600, 0, 0.0, SETTINGS).alarm
+    def test_too_little_data_for_the_base(self):
+        verdict = ph.judge(flat(200), zero(200), 199 * 60, 0, 0.0, SETTINGS)
+        assert not verdict.alarm and verdict.reason == "too little data for the base"
+
+    def test_too_little_data_in_the_window(self):
+        rows = [m for m in flat(500) if m.t < 410 * 60 or m.t % 1200 == 0]
+        verdict = ph.judge(rows, zero(500), 499 * 60, 0, 0.0, SETTINGS)
+        assert not verdict.alarm and verdict.reason == "too little data in the window"
 
     def test_settings_need_both_keys(self):
         with pytest.raises(ValueError):
-            ph.load_health_settings({"no_compressor_min": 45})
+            ph.load_health_settings({"no_step_min": 90})
+        assert ph.load_health_settings({"no_step_min": 90, "below_outdoor_c": 8}) == SETTINGS
 
-    def test_heater_only_wants_a_balanced_full_step(self):
-        base = (0.8, 0.2, 0.2)
-        assert ph.heater_only((2.9, 2.4, 2.4), base)
-        assert not ph.heater_only((2.9, 2.05, 2.2), base)
-        assert not ph.heater_only((1.8, 1.2, 1.2), base)
+
+class Rec:
+    def __init__(self, t, field, value):
+        self._t, self._f, self._v = t, field, value
+
+    def get_time(self):
+        return datetime.datetime.fromtimestamp(self._t, datetime.timezone.utc)
+
+    def get_field(self):
+        return self._f
+
+    def get_value(self):
+        return self._v
 
 
 class TestWrapper:
@@ -99,3 +207,22 @@ class TestWrapper:
         (tmp_path / "a.json").write_text(json.dumps({"sent": 1000}))
         assert not rph.should_mail(1000 + 6 * 3600 - 1)
         assert rph.should_mail(1000 + 6 * 3600)
+
+    def test_behind_is_charge_minus_discharge_minus_solar_in_kw(self):
+        class Table:
+            records = [
+                Rec(60, "BatteryCharge", 2400.0),
+                Rec(60, "SolarYield", 600.0),
+                Rec(120, "BatteryDischarge", 600.0),
+            ]
+
+        class Influx:
+            def query_with_retry(self, flux):
+                assert "SolarYield" in flux and "BatteryDischarge" in flux
+                return [Table()]
+
+        class Config:
+            influxdb_bucket_checkwatt = "checkwatt"
+
+        got = rph.behind_kw(Influx(), Config(), 0, 180)
+        assert got == {60: pytest.approx(1.8), 120: pytest.approx(-0.6)}

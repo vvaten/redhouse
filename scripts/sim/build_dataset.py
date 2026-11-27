@@ -131,7 +131,7 @@ def build(name, client, now):
         flux = pivoted("shelly_em3_emeters_raw", "shelly_em3", EM3_FIELDS)
         return collect(client, days(MINUTE_START, now), flux, name)
     if name == "battery_minute":
-        fields = ["BatteryCharge", "BatteryDischarge", "EnergyImport", "EnergyExport"]
+        fields = ["BatteryCharge", "BatteryDischarge", "SolarYield", "EnergyImport", "EnergyExport"]
         flux = pivoted("checkwatt", "checkwatt", fields)
         return collect(client, days(MINUTE_START, now), flux, name)
     if name == "pump_commands":
