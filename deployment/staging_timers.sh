@@ -34,6 +34,7 @@ TIMERS=(
     "solar-prediction"
     "generate-program"
     "execute-program"
+    "pre-pulse"
     "garage-heater"
     "power-cap"
     "load-guard"

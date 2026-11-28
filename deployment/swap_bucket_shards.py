@@ -61,6 +61,7 @@ WRITERS = {
     "load_control": [
         "redhouse-generate-program.timer",
         "redhouse-execute-program.timer",
+        "redhouse-pre-pulse.timer",
         "redhouse-garage-heater.timer",
         "redhouse-power-cap.timer",
         "redhouse-load-guard.timer",

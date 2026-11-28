@@ -17,18 +17,20 @@ from src.control.hardware_implementations import MockHardwareInterface
 from src.control.pump_controller import PumpController
 
 
-def _controller(tmpdir, last_command=None, on_since=None):
+def _controller(tmpdir, last_command=None, on_since=None, released="on_since"):
+    """released defaults to on_since: entering ON from EVU is a release."""
     controller = PumpController(
         hardware=MockHardwareInterface(), state_file=os.path.join(tmpdir, "state.json")
     )
     controller.last_command = last_command
     controller.last_command_time = on_since
     controller.on_since = on_since
+    controller.last_release_time = on_since if released == "on_since" else released
     return controller
 
 
 class TestEVUCycling(unittest.TestCase):
-    """The periodic cycle runs only while ON, once ON has lasted 105 min."""
+    """The periodic cycle runs only while ON, 103 min after the last release."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -39,20 +41,26 @@ class TestEVUCycling(unittest.TestCase):
 
     def test_threshold_leaves_one_check_and_a_margin_inside_the_window(self):
         c = PumpController
-        assert c.EVU_CYCLE_THRESHOLD + c.EXECUTOR_INTERVAL + c.PULSE_MARGIN <= (
-            c.DIRECT_HEATING_BLOCK
-        )
+        assert c.PULSE_DUE_AFTER + c.EXECUTOR_INTERVAL + c.PULSE_MARGIN <= (c.DIRECT_HEATING_BLOCK)
+        assert c.PULSE_MARGIN > c.EVU_CYCLE_DURATION
 
     def test_cycle_needed_at_the_threshold(self):
         controller = _controller(self.tmpdir, "ON", on_since=1000)
-        threshold = controller.EVU_CYCLE_THRESHOLD
+        threshold = controller.PULSE_DUE_AFTER
         assert controller.check_evu_cycle_needed(1000 + threshold) is True
         assert controller.check_evu_cycle_needed(1000 + threshold - 1) is False
 
     def test_the_105_minute_check_pulses_even_30_seconds_after_a_pulse(self):
-        """on_since is the release, 30 s after the run that pulsed."""
+        """The release is 30 s after the run that pulsed. A 105 min rule
+        would wait for the 120 min check, and the block would run out."""
         controller = _controller(self.tmpdir, "ON", on_since=1000 + 30)
         assert controller.check_evu_cycle_needed(1000 + 105 * 60) is True
+
+    def test_the_periodic_pulse_counts_from_the_last_release_not_from_on(self):
+        controller = _controller(self.tmpdir, "ON", on_since=1000, released=1000 + 3600)
+        assert controller.check_evu_cycle_needed(1000 + 2 * 3600) is False
+        due = 1000 + 3600 + controller.PULSE_DUE_AFTER
+        assert controller.check_evu_cycle_needed(due) is True
 
     def test_cycle_never_needed_outside_on(self):
         for command in ("EVU", "ALE", None):
@@ -66,6 +74,7 @@ class TestEVUCycling(unittest.TestCase):
         assert controller.hardware.commands_executed == ["EVU", "ON"]
         assert controller.last_command == "ON"
         assert controller.on_since == 8000 + controller.EVU_CYCLE_DURATION
+        assert controller.last_release_time == 8000 + controller.EVU_CYCLE_DURATION
         assert controller.check_evu_cycle_needed(8000 + 60 * 60) is False
 
     def test_a_pulse_keeps_the_time_of_the_last_real_command(self):
@@ -224,6 +233,78 @@ class TestEVUCycling(unittest.TestCase):
         assert mock_hw.commands_executed.count("EVU") == 0
 
 
+class TestPulseIntoOnOnlyWhenDue:
+    """ALE -> ON pulses only when the direct heating block would run out."""
+
+    NOW = 1_000_000
+
+    def _ale(self, tmp_path, released):
+        return _controller(str(tmp_path), "ALE", on_since=None, released=released)
+
+    def test_a_fresh_release_skips_the_pulse(self, tmp_path):
+        controller = self._ale(tmp_path, self.NOW - 60 * 60)
+        assert controller.execute_command("ON", self.NOW, self.NOW)["success"]
+        assert controller.hardware.commands_executed == ["ON"]
+        assert controller.last_release_time == self.NOW - 60 * 60
+        assert controller.on_since == self.NOW
+
+    def test_an_old_release_pulses(self, tmp_path):
+        controller = self._ale(tmp_path, self.NOW - PumpController.PULSE_DUE_AFTER)
+        assert controller.execute_command("ON", self.NOW, self.NOW)["success"]
+        assert controller.hardware.commands_executed == ["EVU", "ON"]
+        assert controller.last_release_time == self.NOW + controller.EVU_CYCLE_DURATION
+
+    def test_an_unknown_release_pulses(self, tmp_path):
+        controller = self._ale(tmp_path, None)
+        controller.last_evu_cycle_time = None
+        assert controller.execute_command("ON", self.NOW, self.NOW)["success"]
+        assert controller.hardware.commands_executed == ["EVU", "ON"]
+
+    def test_a_state_file_without_releases_falls_back_to_the_last_pulse(self, tmp_path):
+        path = tmp_path / "state.json"
+        old = {"last_command": "ALE", "last_command_time": 1, "last_evu_cycle_time": self.NOW}
+        path.write_text(json.dumps(old))
+        controller = PumpController(hardware=MockHardwareInterface(), state_file=str(path))
+        assert controller.last_release() == self.NOW
+        controller.execute_command("ON", self.NOW + 600, self.NOW + 600)
+        assert controller.hardware.commands_executed == ["ON"]
+
+    def test_a_release_by_another_source_counts(self, tmp_path):
+        """The end of an EVU hold, released by another caller on the same state."""
+        path = str(tmp_path / "state.json")
+        other = PumpController(hardware=MockHardwareInterface(), state_file=path, source="manual")
+        other.last_command = "EVU"
+        other.execute_command("ALE", self.NOW, self.NOW)
+        executor = PumpController(hardware=MockHardwareInterface(), state_file=path)
+        assert executor.last_release_time == self.NOW
+        later = self.NOW + 90 * 60
+        assert executor.execute_command("ON", later, later)["success"]
+        assert executor.hardware.commands_executed == ["ON"]
+
+    def test_the_release_survives_a_restart(self, tmp_path):
+        controller = self._ale(tmp_path, None)
+        controller.execute_command("ON", self.NOW, self.NOW)
+        again = PumpController(hardware=MockHardwareInterface(), state_file=controller.state_file)
+        assert again.last_release_time == self.NOW + controller.EVU_CYCLE_DURATION
+
+    def test_quarter_switching_keeps_the_block_running_and_pulses_rarely(self, tmp_path):
+        """ON and ALE quarters with checks 0 to 40 s late: whenever a check
+        finds the pump ON, a pulse from it still lands inside the block."""
+        controller = self._ale(tmp_path, None)
+        pattern = "ON ON ALE ON ALE ALE ON ON ON ON ON ON ON ON ON ON ALE ON ON ON ON ON".split()
+        quarters = 4 * 24 * 2
+        for k in range(quarters):
+            now = self.NOW + k * 900 + (k * 7) % 41
+            if controller.last_command == "ON":
+                block_ends = controller.last_release() + controller.DIRECT_HEATING_BLOCK
+                assert now + controller.EVU_CYCLE_DURATION <= block_ends, k
+                if controller.check_evu_cycle_needed(now):
+                    controller.perform_evu_cycle(current_time=now)
+            controller.execute_command(pattern[k % len(pattern)], now, now)
+        pulses = controller.hardware.commands_executed.count("EVU")
+        assert pulses <= quarters * 900 // controller.PULSE_DUE_AFTER + 1
+
+
 class TestStateManagement(unittest.TestCase):
     """Test state persistence and management."""
 
@@ -379,6 +460,7 @@ class TestClockInjection(unittest.TestCase):
         controller.last_command = "ON"
         controller.last_command_time = fake_time
         controller.on_since = fake_time
+        controller.last_release_time = fake_time
         fake_time = fake_time + (105 * 60)  # Advance time
 
         # Update needs explicit time since we can't mutate the lambda closure

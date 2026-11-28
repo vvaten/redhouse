@@ -11,6 +11,8 @@ import pytest
 
 from src.common import control_lock
 from src.control import load_overrides as lo
+from src.control.hardware_implementations import MockHardwareInterface
+from src.control.pump_controller import PumpController
 from src.monitoring.program_check import program_path
 
 REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
@@ -244,3 +246,54 @@ class TestGuardHold:
         executor, pump = self._executor()
         wrapper._restore_after_override(executor, [], 2000 + lo.RESTORE_WINDOW_S + 1)
         pump.execute_command.assert_not_called()
+
+
+class TestPrePulse:
+    """--pre-pulse pulses before a coming ON, under the lock, outside holds."""
+
+    @pytest.fixture
+    def pump(self, tmp_path, monkeypatch):
+        now = int(datetime.datetime.now().timestamp())
+        program = {
+            "version": "2.0.0",
+            "loads": {
+                "geothermal_pump": {
+                    "schedule": [
+                        {"timestamp": now - 600, "local_time": "a", "command": "ALE"},
+                        {"timestamp": now + 30, "local_time": "b", "command": "ON"},
+                    ]
+                }
+            },
+        }
+        path = program_path(wrapper.helsinki_date(), str(tmp_path))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(program))
+        real = PumpController(hardware=MockHardwareInterface(), state_file=str(tmp_path / "s"))
+        real.last_command = "ALE"
+        fake = Mock()
+        fake.load_controller.pump_controller = real
+        monkeypatch.setattr(wrapper, "HeatingProgramExecutor", lambda dry_run: fake)
+        monkeypatch.setattr(wrapper, "OVERRIDES", tmp_path / "o.json")
+        monkeypatch.setattr(sys, "argv", ["x", "--pre-pulse", "--base-dir", str(tmp_path)])
+        return real
+
+    def test_pulses_and_releases_to_ale(self, pump):
+        assert wrapper.main() == 0
+        assert pump.hardware.commands_executed == ["EVU", "ALE"]
+
+    def test_a_guard_hold_blocks_it(self, pump, tmp_path):
+        now = int(datetime.datetime.now().timestamp())
+        TestGuardHold()._hold(tmp_path / "o.json", now - 60, now + 600)
+        assert wrapper.main() == 0
+        assert pump.hardware.commands_executed == []
+
+    def test_a_taken_lock_stops_it(self, pump):
+        with control_lock.control_lock(0):
+            with patch.object(wrapper, "PRE_PULSE_LOCK_TIMEOUT_S", 0):
+                assert wrapper.main() == 1
+        assert pump.hardware.commands_executed == []
+
+    def test_it_runs_on_now_only(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["x", "--pre-pulse", "--date", "2026-10-12"])
+        with pytest.raises(SystemExit):
+            wrapper.parse_args()

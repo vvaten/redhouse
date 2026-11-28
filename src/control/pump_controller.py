@@ -47,12 +47,12 @@ class PumpController:
     MAX_EXECUTION_DELAY = 1800  # 30 minutes
 
     # An EVU-off release blocks the pump's direct heating for 120 min. The
-    # executor checks every 15 min, so pulse at the last check that still
-    # falls inside the window, with 2 min to spare: every 105 min in ON.
+    # executor checks every 15 min, so a pulse is due at the last check inside
+    # the window, with 2 min for the 30 s pulse and a late run.
     DIRECT_HEATING_BLOCK = 120 * 60
     EXECUTOR_INTERVAL = 15 * 60
     PULSE_MARGIN = 2 * 60
-    EVU_CYCLE_THRESHOLD = DIRECT_HEATING_BLOCK - EXECUTOR_INTERVAL - PULSE_MARGIN
+    PULSE_DUE_AFTER = DIRECT_HEATING_BLOCK - EXECUTOR_INTERVAL - PULSE_MARGIN
     EVU_CYCLE_DURATION = 30  # Cycle EVU-OFF for 30 seconds
 
     RELAY_ATTEMPTS = 3
@@ -93,6 +93,8 @@ class PumpController:
         self.last_command: Optional[str] = None
         self.last_command_time: Optional[int] = None
         self.last_evu_cycle_time: Optional[int] = None
+        # When EVU was last released, by any caller that shares the state file
+        self.last_release_time: Optional[int] = None
 
         # Load saved state
         self._load_state()
@@ -133,6 +135,7 @@ class PumpController:
                     self.last_command_time = state.get("last_command_time")
                     self.last_evu_cycle_time = state.get("last_evu_cycle_time")
                     self.on_since = state.get("on_since")
+                    self.last_release_time = state.get("last_release_time")
                     if self.on_since is None and self.last_command == "ON":
                         # A state file from before on_since: the later of the two
                         known = [t for t in (self.last_command_time, self.last_evu_cycle_time) if t]
@@ -153,6 +156,7 @@ class PumpController:
                 "last_command": self.last_command,
                 "last_command_time": self.last_command_time,
                 "last_evu_cycle_time": self.last_evu_cycle_time,
+                "last_release_time": self.last_release_time,
             }
             # A power cut mid-write must not leave a truncated state file
             partial = self.state_file.with_name(self.state_file.name + ".tmp")
@@ -164,22 +168,32 @@ class PumpController:
         except Exception as e:
             logger.error(f"Failed to save pump state: {e}")
 
-    def check_evu_cycle_needed(self, current_time: Optional[int] = None) -> bool:
-        """
-        True only while the pump is ON and has been ON, without an EVU-off
-        pulse, for at least EVU_CYCLE_THRESHOLD seconds.
-        """
-        if current_time is None:
-            current_time = self.clock()
+    def last_release(self) -> Optional[int]:
+        """The last EVU release; a state file from before last_release_time
+        has only the last pulse. None if unknown."""
+        if self.last_release_time is not None:
+            return self.last_release_time
+        return self.last_evu_cycle_time
 
-        if self.last_command != "ON" or self.on_since is None:
-            return False
-
-        on_for = current_time - self.on_since
-        if on_for >= self.EVU_CYCLE_THRESHOLD:
-            logger.info(f"EVU cycle needed: ON for {on_for}s >= {self.EVU_CYCLE_THRESHOLD}s")
+    def pulse_due(self, at: int) -> bool:
+        """True when the last release is PULSE_DUE_AFTER old at the given
+        time, or unknown: the direct heating block would end before the
+        executor checks again."""
+        released = self.last_release()
+        if released is None:
+            logger.info("EVU pulse due: no release known")
+            return True
+        age = at - released
+        if age >= self.PULSE_DUE_AFTER:
+            logger.info(f"EVU pulse due: last release {age}s ago >= {self.PULSE_DUE_AFTER}s")
             return True
         return False
+
+    def check_evu_cycle_needed(self, current_time: Optional[int] = None) -> bool:
+        """True only while the pump is ON and a pulse is due."""
+        if current_time is None:
+            current_time = self.clock()
+        return self.last_command == "ON" and self.pulse_due(current_time)
 
     def _execute_raw_command(self, command: str) -> dict:
         """Write a relay command without state tracking, retrying a few times:
@@ -210,42 +224,37 @@ class PumpController:
 
         return result
 
-    def _perform_evu_cycle_internal(self, current_time: int) -> dict:
-        """
-        Internal EVU cycle that doesn't call execute_command (avoids recursion).
-        Used when automatically cycling before turning pump ON.
-
-        Args:
-            current_time: Current time (epoch seconds)
-
-        Returns:
-            Dict with cycle results
-        """
-        logger.info(f"Performing EVU cycle before a mode change from {self.last_command}")
-
-        result: dict[str, Any] = {"success": False}
-
-        # Step 1: Enable EVU-OFF
+    def _evu_and_wait(self) -> Optional[str]:
+        """Write EVU-OFF and hold it for EVU_CYCLE_DURATION (no wait in test
+        mode, but in staging). Returns the error, or None."""
         evu_result = self._execute_raw_command("EVU")
         logger.info(f"EVU-OFF command: {evu_result['output']}")
         if not evu_result["success"]:
-            result["error"] = f"Failed to enable EVU: {evu_result.get('error')}"
-            return result
-
-        # Step 2: Wait 30 seconds (skip only in test mode, not in staging)
+            return f"Failed to enable EVU: {evu_result['error']}"
         if self.test_mode:
             logger.info(f"TEST MODE: Skipping {self.EVU_CYCLE_DURATION}s wait for EVU cycle")
         else:
             logger.info(f"Waiting {self.EVU_CYCLE_DURATION}s for EVU cycle...")
             time.sleep(self.EVU_CYCLE_DURATION)
+        return None
 
-        # Step 3: Record the pulse; the command that follows sets on_since
-        self.last_evu_cycle_time = current_time
+    def _record_evu(self, at: Optional[int]) -> None:
+        """The relays were last written EVU, so record that."""
+        self.last_command, self.last_command_time, self.on_since = "EVU", at, None
         self._save_state()
 
-        result["success"] = True
+    def _perform_evu_cycle_internal(self, current_time: int) -> dict:
+        """The EVU half of a pulse before a mode change; the caller writes the
+        mode that releases it. Returns success and error."""
+        logger.info(f"Performing EVU cycle before a mode change from {self.last_command}")
+        error = self._evu_and_wait()
+        if error is not None:
+            return {"success": False, "error": error}
+        # The command that follows sets on_since and the release
+        self.last_evu_cycle_time = current_time
+        self._save_state()
         logger.info("EVU cycle completed")
-        return result
+        return {"success": True, "error": None}
 
     def perform_evu_cycle(self, current_time: Optional[int] = None) -> dict:
         """
@@ -266,47 +275,58 @@ class PumpController:
             return result
 
         logger.info(f"Performing EVU cycle: ON since {self.on_since}")
-
-        # Step 1: Enable EVU-OFF
-        evu_result = self._execute_raw_command("EVU")
-        logger.info(f"EVU-OFF command: {evu_result['output']}")
-        if not evu_result["success"]:
-            result["error"] = f"Failed to enable EVU: {evu_result.get('error')}"
-            logger.error(result["error"])
+        error = self._evu_and_wait()
+        if error is not None:
+            result["error"] = error
+            logger.error(error)
             return result
 
-        # Step 2: Wait 30 seconds (skip only in test mode, not in staging)
-        if self.test_mode:
-            logger.info(f"TEST MODE: Skipping {self.EVU_CYCLE_DURATION}s wait for EVU cycle")
-        else:
-            logger.info(f"Waiting {self.EVU_CYCLE_DURATION}s for EVU cycle...")
-            time.sleep(self.EVU_CYCLE_DURATION)
-
-        # Step 3: Return to ON
         restore_result = self._execute_raw_command("ON")
         logger.info(f"Restore to ON: {restore_result['output']}")
-
         if not restore_result["success"]:
-            # The relays were last written EVU, so record that, not ON
-            self.last_command = "EVU"
-            self.last_command_time = current_time
-            self.on_since = None
-            self._save_state()
-            result["error"] = f"Failed to restore ON: {restore_result.get('error')}"
+            self._record_evu(current_time)
+            result["error"] = f"Failed to restore ON: {restore_result['error']}"
             logger.error(result["error"])
             return result
 
-        # Step 4: Update state. The pulse is not a command, so the time of
-        # the last real command stays for the program and restore checks.
+        # The pulse is not a command, so the time of the last real command
+        # stays for the program and restore checks.
         self.on_since = current_time + self.EVU_CYCLE_DURATION
         self.last_evu_cycle_time = current_time
+        self.last_release_time = self.on_since
         self._save_state()
         self._released("ON", "ON", "pulse", "pulse")
 
         result["success"] = True
         result["restored_command"] = "ON"
         logger.info("EVU cycle completed successfully")
+        return result
 
+    def pre_pulse(self, current_time: int) -> dict:
+        """Pulse EVU-OFF from ALE or an unknown state and release to ALE, so a
+        coming ON finds a fresh release and an idle compressor."""
+        result: dict[str, Any] = {"success": False, "error": None}
+        if self.last_command not in ("ALE", None):
+            result["error"] = f"Pump is {self.last_command}, not ALE: no pre-pulse"
+            logger.warning(result["error"])
+            return result
+        cycle = self._perform_evu_cycle_internal(current_time)
+        if not cycle["success"]:
+            result["error"] = cycle["error"]
+            logger.error(f"Pre-pulse failed: {result['error']}")
+            return result
+        previous = self.last_command
+        if not self._execute_raw_command("ALE")["success"]:
+            self._record_evu(current_time)
+            result["error"] = "Failed to release to ALE"
+            logger.error(result["error"])
+            return result
+        self.last_command = "ALE"
+        self.last_release_time = current_time + self.EVU_CYCLE_DURATION
+        self._save_state()
+        self._released("ALE", previous, "pre_pulse", "pulse")
+        result["success"] = True
+        logger.info("Pre-pulse completed: released to ALE")
         return result
 
     def _released(
@@ -317,10 +337,15 @@ class PumpController:
         who = source if source is not None else self.source
         evu_release.log_release(who, new_state, str(previous), via, self.clock(), mock)
 
-    def _should_perform_evu_cycle(self, command: str) -> bool:
-        """Pulse into ON from ALE or an unknown state, where the pump is likely
-        behind its heating curve. ALE needs no release, and EVU -> ON is one."""
-        return command == "ON" and self.last_command in ("ALE", None)
+    def _should_perform_evu_cycle(self, command: str, at: int) -> bool:
+        """Pulse into ON from ALE or an unknown state once a pulse is due. ALE
+        needs no release, EVU -> ON is one, and a fresh release still runs."""
+        if command != "ON" or self.last_command not in ("ALE", None):
+            return False
+        if self.pulse_due(at):
+            return True
+        logger.info(f"{self.last_command} -> ON without a pulse: the last release is fresh")
+        return False
 
     def _create_result_dict(self, command: str, scheduled_time: int, actual_time: int) -> dict:
         """A failed result for the command, with its timing metadata."""
@@ -355,15 +380,13 @@ class PumpController:
         result = self._create_result_dict(command, scheduled_time, actual_time)
 
         # Perform EVU cycle if needed based on state transition
-        pulse_failed = False
         pulsed = False
-        if self._should_perform_evu_cycle(command):
+        if self._should_perform_evu_cycle(command, actual_time):
             logger.info(f"State transition {self.last_command} -> {command}: performing EVU cycle")
             cycle_result = self._perform_evu_cycle_internal(actual_time)
             pulsed = cycle_result["success"]
             if not cycle_result["success"]:
-                pulse_failed = True
-                logger.warning(f"EVU cycle before {command} failed: {cycle_result.get('error')}")
+                logger.warning(f"EVU cycle before {command} failed: {cycle_result['error']}")
 
         try:
             logger.info(f"Executing pump command: {command} (delay: {result['delay_seconds']}s)")
@@ -373,13 +396,7 @@ class PumpController:
 
             if not success:
                 if pulsed:
-                    # The pulse left the relays in EVU, so record that
-                    self.last_command, self.last_command_time, self.on_since = (
-                        "EVU",
-                        actual_time,
-                        None,
-                    )
-                    self._save_state()
+                    self._record_evu(actual_time)
                 result["error"] = "Hardware command failed"
                 logger.error(f"Pump command '{command}' failed: hardware error")
                 return result
@@ -387,27 +404,30 @@ class PumpController:
             result["success"] = True
             result["output"] = f"Pump command {command} executed via hardware interface"
             logger.info(f"Pump command '{command}' executed successfully")
-
-            # Update state tracking on success. A repeated ON keeps on_since;
-            # after a failed pulse the window counts as spent, so it retries.
-            if command != "ON":
-                self.on_since = None
-            elif pulse_failed:
-                self.on_since = actual_time - self.EVU_CYCLE_THRESHOLD
-            elif self.last_command != "ON" or self.on_since is None:
-                self.on_since = actual_time
-            previous = self.last_command
-            self.last_command = command
-            self.last_command_time = actual_time
-            self._save_state()
-            if command != "EVU" and (pulsed or previous == "EVU"):
-                self._released(command, previous, "ale_on_pulse" if pulsed else "command")
+            self._record_command(command, actual_time, pulsed)
 
         except Exception as e:
             result["error"] = str(e)
             logger.error(f"Pump command '{command}' failed with exception: {e}", exc_info=True)
 
         return result
+
+    def _record_command(self, command: str, actual_time: int, pulsed: bool) -> None:
+        """Track a written command. A repeated ON keeps on_since; a failed
+        pulse leaves the old release, so the next check retries."""
+        if command != "ON":
+            self.on_since = None
+        elif self.last_command != "ON" or self.on_since is None:
+            self.on_since = actual_time
+        previous = self.last_command
+        self.last_command = command
+        self.last_command_time = actual_time
+        released = command != "EVU" and (pulsed or previous == "EVU")
+        if released:
+            self.last_release_time = actual_time + (self.EVU_CYCLE_DURATION if pulsed else 0)
+        self._save_state()
+        if released:
+            self._released(command, previous, "ale_on_pulse" if pulsed else "command")
 
     def apply_state(self, command: str, current_time: int, clock_ok: bool = True) -> dict:
         """Set the pump to command from any unknown state, as after a reboot.
@@ -419,18 +439,14 @@ class PumpController:
         stamp = current_time if clock_ok else self.last_command_time
         result: dict[str, Any] = {"success": False, "command": command, "error": None}
         if command in ("ON", "ALE"):
-            pulse = self._execute_raw_command("EVU")
-            if not pulse["success"]:
-                result["error"] = f"EVU pulse failed: {pulse['error']}"
+            error = self._evu_and_wait()
+            if error is not None:
+                result["error"] = error
                 return result
-            if not self.test_mode:
-                time.sleep(self.EVU_CYCLE_DURATION)
         applied = self._execute_raw_command(command)
         if not applied["success"]:
             if command in ("ON", "ALE"):
-                # The pulse left the relays in EVU
-                self.last_command, self.last_command_time, self.on_since = "EVU", stamp, None
-                self._save_state()
+                self._record_evu(stamp)
             result["error"] = f"{command} failed: {applied['error']}"
             return result
 
@@ -440,6 +456,7 @@ class PumpController:
         self.last_command_time = stamp
         if command in ("ON", "ALE"):
             self.last_evu_cycle_time = current_time
+            self.last_release_time = released
         self.on_since = released if command == "ON" else None
         self._save_state()
         if command in ("ON", "ALE"):

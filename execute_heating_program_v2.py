@@ -17,6 +17,7 @@ Options:
     --dry-run           Log commands but don't execute
     --verbose           Enable verbose logging
     --force             Force execution of old commands (ignore max delay)
+    --pre-pulse         Only pulse EVU before an ON due within a minute
 
 Examples:
     # Normal operation (run every 15 minutes via cron)
@@ -30,6 +31,9 @@ Examples:
 
     # Verbose logging
     python execute_heating_program_v2.py --verbose
+
+    # Pre-pulse (run 30 s before each quarter)
+    python execute_heating_program_v2.py --pre-pulse
 """
 
 import argparse
@@ -41,6 +45,7 @@ from src.common.control_lock import ControlLockTimeout, control_lock
 from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
 from src.control.load_overrides import active_override, ended_override
+from src.control.pre_pulse import run_pre_pulse
 from src.control.program_executor import HeatingProgramExecutor
 from src.control.program_fallback import load_valid_program
 from src.control.program_shape import PUMP_LOAD, program_is_well_formed
@@ -50,6 +55,8 @@ logger = setup_logger(__name__)
 
 # Covers another executor run still in its EVU pulse or a slow write
 LOCK_TIMEOUT_S = 120
+# A pre-pulse that starts after its ON quarter began has nothing to do
+PRE_PULSE_LOCK_TIMEOUT_S = 25
 OVERRIDES = Path(__file__).resolve().parent / "data" / "load_overrides.json"
 
 
@@ -92,7 +99,16 @@ def parse_args():
         help="Force execution of old commands (ignore max delay)",
     )
 
-    return parser.parse_args()
+    parser.add_argument(
+        "--pre-pulse",
+        action="store_true",
+        help="Only pulse EVU before an ON due within a minute, if a pulse is due",
+    )
+
+    args = parser.parse_args()
+    if args.pre_pulse and (args.date or args.force):
+        parser.error("--pre-pulse runs on now's programs, without --date or --force")
+    return args
 
 
 def _load_program_with_error_handling(executor, program_date: str, base_dir: str):
@@ -185,6 +201,9 @@ def main():
     logger.info("=" * 60)
 
     try:
+        if args.pre_pulse:
+            with control_lock(PRE_PULSE_LOCK_TIMEOUT_S):
+                return _run_pre_pulse(args)
         with control_lock(LOCK_TIMEOUT_S):
             return _run(args)
     except ControlLockTimeout as e:
@@ -192,6 +211,28 @@ def main():
         return 1
     except OSError as e:
         logger.error(f"Not run, cannot open the control lock: {e}")
+        return 1
+
+
+def _run_pre_pulse(args) -> int:
+    """Pulse EVU before the pump's next ON, under the control lock. The
+    programs of today and tomorrow cover an ON at midnight."""
+    try:
+        executor = HeatingProgramExecutor(dry_run=args.dry_run)
+        today = helsinki_date()
+        programs = [
+            load_valid_program(program_path(today + datetime.timedelta(days=d), args.base_dir))
+            for d in (0, 1)
+        ]
+        now = int(datetime.datetime.now().timestamp())
+        pump = executor.load_controller.pump_controller
+
+        def held(at: int) -> bool:
+            return active_override(OVERRIDES, PUMP_LOAD, at) is not None
+
+        return 1 if run_pre_pulse(pump, programs, now, held) == "failed" else 0
+    except Exception as e:
+        logger.error(f"Pre-pulse run failed: {e}", exc_info=True)
         return 1
 
 
