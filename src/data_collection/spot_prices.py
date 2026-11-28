@@ -426,7 +426,7 @@ def alert_if_tomorrow_missing(now: float, status: dict, config) -> bool:
         return False
     latest = datetime.datetime.fromtimestamp(int(status["latest_epoch_timestamp"]), HELSINKI)
     body = (
-        f"Tomorrow's spot prices are not in InfluxDB at {MISSING_ALERT_AT:%H:%M}. "
+        f"Tomorrow's spot prices were not fetched by {MISSING_ALERT_AT:%H:%M}. "
         f"The last price is for {latest:%Y-%m-%d %H:%M}. The program generator "
         "retries hourly until 23:06; at 23:50 the fallback copies today's program."
     )
@@ -460,7 +460,10 @@ def main():
     try:
         result = asyncio.run(collect_spot_prices(dry_run=args.dry_run))
         if not args.dry_run:
-            alert_if_tomorrow_missing(time.time(), load_status(), get_config())
+            try:
+                alert_if_tomorrow_missing(time.time(), load_status(), get_config())
+            except Exception as e:
+                logger.error(f"Missing-prices check failed: {e}")
         return result
 
     except Exception as e:

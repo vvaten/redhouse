@@ -78,7 +78,7 @@ WRITERS = {
 APPEND_ONLY = {"temperatures"}
 # A run that read before the cut-over can still write a little after it
 LIVE_MARGIN = datetime.timedelta(minutes=10)
-AVOID = {"spotprice": "Not 13:29-16:00 local time, when the prices arrive."}
+AVOID = {"spotprice": "Not 14:00-16:05 local time, when the prices arrive."}
 
 
 def writers(name: str) -> str:

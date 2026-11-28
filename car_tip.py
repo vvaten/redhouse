@@ -10,10 +10,13 @@ Usage:
 
 import argparse
 import datetime
+import json
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
+from src.common.atomic_json import write_json
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.local_time import HELSINKI
@@ -29,6 +32,8 @@ from src.monitoring.program_check import PROGRAM_BASE_DIR, program_path
 logger = setup_logger(__name__, "car_tip.log")
 
 CAP_STATE = Path(__file__).resolve().parent / "data" / "power_cap_state.json"
+# The local day the tip was last decided, so a later run that day does nothing
+TIP_STATE = Path(__file__).resolve().parent / "data" / "car_tip_state.json"
 UTC = datetime.timezone.utc
 HORIZON_H = 24
 
@@ -93,6 +98,20 @@ def _staging(config) -> bool:
     return flag or config.influxdb_bucket_load_control.endswith("_staging")
 
 
+def decided_on(path: Path) -> Optional[str]:
+    """The local day of the last decision, or None."""
+    try:
+        state = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return str(state["decided"]) if isinstance(state, dict) and "decided" in state else None
+
+
+def tomorrow_planned(now: datetime.datetime) -> bool:
+    tomorrow = now.astimezone(HELSINKI).date() + datetime.timedelta(days=1)
+    return load_valid_program(program_path(tomorrow, PROGRAM_BASE_DIR)) is not None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Mail the car charging tip")
     parser.add_argument("--dry-run", action="store_true", help="Log the tip, mail nothing")
@@ -102,6 +121,13 @@ def main() -> int:
     cap = pc.load_cap_settings(config.power_cap_section)
     budget = lb.load_budget_settings(config.load_budget_section, config.hot_water_section)
     now = datetime.datetime.now(UTC)
+    today = now.astimezone(HELSINKI).date().isoformat()
+    if not args.dry_run and decided_on(TIP_STATE) == today:
+        logger.info("The tip was already decided today")
+        return 0
+    if not args.dry_run and not tomorrow_planned(now):
+        logger.info("No program for tomorrow yet; the next run tries again")
+        return 0
     start = now.replace(minute=0, second=0, microsecond=0)
     try:
         prices = quarter_prices(InfluxClient(config), config.influxdb_bucket_spotprice, start)
@@ -111,10 +137,15 @@ def main() -> int:
     result, reason = ct.tip(prices, now, settings, cap, context(now, budget, cap))
     if result is None:
         logger.info(f"No tip today: {reason}")
+        if reason != ct.MISSING and not args.dry_run:
+            write_json(TIP_STATE, {"decided": today})
         return 0
     body = ct.describe(result)
     logger.info(f"Car tip:\n{body}")
-    if args.dry_run or _staging(config):
+    if args.dry_run:
+        return 0
+    if _staging(config):
+        write_json(TIP_STATE, {"decided": today})
         return 0
     api_key = config.get("RESEND_API_KEY")
     to_email = config.get("ALERT_EMAIL_TO")
@@ -124,7 +155,10 @@ def main() -> int:
     from_email = config.get("ALERT_EMAIL_FROM")
     kwargs = {"from_email": from_email} if from_email else {}
     subject = f"[RedHouse] Car tip: start at {ct.local_label(result[0].start)}"
-    return 0 if send_alert_email(api_key, to_email, subject, body, **kwargs) else 1
+    if not send_alert_email(api_key, to_email, subject, body, **kwargs):
+        return 1
+    write_json(TIP_STATE, {"decided": today})
+    return 0
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ from src.common.local_time import HELSINKI
 from src.control.power_cap import CapSettings, factor, month_cap
 
 QUARTER = datetime.timedelta(minutes=15)
+MISSING = "prices or the planned load are missing"
 
 
 @dataclass(frozen=True)
@@ -161,7 +162,7 @@ def tip(prices: dict, now, s: TipSettings, cap: CapSettings, ctx: dict):
     low = best(prices, now, s.kw_low, s, cap, ctx)
     plug_in = plug_in_window(prices, now, s.kw_low, s, cap, ctx)
     if low is None or plug_in is None:
-        return None, "prices or the planned load are missing"
+        return None, MISSING
     saving = plug_in.total_eur - low.total_eur
     if saving < s.min_saving_eur:
         return None, f"saving {saving:.2f} EUR is under the threshold"
