@@ -32,13 +32,16 @@ class Selection:
 @dataclass(frozen=True)
 class Window:
     """Epoch [start, stop) to plan; carried: ON quarters of the day before
-    that the window takes over; today: that day's program when re-planned."""
+    that the window takes over; lead_on: ON quarters of the start's hour
+    before it; evu_from: start of an EVU block running into the window."""
 
     start: int
     stop: int
     carried: int
     lead: int
     today: Optional[dict]
+    lead_on: int = 0
+    evu_from: Optional[int] = None
 
 
 def next_quarter(now: int) -> int:
@@ -51,14 +54,29 @@ def plan_window(day_start: int, day_stop: int, before: Optional[dict], load_id: 
     entries = []
     if before is not None and load_id in before["loads"]:
         entries = before["loads"][load_id]["schedule"]
-    if now is not None and before is not None and next_quarter(now) < day_start:
-        start = next_quarter(now)
+    start, carried, today = day_start, 0, None
+    if now is not None and entries and next_quarter(now) < day_start:
+        start, today = next_quarter(now), before
         carried = len(on_quarters(entries, start, day_start))
-        lead = lead_off(last_on_end(entries, start), start)
-        return Window(start, day_stop, carried, lead, before)
+    hour_start = start - start % 3600
     return Window(
-        day_start, day_stop, 0, lead_off(last_on_end(entries, day_start), day_start), None
+        start=start,
+        stop=day_stop,
+        carried=carried,
+        lead=lead_off(last_on_end(entries, start), start),
+        today=today,
+        lead_on=len(on_quarters(entries, hour_start, start)),
+        evu_from=running_evu_start(entries, start),
     )
+
+
+def running_evu_start(entries: list, at: int) -> Optional[int]:
+    """The start of the EVU block that runs up to at, or None."""
+    for e in entries:
+        t = int(e["timestamp"])
+        if e["command"] == "EVU" and t < at <= t + _minutes(e) * 60:
+            return t
+    return None
 
 
 def _minutes(entry: dict) -> int:
@@ -99,15 +117,20 @@ def hour_key(t: pd.Timestamp) -> pd.Timestamp:
     return t.tz_convert("UTC").floor("h").tz_convert(HELSINKI)
 
 
-def select(priorities: pd.DataFrame, n: int, caps: dict, max_off_h, lead: int) -> Selection:
+def select(
+    priorities: pd.DataFrame, n: int, caps: dict, max_off_h, lead: int, lead_on: int = 0
+) -> Selection:
     """The window's ON quarters. priorities: one row per quarter, indexed by
     aware quarter start, heating_prio in EUR per hour of ON. caps: {hour
     start: ON quarters allowed}, keyed as hour_key gives."""
     costs = list(priorities["heating_prio"] * QUARTER_H)
     hours = [hour_key(t) for t in priorities.index]
     max_off = None if max_off_h is None else int(round(max_off_h * 4))
-    chosen = qp.plan(costs, hours, caps, n, max_off, lead)
-    free = qp.plan(costs, hours, caps, n, None, lead) if max_off is not None else chosen
+    chosen = qp.plan(costs, hours, caps, n, max_off, lead, lead_on=lead_on)
+    if max_off is None:
+        free = chosen
+    else:
+        free = qp.plan(costs, hours, caps, n, None, lead, lead_on=lead_on)
     flags = pd.Series(chosen.on, index=priorities.index)
     return Selection(
         runs=runs(priorities.loc[flags.to_numpy()]),
@@ -190,6 +213,8 @@ def split_at(entries: list, boundary: int) -> tuple:
 def revise_today(program: dict, load_id: str, new_entries: list, start: int) -> dict:
     """Today's program with its schedule from start replaced by new_entries.
     Entries before start stay, executed or not; a block over start is cut."""
+    if load_id not in program["loads"]:
+        raise ValueError(f"Today's program has no {load_id} load to re-plan")
     revised = copy.deepcopy(program)
     load = revised["loads"][load_id]
     kept, _ = split_at(load["schedule"], start)

@@ -63,6 +63,7 @@ class HeatingProgramGenerator:
         settings: Any = self.config
         self.max_off_h = float(settings.max_off_h)
         self.today_revision: Optional[dict] = None
+        self.today_part: Optional[tuple] = None
         self.influx = InfluxClient(self.config)
         self.data_fetcher = HeatingDataFetcher()
         self.heating_curve = HeatingCurve()
@@ -104,8 +105,10 @@ class HeatingProgramGenerator:
         hours = sorted({qprog.hour_key(t) for t in priorities.index})
         caps = hour_caps(hours, self.config, CAP_STATE)
         n = int(round(hours_to_heat * 4)) + window.carried
-        selection = qprog.select(priorities, n, caps, self.max_off_h, window.lead)
-        evu_off_periods = self.evu_optimizer.quarter_periods(priorities, n, selection.on_index)
+        selection = qprog.select(priorities, n, caps, self.max_off_h, window.lead, window.lead_on)
+        evu_off_periods = self.evu_optimizer.quarter_periods(
+            priorities, n, selection.on_index, window.evu_from
+        )
         loads_schedules = self.schedule_builder.generate_load_schedules(
             selection.runs, evu_off_periods, priorities, program_date
         )
@@ -135,7 +138,8 @@ class HeatingProgramGenerator:
         day_start = HELSINKI.localize(
             datetime.datetime.combine(program_date.date(), datetime.time())
         )
-        day_stop = HELSINKI.normalize(day_start + datetime.timedelta(days=1))
+        next_day = program_date.date() + datetime.timedelta(days=1)
+        day_stop = HELSINKI.localize(datetime.datetime.combine(next_day, datetime.time()))
         before = load_valid_program(
             program_path(program_date.date() - datetime.timedelta(days=1), self.program_dir)
         )
@@ -164,9 +168,11 @@ class HeatingProgramGenerator:
         return priorities
 
     def _split_today(self, loads_schedules: dict, window: qprog.Window, program_date) -> dict:
-        """Cut the pump schedule at the day start; the part before goes into
-        today_revision, today's program re-planned from the window start."""
+        """Cut the pump schedule at the day start. today_part keeps the part
+        before with the window start, to lay onto a fresh read of today's file;
+        today_revision is that applied to the copy read for the plan."""
         self.today_revision = None
+        self.today_part = None
         if window.today is None:
             return loads_schedules
         day_start = HELSINKI.localize(
@@ -174,6 +180,7 @@ class HeatingProgramGenerator:
         )
         pump = loads_schedules[PUMP_LOAD]
         today_part, day_part = qprog.split_at(pump["schedule"], int(day_start.timestamp()))
+        self.today_part = (today_part, window.start)
         self.today_revision = qprog.revise_today(window.today, PUMP_LOAD, today_part, window.start)
         return dict(loads_schedules, **{PUMP_LOAD: qprog.with_schedule(pump, day_part)})
 

@@ -35,15 +35,23 @@ Examples:
 import argparse
 import datetime
 import sys
+import time
+from typing import Optional
 
 from src.common.atomic_json import write_json
+from src.common.control_lock import control_lock
 from src.common.local_time import helsinki_date
 from src.common.logger import setup_logger
 from src.control.program_fallback import is_fallback_copy, load_valid_program
 from src.control.program_generator import HeatingProgramGenerator
+from src.control.program_shape import PUMP_LOAD
+from src.control.quarter_program import revise_today
 from src.monitoring.program_check import program_path
 
 logger = setup_logger(__name__)
+# The executor holds the lock for a run of a few seconds at each quarter
+REVISION_LOCK_TIMEOUT_S = 60
+REVISION_MARGIN_S = 60
 
 
 def parse_args():
@@ -146,17 +154,35 @@ def _save_program_files(generator, program: dict, output_dir: str, dry_run: bool
     return json_path
 
 
-def _save_today_revision(generator, output_dir: str, dry_run: bool) -> None:
-    """Write today's re-planned program atomically; the executor re-reads it.
-    InfluxDB gets it as "adjusted", so the first plan stays comparable."""
-    revision = generator.today_revision
-    if revision is None:
-        return
-    path = program_path(datetime.date.fromisoformat(revision["program_date"]), output_dir)
-    write_json(path, revision)
+def _save_today_revision(generator, output_dir: str) -> Optional[dict]:
+    """Lay the re-planned rest of today onto a fresh read of today's file,
+    under the control lock the executor holds while it writes the file.
+    Raises when the window start is too near: the next run re-plans."""
+    if generator.today_part is None:
+        return None
+    part, start = generator.today_part
+    day = datetime.date.fromisoformat(generator.today_revision["program_date"])
+    path = program_path(day, output_dir)
+    with control_lock(REVISION_LOCK_TIMEOUT_S):
+        if time.time() > start - REVISION_MARGIN_S:
+            raise RuntimeError("Too late to re-plan the rest of today; the next run re-plans")
+        fresh = load_valid_program(path)
+        if fresh is None:
+            raise RuntimeError(f"Today's program {path} is gone or unusable")
+        revision = revise_today(fresh, PUMP_LOAD, part, start)
+        write_json(path, revision)
     logger.info(f"Re-planned the rest of today: {path}")
-    if not dry_run:
+    return revision
+
+
+def _save_revision_influxdb(generator, revision: Optional[dict], dry_run: bool) -> None:
+    """The revision as "adjusted", so the first plan stays comparable."""
+    if revision is None or dry_run:
+        return
+    try:
         generator.save_program_influxdb(revision, data_type="adjusted")
+    except Exception as e:
+        logger.error(f"Today's re-plan not saved to InfluxDB: {e}")
 
 
 def _print_program_summary(program: dict, json_path: str):
@@ -224,9 +250,10 @@ def main():
 
         _log_program_generation_info(program, args)
 
-        # Save program, then today's program re-planned with it
+        # Today's re-plan first: tomorrow's program counts on it
+        revision = _save_today_revision(generator, args.output_dir)
         json_path = _save_program_files(generator, program, args.output_dir, args.dry_run)
-        _save_today_revision(generator, args.output_dir, args.dry_run)
+        _save_revision_influxdb(generator, revision, args.dry_run)
 
         # Print summary
         _print_program_summary(program, json_path)

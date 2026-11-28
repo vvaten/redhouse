@@ -123,6 +123,16 @@ def test_matches_a_brute_force_search(seed):
     assert (result.over_cap, pytest.approx(result.cost)) == expected
 
 
+def test_the_first_hours_earlier_on_quarters_count_against_its_cap():
+    """Two ON quarters before the window in hour 0 with a cap of 3: one more there."""
+    costs = [1.0, 1.0, 9.0, 9.0, 9.0, 9.0]
+    hours = [0, 0, 1, 1, 1, 1]
+    result = qp.plan(costs, hours, {0: 3, 1: 4}, 2, lead_on=2)
+    assert result.on[:2].count(True) == 1 and result.over_cap == 0
+    with pytest.raises(ValueError):
+        qp.plan(costs, hours, {0: 3, 1: 4}, 2, lead_on=4)
+
+
 def test_bad_input_is_refused():
     with pytest.raises(ValueError):
         qp.plan([1.0], [0, 1], {0: 4, 1: 4}, 1)

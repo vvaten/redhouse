@@ -287,10 +287,11 @@ class TestPrePulse:
         assert wrapper.main() == 0
         assert pump.hardware.commands_executed == []
 
-    def test_a_taken_lock_stops_it(self, pump):
+    def test_a_taken_lock_skips_it_without_a_failure(self, pump):
+        """The ON pulses by itself, so the unit must not show as failed."""
         with control_lock.control_lock(0):
             with patch.object(wrapper, "PRE_PULSE_LOCK_TIMEOUT_S", 0):
-                assert wrapper.main() == 1
+                assert wrapper.main() == 0
         assert pump.hardware.commands_executed == []
 
     def test_it_runs_on_now_only(self, monkeypatch):

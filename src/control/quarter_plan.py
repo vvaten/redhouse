@@ -34,13 +34,14 @@ def _check(costs: list, hours: list, caps: dict, n: int) -> None:
         raise ValueError(f"No cap for hours {missing}")
 
 
-def _solve(costs: list, hours: list, caps: dict, n: int, gap: int, lead: int, tail_free: bool):
+def _solve(costs: list, hours: list, caps: dict, n: int, gap: int, lead: tuple, tail_free: bool):
     """The best plan as a list of bools, or None when no plan keeps the gap.
     Gap index gap + 1 is a tail past the limit: no ON may follow it."""
     over = gap + 1
     shape = (n + 1, gap + 2, QUARTERS_PER_HOUR + 1)
     dp = np.full(shape, np.inf)
-    dp[0, min(lead, gap), 0] = 0.0
+    lead_off, lead_on = lead
+    dp[0, min(lead_off, gap), lead_on] = 0.0
     steps = []
     for i in range(len(costs)):
         reset_from = None
@@ -97,30 +98,35 @@ def plan(
     max_off: Optional[int] = None,
     lead_off: int = 0,
     end_counts: bool = True,
+    lead_on: int = 0,
 ) -> QuarterPlan:
     """The cheapest n ON quarters. costs: EUR of one ON quarter each; hours:
     the hour key of each quarter; caps: {hour key: ON quarters that fit}.
     max_off: the most OFF quarters in a row (None: no limit); lead_off: OFF
-    quarters before the first one; end_counts: the tail is a gap too.
+    quarters before the first one; end_counts: the tail is a gap too;
+    lead_on: ON quarters the first quarter's hour already has before it.
     Without a plan that keeps max_off, the gap is dropped."""
     _check(costs, hours, caps, n)
+    if not 0 <= lead_on < QUARTERS_PER_HOUR:
+        raise ValueError(f"lead_on must be 0 to 3, not {lead_on}")
     loose = len(costs) + lead_off
     gap = loose if max_off is None else max_off
-    on = _solve(costs, hours, caps, n, gap, lead_off, not end_counts)
+    on = _solve(costs, hours, caps, n, gap, (lead_off, lead_on), not end_counts)
     kept = on is not None and max_off is not None
     if on is None:
-        on = _solve(costs, hours, caps, n, loose, lead_off, True)
+        on = _solve(costs, hours, caps, n, loose, (lead_off, lead_on), True)
     if on is None:
         raise RuntimeError("No plan without a gap limit: a bug")
-    return QuarterPlan(tuple(on), _cost(on, costs), _over(on, hours, caps), kept)
+    over = _over(on, hours, caps, {hours[0]: lead_on} if hours else {})
+    return QuarterPlan(tuple(on), _cost(on, costs), over, kept)
 
 
 def _cost(on: list, costs: list) -> float:
     return float(sum(c for c, x in zip(costs, on) if x))
 
 
-def _over(on: list, hours: list, caps: dict) -> int:
-    used: dict = {}
+def _over(on: list, hours: list, caps: dict, already: Optional[dict] = None) -> int:
+    used: dict = dict(already) if already else {}
     for h, x in zip(hours, on):
         if x:
             used[h] = (used[h] if h in used else 0) + 1

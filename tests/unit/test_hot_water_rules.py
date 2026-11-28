@@ -202,6 +202,14 @@ class TestPreOn:
         assert hr.on_block_start(c) == block
         assert hr.pre_on(c, hr.RuleState()) is not None
 
+    def test_a_block_at_45_compares_its_own_hour(self):
+        """ON from 03:45: the run from 03:25 costs the 03:00 price, as the block."""
+        block = local("2026-12-02 03:45")
+        program = {block - H: "ALE", block: "ON"}
+        prices = {hr.hour_of(block) - H: 0.20, hr.hour_of(block): 0.05}
+        c = ctx(block - 20 * 60, bottom=44.0, prices=prices, program=program)
+        assert hr.pre_on(c, hr.RuleState()) is not None
+
     def test_no_block_while_the_pump_is_on(self):
         block = local("2026-12-02 03:15")
         program = {block - H: "ON", block: "ON"}

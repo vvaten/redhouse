@@ -455,8 +455,9 @@ class PumpController:
         self.last_command = command
         self.last_command_time = stamp
         if command in ("ON", "ALE"):
-            self.last_evu_cycle_time = current_time
-            self.last_release_time = released
+            # A clock that runs ahead would hold back the next pulse
+            self.last_evu_cycle_time = current_time if clock_ok else None
+            self.last_release_time = released if clock_ok else None
         self.on_since = released if command == "ON" else None
         self._save_state()
         if command in ("ON", "ALE"):

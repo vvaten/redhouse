@@ -215,9 +215,8 @@ def pre_on(ctx: Context, state: RuleState) -> Optional[Want]:
     if _held(state, "pre_on", ctx, lambda since: block):
         return Want("pre_on", "regular run before an ON block")
     lead = int(cfg["lead_min"]) * 60
+    # The run costs the price of the hour it starts in
     before, during = price_c(ctx, hour_of(block - lead)), price_c(ctx, hour_of(block))
-    if hour_of(block - lead) == hour_of(block):
-        before = price_c(ctx, hour_of(block) - HOUR_S)
     extra = float(cfg["max_extra_c_kwh"])
     cheap = before is not None and during is not None and before - during <= extra
     reach = float(ctx.settings["preheat"]["reach_c"])

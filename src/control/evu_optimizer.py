@@ -2,13 +2,31 @@
 """Optimize EVU-OFF periods to block expensive direct heating."""
 
 import math
-from typing import Any
+from typing import Any, Optional
 
 from src.common.config import get_config
 from src.common.logger import setup_logger
 from src.control.heating_optimizer import HeatingOptimizer
 
 logger = setup_logger(__name__)
+
+
+def limit_runs(spans: list, head: Optional[tuple], max_s: int) -> list:
+    """The sorted (start, stop) spans with every run of touching spans, the
+    head included, at most max_s long: a span that would pass it starts one
+    quarter later, or goes when nothing of it is left."""
+    out: list = []
+    run_start, run_stop = head if head is not None else (None, None)
+    for a, b in spans:
+        if run_stop == a and b - run_start > max_s:
+            a += 900
+        if a >= b:
+            continue
+        if run_stop != a:
+            run_start = a
+        out.append((a, b))
+        run_stop = b
+    return out
 
 
 class EvuOptimizer:
@@ -98,10 +116,12 @@ class EvuOptimizer:
 
         return evu_off_periods
 
-    def quarter_periods(self, priorities, on_quarters: int, keep) -> list[dict]:
+    def quarter_periods(
+        self, priorities, on_quarters: int, keep, running_from: Optional[int] = None
+    ) -> list[dict]:
         """EVU-OFF blocks over a window of quarter rows: quarters dearer than
-        the threshold and not ON, at most the max continuous hours a block,
-        leaving 2 h of the window out of EVU besides the ON quarters."""
+        the threshold and not ON, leaving 2 h of the window out of EVU besides
+        the ON quarters. running_from: start of an EVU block that runs into it."""
         room = len(priorities) - on_quarters - 8
         if room <= 0:
             logger.info("No room for EVU-OFF periods (heating most of the window)")
@@ -113,14 +133,20 @@ class EvuOptimizer:
             logger.info("No quarters expensive enough for EVU-OFF")
             return []
         groups = self._optimize_evu_off_groups(dear, self.EVU_OFF_MAX_CONTINUOUS_HOURS * 4, 900)
+        spans = [
+            (int(g["first"].timestamp()), int(g["last"].timestamp()) + 900)
+            for g in sorted(groups, key=lambda g: g["first"])
+        ]
+        start = int(priorities.index[0].timestamp())
+        head = None if running_from is None else (running_from, start)
         periods = []
-        for group_id, group in enumerate(groups, start=1):
-            start, stop = int(group["first"].timestamp()), int(group["last"].timestamp()) + 900
-            periods.append({"group_id": group_id, "start": start, "stop": stop})
-            logger.info(
-                f"EVU-OFF group {group_id}: {group['first']} for {(stop - start) // 60} min"
-            )
+        for group_id, (a, b) in enumerate(limit_runs(spans, head, self._max_evu_s()), start=1):
+            periods.append({"group_id": group_id, "start": a, "stop": b})
+            logger.info(f"EVU-OFF group {group_id}: from {a} for {(b - a) // 60} min")
         return periods
+
+    def _max_evu_s(self) -> int:
+        return int(self.EVU_OFF_MAX_CONTINUOUS_HOURS * 3600)
 
     def _optimize_evu_off_groups(
         self, expensive_hours_df, max_continuous_hours: int, step: int = 3600

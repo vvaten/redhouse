@@ -559,6 +559,11 @@ is_always_on() {
 }
 
 should_run() {
+    # The pre-pulse only prepares the executor's ON, so it runs with it
+    if [ "$1" = "redhouse-pre-pulse" ]; then
+        should_run "redhouse-execute-program"
+        return
+    fi
     [ "$START_ALL" = true ] || was_running "$1.timer" || is_always_on "$1"
 }
 

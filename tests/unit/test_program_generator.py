@@ -11,7 +11,7 @@ import pandas as pd
 from src.common.atomic_json import write_json
 from src.common.local_time import HELSINKI, helsinki_date
 from src.control import quarter_program as qprog
-from src.control.evu_optimizer import EvuOptimizer
+from src.control.evu_optimizer import EvuOptimizer, limit_runs
 from src.control.heating_data_fetcher import HeatingDataUnavailable
 from src.control.heating_optimizer import HeatingOptimizer
 from src.control.program_generator import HeatingProgramGenerator
@@ -82,6 +82,19 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
         with patch("src.control.heating_optimizer.HeatingOptimizer"):
             mock_optimizer = MagicMock()
             self.evu_optimizer = EvuOptimizer(mock_optimizer)
+
+    def test_touching_blocks_never_run_past_the_limit(self):
+        h = 3600
+        spans = [(0, 4 * h - 900), (4 * h - 900, 4 * h + 900), (6 * h, 7 * h)]
+        assert limit_runs(spans, None, 4 * h) == [
+            (0, 4 * h - 900),
+            (4 * h, 4 * h + 900),
+            (6 * h, 7 * h),
+        ]
+        # A block running into the window counts: 2 h 15 min before plus 4 h
+        assert limit_runs([(0, 4 * h)], (-2 * h - 900, 0), 4 * h) == [(900, 4 * h)]
+        assert limit_runs([(0, 900)], (-4 * h, 0), 4 * h) == []
+        assert limit_runs([(0, h)], (-h, 0), 4 * h) == [(0, h)]
 
     def test_quarter_blocks_skip_on_quarters_and_cap_their_length(self):
         """Six dear hours 16-22, the 18:15 quarter ON: blocks of at most 4 h."""
@@ -764,6 +777,11 @@ class TestGenerateDailyProgram(unittest.TestCase):
     def _today_at(self, hour: int) -> int:
         local = datetime.datetime.combine(helsinki_date(0), datetime.time(hour))
         return int(HELSINKI.localize(local).timestamp())
+
+    def test_the_window_ends_at_the_next_local_midnight_on_dst_days(self):
+        for day, hours in (("2026-10-25", 25), ("2027-03-28", 23), ("2026-12-02", 24)):
+            w = self.generator._window(datetime.datetime.fromisoformat(day), live=False)
+            self.assertEqual(w.stop - w.start, hours * 3600, day)
 
     def test_a_live_run_replans_the_rest_of_today_with_tomorrow(self):
         """Today's 22:00 hour is dearer than tomorrow: it moves into tomorrow,

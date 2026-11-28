@@ -207,6 +207,10 @@ def main():
         with control_lock(LOCK_TIMEOUT_S):
             return _run(args)
     except ControlLockTimeout as e:
+        if args.pre_pulse:
+            # The ON still pulses by itself, so a skipped pre-pulse is no failure
+            logger.warning(f"Pre-pulse skipped, the control lock is taken: {e}")
+            return 0
         logger.error(f"Not run, the control lock is taken: {e}")
         return 1
     except OSError as e:

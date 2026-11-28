@@ -53,6 +53,22 @@ def test_a_live_evening_run_plans_the_rest_of_today_too():
     assert w.start == DAY_S - 8 * 3600 + Q and w.carried == 4 and w.today is before
 
 
+def test_the_window_knows_the_on_quarters_and_evu_before_it():
+    """16:06: ON from 16:00 cut at 16:15; EVU 14:00 to 18:00 in another plan."""
+    start = DAY_S - 8 * 3600
+    on_before = _program([_on(start, 60), _ale(start + 3600)])
+    w = qprog.plan_window(DAY_S, DAY_S + 86400, on_before, "geothermal_pump", start + 360)
+    assert w.lead_on == 1 and w.evu_from is None
+    evu = {"timestamp": start - 2 * 3600, "command": "EVU", "duration_minutes": 240}
+    w2 = qprog.plan_window(DAY_S, DAY_S + 86400, _program([evu]), "geothermal_pump", start + 360)
+    assert w2.evu_from == start - 2 * 3600 and w2.lead_on == 0
+
+
+def test_revise_today_refuses_a_program_without_the_load():
+    with pytest.raises(ValueError):
+        qprog.revise_today({"loads": {}}, "geothermal_pump", [], DAY_S)
+
+
 def test_without_a_live_run_the_window_is_the_day():
     before = _program([_on(DAY_S - 2 * 3600, 60), _ale(DAY_S - 3600)])
     w = qprog.plan_window(DAY_S, DAY_S + 86400, before, "geothermal_pump", None)
