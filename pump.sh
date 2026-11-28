@@ -15,7 +15,7 @@ if [ "$writes" = true ]; then
     # The executor and the boot restore write the same relays and state file,
     # and nothing locks them
     states=$(systemctl is-active redhouse-execute-program.service \
-        redhouse-pump-restore.service || true)
+        redhouse-pre-pulse.service redhouse-pump-restore.service || true)
     if grep -qx activating <<< "$states"; then
         echo "The executor or the boot restore is running: try again in a minute" >&2
         exit 1

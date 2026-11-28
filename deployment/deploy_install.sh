@@ -131,6 +131,7 @@ TIMERS=(
     "redhouse-solar-prediction"
     "redhouse-generate-program"
     "redhouse-execute-program"
+    "redhouse-pre-pulse"
     "redhouse-garage-heater"
     "redhouse-power-cap"
     "redhouse-load-guard"

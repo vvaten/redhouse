@@ -12,7 +12,9 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.common.local_time import helsinki_date
+from src.control.hardware_implementations import MockHardwareInterface
 from src.control.program_executor import HeatingProgramExecutor
+from src.control.pump_controller import PumpController
 
 
 @pytest.fixture
@@ -819,3 +821,30 @@ class TestPeriodicPulseFollowsTheProgram:
                 executor.save_program(changed, base_dir=str(tmp_path))
         reloaded = executor.load_program(sample_program["program_date"], str(tmp_path))
         assert reloaded["version"] == sample_program["version"]
+
+
+class TestPeriodicPulseCountsFromTheLastRelease:
+    """A long ON needs no pulse while another source released EVU lately."""
+
+    def _executor(self, mock_config, tmp_path, released):
+        executor = HeatingProgramExecutor(config=mock_config)
+        pump = PumpController(hardware=MockHardwareInterface(), state_file=str(tmp_path / "s"))
+        pump.last_command, pump.last_command_time, pump.on_since = "ON", 1000, 1000
+        pump.last_release_time = released
+        executor.load_controller.pump_controller = pump
+        return executor, pump
+
+    def test_no_pulse_after_a_fresh_release(
+        self, mock_config, mock_influx_client, mock_load_controller, tmp_path
+    ):
+        executor, pump = self._executor(mock_config, tmp_path, released=20_000)
+        assert executor.run_periodic_pulse(21_000, _pump_program((1000, "ON"))) is False
+        assert pump.hardware.commands_executed == []
+
+    def test_a_pulse_once_the_release_is_old(
+        self, mock_config, mock_influx_client, mock_load_controller, tmp_path
+    ):
+        executor, pump = self._executor(mock_config, tmp_path, released=20_000)
+        now = 20_000 + PumpController.PULSE_DUE_AFTER
+        assert executor.run_periodic_pulse(now, _pump_program((1000, "ON"))) is True
+        assert pump.hardware.commands_executed == ["EVU", "ON"]

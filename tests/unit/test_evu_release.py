@@ -43,6 +43,35 @@ class TestEverySource:
         assert _pump(tmp_path, "EVU").apply_state("ALE", 100)["success"]
         assert evu_releases == [("boot", "ALE", "EVU", "boot_pulse")]
 
+    def test_the_pre_pulse(self, tmp_path, evu_releases):
+        assert _pump(tmp_path, "ALE").pre_pulse(100)["success"]
+        assert evu_releases == [("pulse", "ALE", "ALE", "pre_pulse")]
+
+
+class TestTheReleaseIsKept:
+    """Each release is saved with the pump state, where every caller reads it."""
+
+    @pytest.mark.parametrize(
+        "before,act,released",
+        [
+            ("EVU", lambda p: p.execute_command("ALE", 100, 100), 100),
+            ("ON", lambda p: p.perform_evu_cycle(100), 130),
+            ("ALE", lambda p: p.execute_command("ON", 100, 100), 130),
+            ("EVU", lambda p: p.apply_state("ALE", 100), 130),
+            ("ALE", lambda p: p.pre_pulse(100), 130),
+        ],
+        ids=["command", "pulse", "ale_on_pulse", "boot", "pre_pulse"],
+    )
+    def test_every_release_is_saved(self, tmp_path, before, act, released):
+        assert act(_pump(tmp_path, before))["success"]
+        assert json.loads((tmp_path / "s.json").read_text())["last_release_time"] == released
+
+    def test_no_release_keeps_the_old_time(self, tmp_path):
+        pump = _pump(tmp_path, "ON")
+        pump.last_release_time = 50
+        assert pump.execute_command("EVU", 100, 100)["success"]
+        assert json.loads((tmp_path / "s.json").read_text())["last_release_time"] == 50
+
 
 class TestNoRelease:
     @pytest.mark.parametrize(

@@ -1,0 +1,18 @@
+[Unit]
+Description=RedHouse Pump EVU Pre-Pulse
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/opt/redhouse
+# Drives the real heat pump, like redhouse-execute-program: keep the two
+# alike, both with or both without --dry-run.
+ExecStart=/opt/redhouse/venv/bin/python /opt/redhouse/execute_heating_program_v2.py --pre-pulse
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=redhouse-pre-pulse
+
+[Install]
+WantedBy=multi-user.target

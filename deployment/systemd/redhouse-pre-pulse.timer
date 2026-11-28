@@ -1,0 +1,11 @@
+[Unit]
+Description=RedHouse Pump EVU Pre-Pulse Timer
+
+[Timer]
+# 30 s before each quarter, so a due pulse ends as the ON quarter starts
+# In UTC: on local time systemd skips the repeated autumn hour
+OnCalendar=*:14,29,44,59:30 UTC
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
