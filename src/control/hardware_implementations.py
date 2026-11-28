@@ -10,7 +10,9 @@ This module provides implementations for:
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -191,10 +193,10 @@ class MockHardwareInterface(PumpHardwareInterface):
         }
 
 
-class GarageRelay:
-    """One garage heater on a Shelly 1 (Gen1) relay. An OFF always carries a
-    flip-back timer, so a stopped controller leaves the heater ON."""
+class _Gen1Relay:
+    """HTTP access to one Shelly Gen1 relay channel, with retries."""
 
+    LABEL = "Relay"
     TRIES = 3
     RETRY_WAIT_S = 2.0
     TIMEOUT_S = 5.0
@@ -211,21 +213,28 @@ class GarageRelay:
         self.tries = tries
         self.timeout_s = timeout_s
 
-    def _get(self, query: str) -> Optional[dict]:
-        """The relay's status reply, or None after every try failed."""
+    def _get(self, query: str, key: str = "ison") -> Optional[dict]:
+        """The relay's reply, or None after every try failed."""
         for attempt in range(1, self.tries + 1):
             try:
                 response = requests.get(self.url + query, timeout=self.timeout_s)
                 response.raise_for_status()
                 reply = response.json()
-                if not isinstance(reply, dict) or "ison" not in reply:
-                    raise ValueError(f"no ison in {reply!r}")
+                if not isinstance(reply, dict) or key not in reply:
+                    raise ValueError(f"no {key} in {reply!r}")
                 return reply
             except (requests.RequestException, ValueError, TypeError) as e:
-                logger.warning(f"Garage relay {self.url} try {attempt}: {e}")
+                logger.warning(f"{self.LABEL} {self.url} try {attempt}: {e}")
                 if attempt < self.tries:
                     self._sleep(self.RETRY_WAIT_S)
         return None
+
+
+class GarageRelay(_Gen1Relay):
+    """One garage heater on a Shelly 1 (Gen1) relay. An OFF always carries a
+    flip-back timer, so a stopped controller leaves the heater ON."""
+
+    LABEL = "Garage relay"
 
     def set(self, on: bool, off_timer_s: int) -> Optional[bool]:
         """The relay state after the command, or None. An OFF without a running
@@ -259,3 +268,87 @@ class MockGarageRelay:
 
     def state(self) -> Optional[bool]:
         return self.ison
+
+
+# The ventilation relay, which the hot water relay must never be
+VENTILATION_HOST = "192.168.1.5"
+
+
+@dataclass(frozen=True)
+class RelayState:
+    ison: bool
+    # True while an auto-off timer runs; a manual ON from the app has none
+    has_timer: bool
+
+
+def _relay_state(reply: dict) -> RelayState:
+    return RelayState(bool(reply["ison"]), "has_timer" in reply and bool(reply["has_timer"]))
+
+
+class HotWaterRelay(_Gen1Relay):
+    """The hot water circulation pump on a Shelly 1 (Gen1) relay. Every ON
+    carries an auto-off timer, so a stopped controller leaves it OFF."""
+
+    LABEL = "Hot water relay"
+
+    def __init__(self, url: str, **kwargs):
+        if urlparse(url).hostname == VENTILATION_HOST:
+            raise ValueError(f"{url} is the ventilation relay, not the hot water relay")
+        super().__init__(url, **kwargs)
+
+    def on(self, timer_s: int) -> Optional[RelayState]:
+        """The state after the command, or None. An ON without its timer is a
+        failure: the relay would stay ON with no controller."""
+        if timer_s <= 0:
+            raise ValueError("an ON needs an auto-off timer")
+        reply = self._get(f"?turn=on&timer={int(timer_s)}")
+        if reply is None:
+            return None
+        state = _relay_state(reply)
+        if state.ison and not state.has_timer:
+            logger.error(f"Hot water relay {self.url} is ON without its auto-off timer")
+            return None
+        return state
+
+    def off(self) -> Optional[RelayState]:
+        reply = self._get("?turn=off")
+        return None if reply is None else _relay_state(reply)
+
+    def state(self) -> Optional[RelayState]:
+        reply = self._get("")
+        return None if reply is None else _relay_state(reply)
+
+    def default_off(self) -> Optional[str]:
+        """Set the power-on state to OFF; returns the state the relay reports."""
+        settings_url = self.url.replace("/relay/", "/settings/relay/")
+        relay = _Gen1Relay(settings_url, self._sleep, self.tries, self.timeout_s)
+        reply = relay._get("?default_state=off", key="default_state")
+        return None if reply is None else str(reply["default_state"])
+
+
+class MockHotWaterRelay:
+    """Hot water relay for staging and tests."""
+
+    def __init__(self, url: str, ison: bool = False, has_timer: bool = False):
+        self.url = url
+        self.ison = ison
+        self.has_timer = has_timer
+        self.commands: list = []
+
+    def on(self, timer_s: int) -> Optional[RelayState]:
+        self.commands.append(("on", timer_s))
+        self.ison, self.has_timer = True, True
+        logger.info(f"MOCK: hot water relay {self.url} ON for {timer_s} s")
+        return RelayState(True, True)
+
+    def off(self) -> Optional[RelayState]:
+        self.commands.append(("off", None))
+        self.ison, self.has_timer = False, False
+        logger.info(f"MOCK: hot water relay {self.url} OFF")
+        return RelayState(False, False)
+
+    def state(self) -> Optional[RelayState]:
+        return RelayState(self.ison, self.has_timer)
+
+    def default_off(self) -> Optional[str]:
+        return "off"

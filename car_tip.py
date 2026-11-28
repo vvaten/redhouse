@@ -100,7 +100,7 @@ def main() -> int:
     config = get_config()
     settings = ct.load_tip_settings(config.car_tip_section)
     cap = pc.load_cap_settings(config.power_cap_section)
-    budget = lb.load_budget_settings(config.load_budget_section)
+    budget = lb.load_budget_settings(config.load_budget_section, config.hot_water_section)
     now = datetime.datetime.now(UTC)
     start = now.replace(minute=0, second=0, microsecond=0)
     try:

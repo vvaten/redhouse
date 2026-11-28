@@ -263,7 +263,7 @@ def _act(config, verdict: lg.Verdict, now: float, staging: bool, watchdog: Watch
             now,
             relays,
             garage.off_timer_s,
-            lambda: PumpController(dry_run=staging),
+            lambda: PumpController(dry_run=staging, source="load_guard"),
             watchdog.mark,
         )
     except ControlLockTimeout:

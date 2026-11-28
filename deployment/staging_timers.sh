@@ -38,6 +38,8 @@ TIMERS=(
     "power-cap"
     "load-guard"
     "car-tip"
+    "hot-water"
+    "pump-health"
     "health-check"
     "program-check"
     "program-fallback"

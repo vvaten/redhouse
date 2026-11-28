@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from src.common.config import get_config
 from src.common.logger import setup_logger
+from src.control import evu_release
 from src.control.hardware_implementations import (
     CombinedHardwareInterface,
     MockHardwareInterface,
@@ -64,9 +65,12 @@ class PumpController:
         clock: Optional[Callable[[], int]] = None,
         dry_run: bool = False,
         shelly_url: Optional[str] = None,
+        source: str = "executor",
     ):
         """Hardware and state file default from the environment; clock is for
-        tests. dry_run and shelly_url are deprecated: inject hardware instead."""
+        tests. dry_run and shelly_url are deprecated: inject hardware instead.
+        source names the caller in the EVU release log."""
+        self.source = source
         # Auto-detect hardware if not provided (backward compatibility)
         if hardware is None:
             hardware = self._create_default_hardware(dry_run, shelly_url)
@@ -297,12 +301,21 @@ class PumpController:
         self.on_since = current_time + self.EVU_CYCLE_DURATION
         self.last_evu_cycle_time = current_time
         self._save_state()
+        self._released("ON", "ON", "pulse", "pulse")
 
         result["success"] = True
         result["restored_command"] = "ON"
         logger.info("EVU cycle completed successfully")
 
         return result
+
+    def _released(
+        self, new_state: str, previous: Optional[str], via: str, source: Optional[str] = None
+    ) -> None:
+        """Log an EVU release. Called only after the command and the state save."""
+        mock = isinstance(self.hardware, MockHardwareInterface)
+        who = source if source is not None else self.source
+        evu_release.log_release(who, new_state, str(previous), via, self.clock(), mock)
 
     def _should_perform_evu_cycle(self, command: str) -> bool:
         """Pulse into ON from ALE or an unknown state, where the pump is likely
@@ -383,9 +396,12 @@ class PumpController:
                 self.on_since = actual_time - self.EVU_CYCLE_THRESHOLD
             elif self.last_command != "ON" or self.on_since is None:
                 self.on_since = actual_time
+            previous = self.last_command
             self.last_command = command
             self.last_command_time = actual_time
             self._save_state()
+            if command != "EVU" and (pulsed or previous == "EVU"):
+                self._released(command, previous, "ale_on_pulse" if pulsed else "command")
 
         except Exception as e:
             result["error"] = str(e)
@@ -419,12 +435,15 @@ class PumpController:
             return result
 
         released = current_time + self.EVU_CYCLE_DURATION
+        previous = self.last_command
         self.last_command = command
         self.last_command_time = stamp
         if command in ("ON", "ALE"):
             self.last_evu_cycle_time = current_time
         self.on_since = released if command == "ON" else None
         self._save_state()
+        if command in ("ON", "ALE"):
+            self._released(command, previous, "boot_pulse", "boot")
         result["success"] = True
         logger.info(f"Pump state {command} applied from an unknown state")
         return result

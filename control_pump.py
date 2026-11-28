@@ -49,7 +49,7 @@ def main():
 
 def _run(args) -> int:
     # The pump state file is read here, so it must be under the lock
-    controller = PumpController(dry_run=args.dry_run)
+    controller = PumpController(dry_run=args.dry_run, source="manual")
 
     if args.command == "status":
         # Show status

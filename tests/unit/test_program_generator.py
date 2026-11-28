@@ -12,6 +12,7 @@ from src.control.heating_data_fetcher import HeatingDataUnavailable
 from src.control.heating_optimizer import HeatingOptimizer
 from src.control.program_generator import HeatingProgramGenerator
 from src.control.schedule_builder import ScheduleBuilder
+from tests.unit.test_load_budget import HOT_WATER_OFF
 
 # A budget section with every key; tests switch it on or off
 BUDGET_VALUES = {
@@ -621,6 +622,7 @@ class TestGenerateDailyProgram(unittest.TestCase):
         """Set up test fixtures."""
         self.mock_config = MagicMock()
         self.mock_config.load_budget_section = {"enabled": False, **BUDGET_VALUES}
+        self.mock_config.hot_water_section = HOT_WATER_OFF
         self.mock_data_fetcher = MagicMock()
         self.mock_heating_curve = MagicMock()
         self.mock_optimizer = MagicMock()

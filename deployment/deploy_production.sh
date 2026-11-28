@@ -458,6 +458,8 @@ echo "[OK] Dependencies installed"
 
 ln -sfn "$DEPLOY_DIR/pump.sh" /usr/local/bin/redhouse-pump
 echo "[OK] redhouse-pump runs $DEPLOY_DIR/pump.sh"
+ln -sfn "$DEPLOY_DIR/hotwater.sh" /usr/local/bin/hotwater
+echo "[OK] hotwater runs $DEPLOY_DIR/hotwater.sh"
 
 # --- Validate configuration ---
 
@@ -519,6 +521,8 @@ TIMERS=(
     "redhouse-power-cap"
     "redhouse-load-guard"
     "redhouse-car-tip"
+    "redhouse-hot-water"
+    "redhouse-pump-health"
     "redhouse-health-check"
     "redhouse-program-check"
     "redhouse-program-fallback"

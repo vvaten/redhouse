@@ -8,11 +8,18 @@ stays the same: an over-cap hour is used only when the day needs it.
 import datetime
 from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
 from src.common.local_time import HELSINKI
 from src.common.logger import setup_logger
+from src.control.hot_water_planner import (
+    BoostBudget,
+    boost_budget,
+    boost_share_kw,
+    link_priorities,
+)
 from src.control.power_cap import (
     CapSettings,
     factor,
@@ -37,10 +44,13 @@ class BudgetSettings:
     sauna_weekdays: tuple
     sauna_start_hour: int
     sauna_end_hour: int
+    # The hot water boost's heater share, when hot_water.boost_budget is on
+    boost: Optional[BoostBudget] = None
 
 
-def load_budget_settings(section: dict) -> BudgetSettings:
-    names = [f.name for f in fields(BudgetSettings)]
+def load_budget_settings(section: dict, hot_water: Optional[dict] = None) -> BudgetSettings:
+    """From the load_budget section; with the hot_water section, the boost share too."""
+    names = [f.name for f in fields(BudgetSettings) if f.name != "boost"]
     missing = [k for k in names if k not in section]
     if missing:
         raise ValueError(f"config.yaml load_budget section lacks {missing}")
@@ -54,18 +64,21 @@ def load_budget_settings(section: dict) -> BudgetSettings:
         sauna_weekdays=tuple(int(d) for d in section["sauna_weekdays"]),
         sauna_start_hour=int(section["sauna_start_hour"]),
         sauna_end_hour=int(section["sauna_end_hour"]),
+        boost=None if hot_water is None else boost_budget(hot_water),
     )
 
 
 def fixed_kw(hour_start: datetime.datetime, settings: BudgetSettings) -> float:
-    """The load the plan cannot move in the hour: base, battery, sauna reserve."""
+    """The load the plan cannot move in the hour: base, battery, sauna
+    reserve and the share of a hot water boost."""
     local = hour_start.astimezone(HELSINKI)
     sauna = (
         local.weekday() in settings.sauna_weekdays
         and settings.sauna_start_hour <= local.hour < settings.sauna_end_hour
     )
     reserve = settings.sauna_kw * settings.sauna_share if sauna else 0.0
-    return settings.base_kw + settings.battery_allowance_kw + reserve
+    boost = boost_share_kw(hour_start, settings.boost)
+    return settings.base_kw + settings.battery_allowance_kw + reserve + boost
 
 
 def headroom_kw(
@@ -79,11 +92,13 @@ def headroom_kw(
 def budget_priorities(
     priorities: pd.DataFrame, config, state_file: Path, program_date: datetime.datetime
 ) -> pd.DataFrame:
-    """The priorities with the budget applied, or unchanged when it is off.
-    The cap is the one the day starts with: a new month starts at its floor."""
-    settings = load_budget_settings(config.load_budget_section)
+    """The priorities with the budget and the hot water planner link applied;
+    unchanged when both are off. The cap is the one the day starts with: a
+    new month starts at its floor."""
+    hot_water = config.hot_water_section
+    settings = load_budget_settings(config.load_budget_section, hot_water)
     if not settings.enabled:
-        return priorities
+        return link_priorities(priorities, hot_water)
     cap = load_cap_settings(config.power_cap_section)
     day_start = HELSINKI.localize(datetime.datetime.combine(program_date.date(), datetime.time()))
     if not state_file.exists():
@@ -93,7 +108,7 @@ def budget_priorities(
     logger.info(
         f"Power budget: plan limit {limit:.2f} kW, {int(result['over_cap'].sum())} hours over"
     )
-    return result
+    return link_priorities(result, hot_water)
 
 
 def _aware(t) -> datetime.datetime:
