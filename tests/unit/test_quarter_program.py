@@ -75,6 +75,13 @@ def test_a_run_of_touching_evu_entries_counts_from_its_first():
     assert qprog.running_evu_start(entries, t + 5 * 3600) is None
 
 
+def test_a_late_run_still_counts_the_quarters_moved_to_the_day():
+    """At 23:50 the window is the day alone, but the moved quarters belong to it."""
+    before = dict(_program([]), moved_to_next_day=3)
+    w = qprog.plan_window(DAY_S, DAY_S + 86400, before, "geothermal_pump", DAY_S - 600)
+    assert (w.start, w.carried, w.today) == (DAY_S, 3, None)
+
+
 def test_revise_today_refuses_a_program_without_the_load():
     with pytest.raises(ValueError):
         qprog.revise_today({"loads": {}}, "geothermal_pump", [], DAY_S)

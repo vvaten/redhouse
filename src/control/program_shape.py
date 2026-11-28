@@ -2,6 +2,8 @@
 """The structure every consumer of a heating program relies on."""
 
 PUMP_LOAD = "geothermal_pump"
+# ON quarters an evening re-plan of the day moved into its next day
+MOVED_KEY = "moved_to_next_day"
 PUMP_COMMANDS = {"ON", "ALE", "EVU"}
 
 

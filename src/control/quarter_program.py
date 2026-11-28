@@ -14,6 +14,7 @@ import pandas as pd
 
 from src.common.local_time import HELSINKI
 from src.control import quarter_plan as qp
+from src.control.program_shape import MOVED_KEY
 
 QUARTER_S = 15 * 60
 QUARTER_H = 0.25
@@ -65,6 +66,8 @@ def plan_window(day_start: int, day_stop: int, before: Optional[dict], load_id: 
     program = before if before is not None and load_id in before["loads"] else None
     entries = [] if program is None else program["loads"][load_id]["schedule"]
     start, carried, today = day_start, 0, None
+    if now is not None and program is not None:
+        carried = moved_to_next_day(program)
     if now is not None and program is not None and next_quarter(now) < day_start:
         start, today = next_quarter(now), program
         carried = len(on_quarters(entries, start, day_start)) + moved_to_next_day(program)
@@ -78,9 +81,6 @@ def plan_window(day_start: int, day_stop: int, before: Optional[dict], load_id: 
         lead_on=len(on_quarters(entries, hour_start, start)),
         evu_from=running_evu_start(entries, start),
     )
-
-
-MOVED_KEY = "moved_to_next_day"
 
 
 def moved_to_next_day(program: dict) -> int:
@@ -100,8 +100,9 @@ def running_evu_start(entries: list, at: int) -> Optional[int]:
     covering = [t for t, stop in evu.items() if t < at <= stop]
     if not covering:
         return None
-    start = covering[0]
-    while start in ends:
+    start, seen = covering[0], set()
+    while start in ends and start not in seen:
+        seen.add(start)
         start = ends[start]
     return start
 
