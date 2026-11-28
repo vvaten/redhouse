@@ -4,7 +4,7 @@ Description=RedHouse Heating Program Generation Timer
 [Timer]
 # After the day-ahead spot prices publish, clear of the :07 to :09
 # deploy window. Hourly retries end at 23:06.
-OnCalendar=*-*-* 16..23:06:00
+OnCalendar=*-*-* 15..23:06:00
 AccuracySec=1s
 
 [Install]

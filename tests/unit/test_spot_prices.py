@@ -8,10 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, Mock, mock_open, patch
 import pytest
 import pytz
 
+from src.common.local_time import HELSINKI
 from src.data_collection.spot_prices import (
+    alert_if_tomorrow_missing,
     collect_spot_prices,
     fetch_spot_prices_from_api,
     load_status,
+    missing_alert_due,
     process_spot_prices,
     save_spot_prices_to_file,
     save_status,
@@ -666,9 +669,45 @@ def test_main_verbose():
 
             mock_asyncio_run.return_value = 0
 
-            result = main()
+            with (
+                patch("src.data_collection.spot_prices.alert_if_tomorrow_missing") as alert,
+                patch("src.data_collection.spot_prices.get_config"),
+                patch("src.data_collection.spot_prices.load_status", return_value={"x": 1}),
+            ):
+                result = main()
 
             assert result == 0
+            alert.assert_called_once()
+
+
+def _at(hh, mm):
+    local = HELSINKI.localize(datetime.datetime(2026, 11, 28, hh, mm))
+    return local.timestamp()
+
+
+def _status(last_local):
+    return {"latest_epoch_timestamp": int(HELSINKI.localize(last_local).timestamp())}
+
+
+TODAY_ONLY = _status(datetime.datetime(2026, 11, 28, 23, 45))
+WITH_TOMORROW = _status(datetime.datetime(2026, 11, 29, 23, 45))
+
+
+def test_the_missing_alert_is_due_only_from_16_03_without_tomorrow():
+    assert not missing_alert_due(_at(15, 58), TODAY_ONLY)
+    assert missing_alert_due(_at(16, 3), TODAY_ONLY)
+    assert not missing_alert_due(_at(16, 3), WITH_TOMORROW)
+
+
+def test_the_alert_mails_through_the_alert_mailer():
+    sent = []
+    with patch(
+        "src.data_collection.spot_prices.mailer",
+        return_value=lambda subject, body: sent.append(subject) or True,
+    ):
+        assert alert_if_tomorrow_missing(_at(16, 3), TODAY_ONLY, MagicMock())
+        assert not alert_if_tomorrow_missing(_at(16, 3), WITH_TOMORROW, MagicMock())
+    assert sent == ["[RedHouse WARNING] Spot prices for tomorrow missing"]
 
 
 def test_main_exception():

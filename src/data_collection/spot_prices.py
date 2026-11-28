@@ -6,6 +6,7 @@ import collections
 import datetime
 import json
 import os
+import time
 from typing import Any, Optional
 
 import pytz
@@ -13,10 +14,15 @@ import pytz
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.json_logger import JSONDataLogger
+from src.common.local_time import HELSINKI
 from src.common.logger import setup_logger
 from src.common.trusted_http import trusted_session
+from src.monitoring.alert_mail import is_staging, mailer
 
 logger = setup_logger(__name__, "spot_prices.log")
+
+# The last timer run (16:03) mails when tomorrow's prices are still missing
+MISSING_ALERT_AT = datetime.time(16, 3)
 
 # API endpoint
 SPOT_PRICE_API_URL = "https://api.spot-hinta.fi/TodayAndDayForward"
@@ -406,6 +412,29 @@ async def collect_spot_prices(dry_run: bool = False) -> int:
     return 0
 
 
+def missing_alert_due(now: float, status: dict) -> bool:
+    """From MISSING_ALERT_AT local time on, when tomorrow's prices are not in."""
+    local = datetime.datetime.fromtimestamp(now, HELSINKI)
+    if local.time() < MISSING_ALERT_AT:
+        return False
+    return not now + 86400 < int(status["latest_epoch_timestamp"])
+
+
+def alert_if_tomorrow_missing(now: float, status: dict, config) -> bool:
+    """Mail once a run when tomorrow's prices are still missing; True if due."""
+    if not missing_alert_due(now, status):
+        return False
+    latest = datetime.datetime.fromtimestamp(int(status["latest_epoch_timestamp"]), HELSINKI)
+    body = (
+        f"Tomorrow's spot prices are not in InfluxDB at {MISSING_ALERT_AT:%H:%M}. "
+        f"The last price is for {latest:%Y-%m-%d %H:%M}. The program generator "
+        "retries hourly until 23:06; at 23:50 the fallback copies today's program."
+    )
+    logger.error(body)
+    mailer(config, is_staging(config))("[RedHouse WARNING] Spot prices for tomorrow missing", body)
+    return True
+
+
 def main():
     """Main entry point for spot price collection."""
     import argparse
@@ -430,6 +459,8 @@ def main():
 
     try:
         result = asyncio.run(collect_spot_prices(dry_run=args.dry_run))
+        if not args.dry_run:
+            alert_if_tomorrow_missing(time.time(), load_status(), get_config())
         return result
 
     except Exception as e:

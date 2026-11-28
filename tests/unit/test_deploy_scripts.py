@@ -325,14 +325,14 @@ class TestHeatingControlUnits:
         assert match, f"not an hourly retry range: {schedules[0]}"
         return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
-    def test_generate_starts_at_16_06(self):
+    def test_generate_starts_at_15_06(self):
         first, _, minute = self._generate_schedule()
-        assert (first, minute) == (16, 6)
+        assert (first, minute) == (15, 6)
 
     def test_generate_retries_until_late_evening_without_catchup(self):
         """A boot-time catch-up before the prices publish only fails."""
         first, last, _ = self._generate_schedule()
-        assert (first, last) == (16, 23)
+        assert (first, last) == (15, 23)
         assert not _has_catchup(self.GENERATE.read_text(encoding="utf-8"))
 
     def test_generate_skips_a_program_it_already_made(self):
