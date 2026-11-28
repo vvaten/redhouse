@@ -15,7 +15,7 @@ import pytz
 
 from src.common.config import get_config
 from src.common.logger import setup_logger
-from src.control.program_shape import program_is_well_formed
+from src.control.program_shape import MOVED_KEY, program_is_well_formed
 from src.monitoring.email_sender import send_alert_email
 from src.monitoring.program_check import (
     HELSINKI,
@@ -102,6 +102,8 @@ def copy_program_forward(program: dict, new_date: datetime.date, now: datetime.d
     source_day = datetime.date.fromisoformat(program["program_date"])
     copied = copy.deepcopy(program)
     copied["program_date"] = new_date.isoformat()
+    # The quarters moved by a re-plan belong to the source day's next day only
+    copied.pop(MOVED_KEY, None)
     for load in copied["loads"].values():
         by_time = {}
         for entry in load["schedule"]:

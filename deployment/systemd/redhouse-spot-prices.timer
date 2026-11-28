@@ -2,13 +2,33 @@
 Description=RedHouse Spot Price Collection Timer
 
 [Timer]
-# Run at 13:29, 13:59, 14:29, 14:59, 15:29, 15:59
-OnCalendar=*-*-* 13:29:00
-OnCalendar=*-*-* 13:59:00
-OnCalendar=*-*-* 14:29:00
-OnCalendar=*-*-* 14:59:00
-OnCalendar=*-*-* 15:29:00
-OnCalendar=*-*-* 15:59:00
+# Local time: from 14:03 every 5 min until tomorrow's prices are in (a run
+# with them is a no-op); the 16:03 run mails when they are still missing
+OnCalendar=*-*-* 14:03:00
+OnCalendar=*-*-* 14:08:00
+OnCalendar=*-*-* 14:13:00
+OnCalendar=*-*-* 14:18:00
+OnCalendar=*-*-* 14:23:00
+OnCalendar=*-*-* 14:28:00
+OnCalendar=*-*-* 14:33:00
+OnCalendar=*-*-* 14:38:00
+OnCalendar=*-*-* 14:43:00
+OnCalendar=*-*-* 14:48:00
+OnCalendar=*-*-* 14:53:00
+OnCalendar=*-*-* 14:58:00
+OnCalendar=*-*-* 15:03:00
+OnCalendar=*-*-* 15:08:00
+OnCalendar=*-*-* 15:13:00
+OnCalendar=*-*-* 15:18:00
+OnCalendar=*-*-* 15:23:00
+OnCalendar=*-*-* 15:28:00
+OnCalendar=*-*-* 15:33:00
+OnCalendar=*-*-* 15:38:00
+OnCalendar=*-*-* 15:43:00
+OnCalendar=*-*-* 15:48:00
+OnCalendar=*-*-* 15:53:00
+OnCalendar=*-*-* 15:58:00
+OnCalendar=*-*-* 16:03:00
 AccuracySec=1s
 
 [Install]

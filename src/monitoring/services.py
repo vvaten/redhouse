@@ -15,10 +15,13 @@ REDHOUSE_SERVICES = [
     "redhouse-solar-prediction",
     "redhouse-generate-program",
     "redhouse-execute-program",
+    "redhouse-pre-pulse",
     "redhouse-garage-heater",
     "redhouse-power-cap",
     "redhouse-load-guard",
     "redhouse-car-tip",
+    "redhouse-hot-water",
+    "redhouse-pump-health",
     "redhouse-program-check",
     "redhouse-program-fallback",
 ]

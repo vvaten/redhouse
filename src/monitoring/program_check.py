@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Check that tomorrow's heating program exists, and mail if it does not.
 
-Runs once a day at 18:00 local. Generation runs at 16:06, so this
-leaves nearly two hours of slack before it complains, and the whole
+Runs once a day at 18:00 local. Generation runs at 15:06, so this
+leaves nearly three hours of slack before it complains, and the whole
 evening to act before the day it covers begins.
 """
 
@@ -118,7 +118,7 @@ def build_body(program_date: datetime.date, path: Path, points: Optional[int]) -
             f"Expected file: {path}",
             f"load_control points for that day: {counted}",
             "",
-            "Generation runs at 16:06 and retries hourly until 23:06.",
+            "Generation runs at 15:06 and retries hourly until 23:06.",
             "If it still fails, today's program is copied forward at 23:50.",
             "",
             f"Last lines of {generator_unit()}:",

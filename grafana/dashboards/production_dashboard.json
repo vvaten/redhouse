@@ -12,6 +12,48 @@
                 "iconColor": "rgba(0, 211, 255, 1)",
                 "name": "Annotations & Alerts",
                 "type": "dashboard"
+            },
+            {
+                "datasource": {
+                    "type": "influxdb",
+                    "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                },
+                "enable": true,
+                "hide": false,
+                "iconColor": "blue",
+                "name": "Hot water: regular",
+                "target": {
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hot_water_cycle\" and r.data_type == \"actual\" and r._field == \"kind\")\n  |> filter(fn: (r) => r._value == \"regular\")",
+                    "refId": "Anno"
+                }
+            },
+            {
+                "datasource": {
+                    "type": "influxdb",
+                    "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                },
+                "enable": true,
+                "hide": false,
+                "iconColor": "red",
+                "name": "Hot water: legionella_boost",
+                "target": {
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hot_water_cycle\" and r.data_type == \"actual\" and r._field == \"kind\")\n  |> filter(fn: (r) => r._value == \"legionella_boost\")",
+                    "refId": "Anno"
+                }
+            },
+            {
+                "datasource": {
+                    "type": "influxdb",
+                    "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                },
+                "enable": true,
+                "hide": false,
+                "iconColor": "orange",
+                "name": "Hot water: heater_run",
+                "target": {
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hot_water_cycle\" and r.data_type == \"actual\" and r._field == \"kind\")\n  |> filter(fn: (r) => r._value == \"heater_run\")",
+                    "refId": "Anno"
+                }
             }
         ]
     },
@@ -4683,6 +4725,417 @@
             ],
             "title": "Load Guard",
             "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "drawStyle": "line",
+                        "lineWidth": 2,
+                        "fillOpacity": 0,
+                        "showPoints": "never",
+                        "spanNulls": true,
+                        "lineInterpolation": "linear"
+                    },
+                    "unit": "celsius"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Käyttövesi ylh"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Tank top C"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Käyttövesi alh"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Tank bottom C"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "relay_on"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Circulation relay on"
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "right"
+                            },
+                            {
+                                "id": "custom.lineInterpolation",
+                                "value": "stepAfter"
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 20
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            },
+                            {
+                                "id": "unit",
+                                "value": "none"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "orange",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "evu_release"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "EVU release"
+                            },
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "right"
+                            },
+                            {
+                                "id": "custom.drawStyle",
+                                "value": "points"
+                            },
+                            {
+                                "id": "custom.pointSize",
+                                "value": 8
+                            },
+                            {
+                                "id": "custom.showPoints",
+                                "value": "always"
+                            },
+                            {
+                                "id": "min",
+                                "value": 0
+                            },
+                            {
+                                "id": "max",
+                                "value": 1
+                            },
+                            {
+                                "id": "unit",
+                                "value": "none"
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "purple",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 20,
+                "x": 0,
+                "y": 88
+            },
+            "id": 30,
+            "options": {
+                "legend": {
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"temperatures\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"temperatures\" and (r._field == \"Käyttövesi ylh\" or r._field == \"Käyttövesi alh\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"load_control\" and r.load_id == \"hot_water_relay\" and r.data_type == \"actual\" and r._field == \"is_on\")\n  |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0, _field: \"relay_on\"}))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])",
+                    "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"evu_release\" and r._field == \"new_state\")\n  |> map(fn: (r) => ({r with _value: 1.0, _field: \"evu_release\"}))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])",
+                    "refId": "C"
+                }
+            ],
+            "title": "Hot Water",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "drawStyle": "bars",
+                        "fillOpacity": 80,
+                        "stacking": {
+                            "mode": "normal",
+                            "group": "A"
+                        },
+                        "lineWidth": 1
+                    },
+                    "unit": "currencyEUR",
+                    "decimals": 2
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "regular"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Regular runs"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "legionella_boost"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Boosts"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "heater_run"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Heater runs"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 96
+            },
+            "id": 31,
+            "options": {
+                "legend": {
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hot_water_cycle\" and r.data_type == \"actual\" and (r._field == \"eur\" or r._field == \"kind\"))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.eur)\n  |> map(fn: (r) => ({_time: r._time, _field: r.kind, _value: r.eur}))\n  |> group(columns: [\"_field\"])\n  |> aggregateWindow(every: 1d, fn: sum, createEmpty: false, timeSrc: \"_start\", location: {zone: \"Europe/Helsinki\", offset: 0s})",
+                    "refId": "A"
+                }
+            ],
+            "title": "Hot Water Cost per Day",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 96
+            },
+            "id": 32,
+            "options": {
+                "showHeader": true
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hot_water\" and r.data_type == \"actual\" and (r._field == \"rule\" or r._field == \"reason\" or r._field == \"would\" or r._field == \"command\" or r._field == \"relay_on\"))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"_time\", \"command\", \"relay_on\", \"rule\", \"reason\", \"would\"])\n  |> group()\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)",
+                    "refId": "A"
+                }
+            ],
+            "title": "Hot Water Decisions",
+            "type": "table"
+        },
+        {
+            "datasource": {
+                "type": "influxdb",
+                "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+            },
+            "description": "Next timer expiry: the next legionella timer expiry. Boost due: an expiry has passed and its boost, the first hot water cycle after it, has not run yet. Run hotwater anchor after each pump restart, or the time is wrong. No data: the controller has not ticked in the last hour.",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "fixedColor": "text",
+                        "mode": "fixed"
+                    },
+                    "mappings": [],
+                    "unit": "none"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "next_expiry"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Next timer expiry"
+                            },
+                            {
+                                "id": "unit",
+                                "value": "dateTimeAsIso"
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "boost_due"
+                        },
+                        "properties": [
+                            {
+                                "id": "displayName",
+                                "value": "Boost due"
+                            },
+                            {
+                                "id": "mappings",
+                                "value": [
+                                    {
+                                        "options": {
+                                            "0": {
+                                                "index": 0,
+                                                "text": "No"
+                                            },
+                                            "1": {
+                                                "color": "orange",
+                                                "index": 1,
+                                                "text": "Yes, due now"
+                                            }
+                                        },
+                                        "type": "value"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 4,
+                "x": 20,
+                "y": 88
+            },
+            "id": 33,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "orientation": "horizontal",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "value_and_name",
+                "wideLayout": true
+            },
+            "pluginVersion": "11.5.2",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "f8c1fc69-7479-4116-9d8d-4b2802a54f10"
+                    },
+                    "query": "from(bucket: \"load_control\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"hot_water\" and r.data_type == \"actual\" and (r._field == \"next_expiry\" or r._field == \"pending\"))\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({_time: r._time, next_expiry: int(v: time(v: r.next_expiry)) / 1000000, boost_due: if r.pending then 1 else 0}))",
+                    "refId": "A"
+                }
+            ],
+            "title": "Next Legionella Boost",
+            "type": "stat"
         }
     ],
     "preload": false,

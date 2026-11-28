@@ -21,6 +21,10 @@ PREDICTION_BUCKET = {
     "production_dashboard.json": "solar_prediction",
     "staging_dashboard.json": "solar_prediction_staging",
 }
+LOAD_CONTROL_BUCKET = {
+    "production_dashboard.json": "load_control",
+    "staging_dashboard.json": "load_control_staging",
+}
 
 
 def _panels(name):
@@ -103,6 +107,28 @@ def test_network_ping_reads_the_hourly_bucket_for_long_or_old_ranges(name, hourl
     )
     assert use_hours in query
     assert "rawStart = if useHours then 1970-01-01T00:00:00Z else v.timeRangeStart" in query
+
+
+@pytest.mark.parametrize("name", sorted(PREDICTION_BUCKET))
+def test_next_boost_sits_beside_hot_water_and_ignores_the_time_range(name):
+    panels = _panels(name)
+    stat, hot_water = panels["Next Legionella Boost"], panels["Hot Water"]
+    beside = hot_water["gridPos"]["x"] + hot_water["gridPos"]["w"]
+    assert (stat["gridPos"]["x"], stat["gridPos"]["y"]) == (beside, hot_water["gridPos"]["y"])
+    assert beside + stat["gridPos"]["w"] == 24
+    query = _target(stat, "A")["query"]
+    assert query.startswith(f'from(bucket: "{LOAD_CONTROL_BUCKET[name]}")')
+    # A point comes every 15 min at least, so a stopped controller shows no data
+    assert "range(start: -1h)" in query and "v.timeRange" not in query
+    assert 'r._measurement == "hot_water" and r.data_type == "actual"' in query
+    assert "|> last()" in query and "|> pivot(" in query
+    assert "next_expiry: int(v: time(v: r.next_expiry)) / 1000000" in query
+    assert "boost_due: if r.pending then 1 else 0" in query
+    props = {p["id"]: p["value"] for p in _override(stat, "byName", "next_expiry")["properties"]}
+    assert props == {"displayName": "Next timer expiry", "unit": "dateTimeAsIso"}
+    props = {p["id"]: p["value"] for p in _override(stat, "byName", "boost_due")["properties"]}
+    texts = {k: v["text"] for k, v in props["mappings"][0]["options"].items()}
+    assert texts == {"0": "No", "1": "Yes, due now"}
 
 
 def test_production_and_staging_have_the_same_panels_and_queries():

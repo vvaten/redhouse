@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from deployment import bucket_rename
+from src.control.pump_controller import PumpController
 
 UNITS = sorted((Path(__file__).parents[2] / "deployment" / "systemd").glob("*.timer"))
 # They run each minute but neither read nor write a bucket that is swapped
@@ -57,6 +58,38 @@ def _minutes(schedule):
         else:
             minutes.add(int(item))
     return minutes
+
+
+def _seconds_of_hour(schedule):
+    """The seconds of the hour at which a "*:MM,...:SS UTC" schedule fires."""
+    second = int(schedule.split()[0].split(":")[2])
+    return {m * 60 + second for m in _minutes(schedule)}
+
+
+def test_the_pre_pulse_ends_as_each_executor_run_starts():
+    """A 30 s pulse started 30 s before the quarter ends on the ON's edge."""
+    systemd = Path(__file__).parents[2] / "deployment" / "systemd"
+    (executor,) = _schedules(systemd / "redhouse-execute-program.timer")
+    (pre,) = _schedules(systemd / "redhouse-pre-pulse.timer")
+    runs = _seconds_of_hour(executor)
+    assert len(runs) == 4
+    assert {(s + PumpController.EVU_CYCLE_DURATION) % 3600 for s in _seconds_of_hour(pre)} == runs
+
+
+def test_the_pre_pulse_drives_the_pump_like_the_executor():
+    """Both with or both without --dry-run."""
+    systemd = Path(__file__).parents[2] / "deployment" / "systemd"
+    starts = [
+        [
+            ln
+            for ln in (systemd / name).read_text(encoding="utf-8").splitlines()
+            if "ExecStart=" in ln
+        ]
+        for name in ("redhouse-execute-program.service", "redhouse-pre-pulse.service")
+    ]
+    assert len(starts[0]) == len(starts[1]) == 1
+    assert ("--dry-run" in starts[0][0]) == ("--dry-run" in starts[1][0])
+    assert starts[1][0].endswith("execute_heating_program_v2.py --pre-pulse")
 
 
 @pytest.mark.parametrize("unit", UNITS, ids=lambda p: p.name)

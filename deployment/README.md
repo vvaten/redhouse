@@ -12,10 +12,10 @@ The system uses systemd services and timers to replace the old crontab-based sch
 |---------|----------|-------------|
 | `redhouse-temperature` | Every 1 minute | Collect temperature sensor data |
 | `redhouse-weather` | Hourly at :02 | Fetch weather forecasts from FMI |
-| `redhouse-spot-prices` | 13:29, 13:59, 14:29, 14:59, 15:29, 15:59 | Fetch electricity spot prices |
+| `redhouse-spot-prices` | 14:03 to 16:03 every 5 min | Fetch electricity spot prices; mail at 16:03 if tomorrow is missing |
 | `redhouse-checkwatt` | Every 5 min (:01, :06, :11...) | Collect battery/solar data from CheckWatt |
 | `redhouse-solar-prediction` | Hourly at :03 | Predict solar yield for optimization |
-| `redhouse-generate-program` | Daily at 16:05 | Generate tomorrow's heating program |
+| `redhouse-generate-program` | 15:06, retried hourly until 23:06 | Generate tomorrow's heating program |
 | `redhouse-execute-program` | Every 15 min (:00, :15, :30, :45) | Execute heating program commands (includes smart EVU cycling) |
 
 ## Deployment

@@ -304,6 +304,12 @@ restore_timers() {
     echo ""
     echo "Restarting the timers that were running before the deploy..."
     for timer in $RUNNING_TIMERS; do
+        # The pre-pulse drives the pump only for the executor's program; the
+        # list is sorted by name, so the executor timer was restarted already
+        if [ "$timer" = "redhouse-pre-pulse.timer" ] \
+            && ! systemctl is-active -q redhouse-execute-program.timer; then
+            continue
+        fi
         if ! systemctl is-active -q "$timer"; then
             systemctl start "$timer" && echo "  [OK] $timer"
         fi
@@ -458,6 +464,8 @@ echo "[OK] Dependencies installed"
 
 ln -sfn "$DEPLOY_DIR/pump.sh" /usr/local/bin/redhouse-pump
 echo "[OK] redhouse-pump runs $DEPLOY_DIR/pump.sh"
+ln -sfn "$DEPLOY_DIR/hotwater.sh" /usr/local/bin/hotwater
+echo "[OK] hotwater runs $DEPLOY_DIR/hotwater.sh"
 
 # --- Validate configuration ---
 
@@ -515,10 +523,13 @@ TIMERS=(
     "redhouse-solar-prediction"
     "redhouse-generate-program"
     "redhouse-execute-program"
+    "redhouse-pre-pulse"
     "redhouse-garage-heater"
     "redhouse-power-cap"
     "redhouse-load-guard"
     "redhouse-car-tip"
+    "redhouse-hot-water"
+    "redhouse-pump-health"
     "redhouse-health-check"
     "redhouse-program-check"
     "redhouse-program-fallback"
@@ -554,6 +565,11 @@ is_always_on() {
 }
 
 should_run() {
+    # The pre-pulse only prepares the executor's ON, so it runs with it
+    if [ "$1" = "redhouse-pre-pulse" ]; then
+        should_run "redhouse-execute-program"
+        return
+    fi
     [ "$START_ALL" = true ] || was_running "$1.timer" || is_always_on "$1"
 }
 

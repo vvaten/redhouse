@@ -100,6 +100,16 @@ ALERT_RULES = [
         "max_age_minutes": 40,
         "eval_interval_seconds": 600,
     },
+    {
+        "name": "Hot water control stale",
+        "timer": "redhouse-hot-water",
+        "bucket": "load_control",
+        "measurement": "hot_water",
+        # The tick writes on a change and every 15 min
+        "tags": {"data_type": "actual"},
+        "max_age_minutes": 40,
+        "eval_interval_seconds": 600,
+    },
 ]
 
 # Bucket name mapping from production to staging

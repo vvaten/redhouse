@@ -234,8 +234,10 @@ def test_a_pump_entry_over_the_hour_edge_splits_by_its_share():
 
 class TestMain:
     @pytest.fixture
-    def run(self, monkeypatch):
+    def run(self, monkeypatch, tmp_path):
         module = _wrapper()
+        monkeypatch.setattr(module, "TIP_STATE", tmp_path / "car_tip_state.json")
+        monkeypatch.setattr(module, "tomorrow_planned", lambda now: True)
         config = Mock()
         config.influxdb_bucket_load_control = "load_control"
         config.get = Mock(return_value=None)
@@ -272,3 +274,25 @@ class TestMain:
         config.get = Mock(side_effect=lambda key: settings[key])
         assert module.main() == 0
         assert sent.call_args.args[2].startswith("[RedHouse] Car tip: start at")
+        # The 16:35 retry finds the day decided and mails nothing more
+        assert module.main() == 0 and sent.call_count == 1
+
+    def test_without_tomorrows_program_it_waits_for_the_next_run(self, run, monkeypatch):
+        module, config, sent = run
+        monkeypatch.setattr(module, "tomorrow_planned", lambda now: False)
+        assert module.main() == 0
+        assert module.decided_on(module.TIP_STATE) is None
+        module.ct.tip.assert_not_called()
+
+    def test_missing_prices_leave_the_day_undecided(self, run, monkeypatch):
+        module, config, sent = run
+        monkeypatch.setattr(module.ct, "tip", Mock(return_value=(None, module.ct.MISSING)))
+        assert module.main() == 0
+        assert module.decided_on(module.TIP_STATE) is None
+
+    def test_no_tip_with_the_data_decides_the_day(self, run, monkeypatch):
+        module, config, sent = run
+        monkeypatch.setattr(module.ct, "tip", Mock(return_value=(None, "under the threshold")))
+        assert module.main() == 0
+        assert module.decided_on(module.TIP_STATE) is not None
+        sent.assert_not_called()

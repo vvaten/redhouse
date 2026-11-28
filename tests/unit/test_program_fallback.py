@@ -98,6 +98,11 @@ class TestCopyProgramForward:
         pf.copy_program_forward(source, D11, NOW)
         assert json.dumps(source, sort_keys=True) == before
 
+    def test_a_copy_drops_the_quarters_a_re_plan_moved(self):
+        """They belonged to the source day's next day, not the copy's."""
+        source = dict(_day_program(D10), moved_to_next_day=4)
+        assert "moved_to_next_day" not in pf.copy_program_forward(source, D11, NOW)
+
     def test_records_where_it_came_from(self):
         source = _day_program(D10)
         copied = pf.copy_program_forward(source, D11, NOW)

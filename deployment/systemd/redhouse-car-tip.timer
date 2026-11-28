@@ -2,9 +2,11 @@
 Description=RedHouse Car Charging Tip Timer
 
 [Timer]
-# Local time, after tomorrow's prices and the 16:06 program
+# Local time, after tomorrow's prices and the 15:06 program
+OnCalendar=*-*-* 15:35:00
+# A retry for a late program or late prices; it skips a decided day
 OnCalendar=*-*-* 16:35:00
-# Once a day, so a reboot across 16:35 would otherwise skip that day
+# A reboot across a run would otherwise skip it; this runs it at boot
 Persistent=true
 AccuracySec=1s
 

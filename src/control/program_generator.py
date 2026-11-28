@@ -4,19 +4,28 @@
 import datetime
 import json
 import os
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+import pandas as pd
 
 from src.common.config import get_config
 from src.common.influx_client import InfluxClient
 from src.common.local_time import HELSINKI, helsinki_date
 from src.common.logger import setup_logger
+from src.control import program_influx
+from src.control import quarter_program as qprog
 from src.control.evu_optimizer import EvuOptimizer
 from src.control.heating_curve import HeatingCurve
 from src.control.heating_data_fetcher import HeatingDataFetcher
 from src.control.heating_optimizer import HeatingOptimizer
-from src.control.load_budget import budget_priorities
+from src.control.hot_water_planner import lost_heating_hours
+from src.control.load_budget import hour_caps
+from src.control.program_fallback import load_valid_program
+from src.control.program_shape import PUMP_LOAD
 from src.control.schedule_builder import ScheduleBuilder
+from src.monitoring.program_check import PROGRAM_BASE_DIR, program_path
 
 logger = setup_logger(__name__)
 CAP_STATE = Path(__file__).resolve().parents[2] / "data" / "power_cap_state.json"
@@ -41,21 +50,26 @@ class HeatingProgramGenerator:
 
     VERSION = "2.0.0"
 
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: Optional[dict] = None, program_dir: str = PROGRAM_BASE_DIR):
         """
         Initialize heating program generator.
 
         Args:
             config: Configuration dict (uses get_config() if None)
+            program_dir: Where the day programs are, for the day before's
         """
         self.config = config or get_config()
+        self.program_dir = program_dir
+        settings: Any = self.config
+        self.max_off_h = float(settings.max_off_h)
+        self.today_part: Optional[qprog.TodayPart] = None
         self.influx = InfluxClient(self.config)
         self.data_fetcher = HeatingDataFetcher()
         self.heating_curve = HeatingCurve()
         self.optimizer = HeatingOptimizer(
             base_load_kw=1.0,
             heating_load_kw=3.0,
-            resolution_minutes=60,
+            resolution_minutes=15,
         )
         self.evu_optimizer = EvuOptimizer(self.optimizer)
         self.schedule_builder = ScheduleBuilder()
@@ -84,28 +98,24 @@ class HeatingProgramGenerator:
         program_date_str, program_date = self._calculate_program_date(base_date, date_offset)
         df = self._fetch_and_validate_data(date_offset, program_date.date())
         avg_temperature, hours_to_heat = self._calculate_heating_requirements(df, date_offset)
-        day_priorities = self._calculate_and_filter_priorities(df, date_offset)
-        day_priorities = budget_priorities(day_priorities, self.config, CAP_STATE, program_date)
-
-        # Select cheapest hours for heating
-        selected_hours = self.optimizer.select_cheapest_hours(day_priorities, hours_to_heat)
-
-        # Calculate EVU-OFF periods
-        # With a budget the heating hours are not the cheapest, so EVU skips them
-        keep = selected_hours.index if "over_cap" in day_priorities else None
-        evu_off_periods = self.evu_optimizer.generate_evu_off_periods(
-            df, self.optimizer.calculate_heating_priorities(df), hours_to_heat, date_offset, keep
+        hours_to_heat += lost_heating_hours(self.config, self.influx, program_date_str)
+        window = self._window(program_date, live=base_date is None and date_offset == 1)
+        priorities = self._window_priorities(df, window)
+        hours = sorted({qprog.hour_key(t) for t in priorities.index})
+        caps = hour_caps(hours, self.config, CAP_STATE)
+        n = int(round(hours_to_heat * 4)) + window.carried
+        selection = qprog.select(priorities, n, caps, self.max_off_h, window.lead, window.lead_on)
+        evu_off_periods = self.evu_optimizer.quarter_periods(
+            priorities, n, selection.on_index, window.evu_from
         )
-
-        # Generate schedules for each load
         loads_schedules = self.schedule_builder.generate_load_schedules(
-            selected_hours, evu_off_periods, day_priorities, program_date
+            selection.runs, evu_off_periods, priorities, program_date
         )
-
-        # Calculate planning results
+        loads_schedules = self._split_today(loads_schedules, window, program_date)
         planning_results = self._calculate_planning_results(
-            loads_schedules, hours_to_heat, selected_hours
+            loads_schedules, hours_to_heat, selection.runs
         )
+        planning_results.update(self._comfort_results(selection, window))
 
         program = self._build_program_structure(
             program_date_str,
@@ -121,6 +131,76 @@ class HeatingProgramGenerator:
         logger.info(f"Generated program with {len(loads_schedules)} loads")
 
         return program
+
+    def _window(self, program_date: datetime.datetime, live: bool) -> qprog.Window:
+        """The day, or with a live run the rest of today and the day together."""
+        day_start = HELSINKI.localize(
+            datetime.datetime.combine(program_date.date(), datetime.time())
+        )
+        next_day = program_date.date() + datetime.timedelta(days=1)
+        day_stop = HELSINKI.localize(datetime.datetime.combine(next_day, datetime.time()))
+        before = load_valid_program(
+            program_path(program_date.date() - datetime.timedelta(days=1), self.program_dir)
+        )
+        now = int(time.time()) if live else None
+        window = qprog.plan_window(
+            int(day_start.timestamp()), int(day_stop.timestamp()), before, PUMP_LOAD, now
+        )
+        logger.info(
+            f"Window {datetime.datetime.fromtimestamp(window.start, HELSINKI)} to "
+            f"{datetime.datetime.fromtimestamp(window.stop, HELSINKI)}: "
+            f"{window.carried} ON quarters carried, {window.lead} OFF quarters before it"
+        )
+        return window
+
+    def _window_priorities(self, df, window: qprog.Window):
+        """One priority row per quarter of the window; a quarter without a
+        price takes its hour's earlier quarter, none at all is an error."""
+        priorities = self.optimizer.calculate_heating_priorities(df)
+        start = pd.Timestamp(window.start, unit="s", tz="UTC").tz_convert(HELSINKI)
+        stop = pd.Timestamp(window.stop, unit="s", tz="UTC").tz_convert(HELSINKI)
+        quarters = pd.date_range(start, stop, freq="15min", inclusive="left")
+        priorities = priorities.reindex(quarters).ffill(limit=3)
+        missing = priorities.index[priorities["heating_prio"].isna()]
+        if len(missing):
+            raise ValueError(f"No price for the quarter at {missing[0]}")
+        return priorities
+
+    def _split_today(self, loads_schedules: dict, window: qprog.Window, program_date) -> dict:
+        """Cut the pump schedule at the day start. today_part keeps the part
+        before, to lay onto a fresh read of today's file at the caller."""
+        self.today_part = None
+        if window.today is None:
+            return loads_schedules
+        day_start = int(
+            HELSINKI.localize(
+                datetime.datetime.combine(program_date.date(), datetime.time())
+            ).timestamp()
+        )
+        pump = loads_schedules[PUMP_LOAD]
+        today_part, day_part = qprog.split_at(pump["schedule"], day_start)
+        kept = len(qprog.on_quarters(today_part, window.start, day_start))
+        self.today_part = qprog.TodayPart(
+            entries=today_part,
+            start=window.start,
+            program_date=window.today["program_date"],
+            moved=window.carried - kept,
+        )
+        return dict(loads_schedules, **{PUMP_LOAD: qprog.with_schedule(pump, day_part)})
+
+    def _comfort_results(self, selection: qprog.Selection, window: qprog.Window) -> dict:
+        comfort = selection.cost_eur - selection.free_cost_eur
+        logger.info(
+            f"Window cost {selection.cost_eur:.2f} EUR, {comfort:.2f} EUR of it for the "
+            f"{self.max_off_h} h gap limit (kept: {selection.gap_kept})"
+        )
+        return {
+            "max_off_h": self.max_off_h,
+            "gap_limit_kept": selection.gap_kept,
+            "window_cost_eur": round(selection.cost_eur, 2),
+            "comfort_cost_eur": round(comfort, 2),
+            "carried_on_quarters": window.carried,
+        }
 
     def _calculate_program_date(self, base_date: Optional[str], date_offset: int) -> tuple:
         """
@@ -189,29 +269,6 @@ class HeatingProgramGenerator:
 
         return avg_temperature, hours_to_heat
 
-    def _calculate_and_filter_priorities(self, df, date_offset: int):
-        """
-        Calculate priorities and filter to target day.
-
-        Args:
-            df: DataFrame with heating data
-            date_offset: Day offset from today
-
-        Returns:
-            Filtered priorities DataFrame for the target day
-
-        Raises:
-            ValueError: If no priority data available for target day
-        """
-        priorities_df = self.optimizer.calculate_heating_priorities(df)
-        day_priorities = self.optimizer.filter_day_priorities(priorities_df, date_offset)
-
-        if day_priorities.empty:
-            logger.error("No priority data for the target day")
-            raise ValueError("No priority data available")
-
-        return day_priorities
-
     def _build_program_structure(
         self,
         program_date_str: str,
@@ -252,6 +309,8 @@ class HeatingProgramGenerator:
                 "heating_load_kw": self.optimizer.heating_load_kw,
                 "evu_off_threshold_price": self.evu_optimizer.EVU_OFF_THRESHOLD_PRICE,
                 "evu_off_max_continuous_hours": self.evu_optimizer.EVU_OFF_MAX_CONTINUOUS_HOURS,
+                "resolution_minutes": self.optimizer.resolution_minutes,
+                "max_off_h": self.max_off_h,
             },
             "planning_results": planning_results,
             "loads": loads_schedules,
@@ -364,9 +423,8 @@ class HeatingProgramGenerator:
             data_type: "plan" | "actual" | "adjusted"
         """
         program_date = program["program_date"]
-        points = self._build_schedule_points(program, program_date, data_type)
-        summary_point = self._build_summary_point(program, program_date, data_type)
-        points.append(summary_point)
+        points = program_influx.schedule_points(program, program_date, data_type)
+        points.append(program_influx.summary_point(program, program_date, data_type))
 
         try:
             bucket_name = self._get_bucket_name("influxdb_bucket_load_control", "load_control")
@@ -375,85 +433,6 @@ class HeatingProgramGenerator:
         except Exception as e:
             logger.error(f"Failed to save program to InfluxDB: {e}")
             raise
-
-    def _build_schedule_points(self, program: dict, program_date: str, data_type: str) -> list:
-        """
-        Build InfluxDB points for all schedule entries.
-
-        Args:
-            program: Program dict
-            program_date: Program date string
-            data_type: Type of data (plan/actual/adjusted)
-
-        Returns:
-            List of InfluxDB points
-        """
-        from influxdb_client import Point
-
-        points = []
-        for load_id, load_data in program["loads"].items():
-            for entry in load_data["schedule"]:
-                timestamp = datetime.datetime.fromtimestamp(
-                    entry["timestamp"], tz=datetime.timezone.utc
-                )
-                command = entry["command"]
-                power_kw = self._calculate_power_kw(command, load_data["power_kw"])
-
-                point = (
-                    Point("load_control")
-                    .tag("program_date", program_date)
-                    .tag("load_id", load_id)
-                    .tag("data_type", data_type)
-                    .field("command", command)
-                    .field("power_kw", power_kw)
-                    .field("is_on", command == "ON")
-                    .field("is_evu_off", command == "EVU")
-                    .field("priority_score", entry.get("priority_score") or 0.0)
-                    .field("spot_price_c_kwh", entry.get("spot_price_total_c_kwh") or 0.0)
-                    .field("solar_prediction_kwh", entry.get("solar_prediction_kwh") or 0.0)
-                    .field("estimated_cost_eur", entry.get("estimated_cost_eur") or 0.0)
-                    .field("duration_minutes", entry.get("duration_minutes") or 0)
-                    .field("reason", entry.get("reason", "unknown"))
-                    .time(timestamp)
-                )
-                points.append(point)
-        return points
-
-    def _build_summary_point(self, program: dict, program_date: str, data_type: str):
-        """
-        Build InfluxDB summary point with planning results.
-
-        Args:
-            program: Program dict
-            program_date: Program date string
-            data_type: Type of data (plan/actual/adjusted)
-
-        Returns:
-            InfluxDB point for summary
-        """
-        from influxdb_client import Point
-
-        return (
-            Point("load_control_summary")
-            .tag("program_date", program_date)
-            .tag("data_type", data_type)
-            .field("avg_temperature_c", program["input_parameters"]["avg_temperature_c"])
-            .field("total_heating_hours", program["planning_results"]["total_heating_hours_needed"])
-            .field("total_cost_eur", program["planning_results"]["estimated_total_cost_eur"])
-            .field(
-                "total_heating_intervals",
-                program["planning_results"]["total_heating_intervals_planned"],
-            )
-            .field(
-                "total_evu_off_intervals", program["planning_results"]["total_evu_off_intervals"]
-            )
-            .field("cheapest_price", program["planning_results"]["cheapest_interval_price"])
-            .field(
-                "most_expensive_price", program["planning_results"]["most_expensive_interval_price"]
-            )
-            .field("average_price", program["planning_results"]["average_heating_price"])
-            .time(datetime.datetime.now(tz=datetime.timezone.utc))
-        )
 
     def _get_bucket_name(self, bucket_key: str, default: str) -> str:
         """
@@ -482,16 +461,3 @@ class HeatingProgramGenerator:
             raise ValueError(f"Missing required configuration: {bucket_key.upper()}")
 
         return bucket_name
-
-    def _calculate_power_kw(self, command: str, load_power_kw: float) -> float:
-        """
-        Calculate power in kW based on command state.
-
-        Args:
-            command: Command string (ON, EVU, ALE, etc.)
-            load_power_kw: Power rating of the load in kW
-
-        Returns:
-            Power in kW (0.0 if not ON)
-        """
-        return load_power_kw if command == "ON" else 0.0

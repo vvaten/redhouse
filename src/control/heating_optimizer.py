@@ -147,7 +147,10 @@ class HeatingOptimizer:
             DataFrame with time_resolution column added
         """
         time_col: Union[pd.Series, pd.DatetimeIndex]
-        if "time_floor_local" in df.columns:
+        # local_time is the point's own time; time_floor_local is cut to the hour
+        if "local_time" in df.columns:
+            time_col = df["local_time"]
+        elif "time_floor_local" in df.columns:
             time_col = df["time_floor_local"]
         else:
             time_col = df.index  # type: ignore[assignment]
@@ -178,6 +181,14 @@ class HeatingOptimizer:
             optional_cols.append("solar_yield_avg_prediction")
 
         grouped = df.groupby("time_resolution")[required_cols + optional_cols].mean()
+
+        # One solar prediction per hour: each interval takes its hour's value,
+        # else zero, as a NaN would count as full solar below
+        hour = pd.Timedelta(hours=1)
+        solar = df.groupby(floor_in_utc(df["time_resolution"], hour))
+        by_hour = solar["solar_yield_avg_prediction"].mean()
+        own_hour = by_hour.reindex(floor_in_utc(grouped.index, hour))
+        grouped["solar_yield_avg_prediction"] = own_hour.fillna(0.0).to_numpy()
 
         # Convert solar prediction from W to kWh
         grouped["solar_yield_avg_prediction"] = grouped["solar_yield_avg_prediction"] * 3.6

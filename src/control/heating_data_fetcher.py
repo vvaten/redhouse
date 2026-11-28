@@ -212,7 +212,7 @@ class HeatingDataFetcher:
           |> range(start: {start_offset}d, stop: {stop_offset}d)
           |> filter(fn: (r) => r["_measurement"] == "weather")
           |> filter(fn: (r) => r["_field"] == "Air temperature")
-          |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+          |> aggregateWindow(every: 15m, fn: mean, createEmpty: false, timeSrc: "_start")
           |> yield(name: "mean")
         """
 

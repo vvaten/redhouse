@@ -49,7 +49,7 @@ def main():
 
 def _run(args) -> int:
     # The pump state file is read here, so it must be under the lock
-    controller = PumpController(dry_run=args.dry_run)
+    controller = PumpController(dry_run=args.dry_run, source="manual")
 
     if args.command == "status":
         # Show status
@@ -63,7 +63,10 @@ def _run(args) -> int:
             print(f"ON since: {time.ctime(controller.on_since)}")
         if controller.last_evu_cycle_time:
             print(f"Last EVU cycle: {time.ctime(controller.last_evu_cycle_time)}")
-        print(f"EVU cycle threshold: {controller.EVU_CYCLE_THRESHOLD/60:.0f} min")
+        released = controller.last_release()
+        if released:
+            print(f"Last EVU release: {time.ctime(released)}")
+        print(f"Pulse due after: {controller.PULSE_DUE_AFTER/60:.0f} min")
         needs_cycle = controller.check_evu_cycle_needed()
         print(f"Needs EVU cycle: {'YES' if needs_cycle else 'No'}")
         print(f"{'='*50}\n")

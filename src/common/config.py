@@ -36,14 +36,14 @@ class Config:
                 f"Copy config/config.yaml.example to config/config.yaml and adjust values."
             )
 
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             self._yaml_config: dict[str, Any] = yaml.safe_load(f) or {}
 
         # Load sensor mapping (optional, separate file for PII)
         self._sensor_mapping: dict[str, str] = {}
         sensors_path = str(Path(config_path).parent / "sensors.yaml")
         if os.path.exists(sensors_path):
-            with open(sensors_path) as f:
+            with open(sensors_path, encoding="utf-8") as f:
                 sensors_data = yaml.safe_load(f) or {}
                 self._sensor_mapping = sensors_data.get("sensor_mapping", {})
 
@@ -239,6 +239,14 @@ class Config:
     def car_tip_section(self) -> dict:
         return dict(self._require_yaml("car_tip"))
 
+    @property
+    def hot_water_section(self) -> dict:
+        return dict(self._require_yaml("hot_water"))
+
+    @property
+    def pump_health_section(self) -> dict:
+        return dict(self._require_yaml("pump_health"))
+
     # Heating configuration (from config.yaml)
     @property
     def heating_curve(self) -> dict[int, float]:
@@ -252,6 +260,11 @@ class Config:
     @property
     def evuoff_max_continuous_hours(self) -> int:
         return int(self._require_yaml("heating.evuoff_max_continuous_hours"))
+
+    @property
+    def max_off_h(self) -> float:
+        """The longest stretch without pump ON, in hours."""
+        return float(self._require_yaml("heating.max_off_h"))
 
     # Spot price configuration (from config.yaml)
     @property
