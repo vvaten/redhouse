@@ -98,7 +98,33 @@ class EvuOptimizer:
 
         return evu_off_periods
 
-    def _optimize_evu_off_groups(self, expensive_hours_df, max_continuous_hours: int) -> list[dict]:
+    def quarter_periods(self, priorities, on_quarters: int, keep) -> list[dict]:
+        """EVU-OFF blocks over a window of quarter rows: quarters dearer than
+        the threshold and not ON, at most the max continuous hours a block,
+        leaving 2 h of the window out of EVU besides the ON quarters."""
+        room = len(priorities) - on_quarters - 8
+        if room <= 0:
+            logger.info("No room for EVU-OFF periods (heating most of the window)")
+            return []
+        dear = priorities[priorities["price_total"] > self.EVU_OFF_THRESHOLD_PRICE]
+        dear = dear[~dear.index.isin(keep)].sort_values(by="price_total", ascending=False)
+        dear = dear.head(room)
+        if dear.empty:
+            logger.info("No quarters expensive enough for EVU-OFF")
+            return []
+        groups = self._optimize_evu_off_groups(dear, self.EVU_OFF_MAX_CONTINUOUS_HOURS * 4, 900)
+        periods = []
+        for group_id, group in enumerate(groups, start=1):
+            start, stop = int(group["first"].timestamp()), int(group["last"].timestamp()) + 900
+            periods.append({"group_id": group_id, "start": start, "stop": stop})
+            logger.info(
+                f"EVU-OFF group {group_id}: {group['first']} for {(stop - start) // 60} min"
+            )
+        return periods
+
+    def _optimize_evu_off_groups(
+        self, expensive_hours_df, max_continuous_hours: int, step: int = 3600
+    ) -> list[dict]:
         """
         Optimize EVU-OFF hours into groups with maximum continuous length.
 
@@ -120,8 +146,8 @@ class EvuOptimizer:
             rejected = False
 
             for group in groups:
-                if hour.timestamp() == group["first"].timestamp() - 3600:
-                    duration_hours = (group["last"].timestamp() - group["first"].timestamp()) / 3600
+                if hour.timestamp() == group["first"].timestamp() - step:
+                    duration_hours = (group["last"].timestamp() - group["first"].timestamp()) / step
                     if duration_hours < max_continuous_hours - 1:
                         group["first"] = hour
                         extended = True
@@ -130,8 +156,8 @@ class EvuOptimizer:
                         rejected = True
                         break
 
-                elif hour.timestamp() == group["last"].timestamp() + 3600:
-                    duration_hours = (group["last"].timestamp() - group["first"].timestamp()) / 3600
+                elif hour.timestamp() == group["last"].timestamp() + step:
+                    duration_hours = (group["last"].timestamp() - group["first"].timestamp()) / step
                     if duration_hours < max_continuous_hours - 1:
                         group["last"] = hour
                         extended = True
@@ -153,10 +179,10 @@ class EvuOptimizer:
 
             prev_group = merged_groups[-1]
 
-            if group["first"].timestamp() == prev_group["last"].timestamp() + 3600:
+            if group["first"].timestamp() == prev_group["last"].timestamp() + step:
                 merged_duration = (
                     group["last"].timestamp() - prev_group["first"].timestamp()
-                ) / 3600
+                ) / step
                 if merged_duration <= max_continuous_hours - 1:
                     prev_group["last"] = group["last"]
                     continue

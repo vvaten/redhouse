@@ -116,10 +116,19 @@ class TestProgram:
         entries = hio.program_entries(now, str(tmp_path))
         assert entries == [(now - 3600, "ON")]
 
-    def test_command_and_hour_maps(self):
-        entries = [(0, "ALE"), (3600, "ON"), (7200, "EVU")]
-        assert hio.command_at(entries, 3599) == "ALE" and hio.command_at(entries, -1) is None
-        assert hio.hour_program(entries, 0, 3) == {0: "ALE", 3600: "ON", 7200: "EVU"}
+    def test_command_and_quarter_maps(self):
+        entries = [(0, "ALE"), (2700, "ON"), (3600, "EVU")]
+        assert hio.command_at(entries, 3599) == "ON" and hio.command_at(entries, -1) is None
+        assert hio.quarter_program(entries, 600, 2) == {
+            0: "ALE",
+            900: "ALE",
+            1800: "ALE",
+            2700: "ON",
+            3600: "EVU",
+            4500: "EVU",
+            5400: "EVU",
+            6300: "EVU",
+        }
 
 
 class TestPoints:

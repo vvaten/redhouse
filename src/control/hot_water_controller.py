@@ -248,7 +248,7 @@ def context(now: int, settings: dict, inp: Inputs) -> hr.Context:
         open_cycle=inp.view.open,
         last_cycle_start=inp.view.last_start,
         prices=inp.prices,
-        program=hio.hour_program(inp.entries, now - 3600, 40),
+        program=hio.quarter_program(inp.entries, now - 3600, 40),
         settings=settings,
     )
 

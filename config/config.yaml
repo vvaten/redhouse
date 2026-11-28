@@ -15,6 +15,9 @@ heating:
   evuoff_threshold_price: 0.40
   evuoff_max_continuous_hours: 4
 
+  # The longest stretch without pump ON, also across midnight (design 12)
+  max_off_h: 8
+
 garage:
   # One heater per relay: .185 drives 1.07 kW on L3, .186 1.06 kW on L1
   relay_urls: [http://192.168.1.185/relay/0, http://192.168.1.186/relay/0]

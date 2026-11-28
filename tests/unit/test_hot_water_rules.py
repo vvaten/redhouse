@@ -193,6 +193,25 @@ class TestPreOn:
             is None
         )
 
+    def test_a_block_from_a_quarter_inside_the_hour(self):
+        """ON from 03:15: the lead from 02:55 falls in the 02:00 hour."""
+        block = local("2026-12-02 03:15")
+        program = {block - H: "ALE", block: "ON", block + 1800: "ALE"}
+        prices = {hr.hour_of(block) - H: 0.07, hr.hour_of(block): 0.05}
+        c = ctx(block - 20 * 60, bottom=44.0, prices=prices, program=program)
+        assert hr.on_block_start(c) == block
+        assert hr.pre_on(c, hr.RuleState()) is not None
+
+    def test_no_block_while_the_pump_is_on(self):
+        block = local("2026-12-02 03:15")
+        program = {block - H: "ON", block: "ON"}
+        assert hr.on_block_start(ctx(block - 600, program=program)) is None
+
+    def test_an_evu_quarter_makes_its_hour_dear(self):
+        h = local("2026-12-02 17:00")
+        c = ctx(h - H, prices={h: 0.05}, program={h: "ALE", h + 2700: "EVU"})
+        assert hr._dear(c, h) and not hr._dear(c, h - H)
+
     def test_not_when_the_tank_is_far_from_its_start(self):
         block = local("2026-12-02 03:00")
         program = {block - H: "ALE", block: "ON"}

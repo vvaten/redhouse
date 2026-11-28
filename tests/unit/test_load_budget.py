@@ -113,6 +113,37 @@ def test_without_the_budget_the_frame_is_left_alone(tmp_path):
     assert "over_cap" not in same
 
 
+def test_quarters_that_fit_round_down_inside_0_to_4():
+    assert lb.quarters_that_fit(3.4, 3.4) == 4
+    assert lb.quarters_that_fit(2.55, 3.4) == 3
+    assert lb.quarters_that_fit(0.8, 3.4) == 0
+    assert lb.quarters_that_fit(-1.0, 3.4) == 0
+    assert lb.quarters_that_fit(9.0, 3.4) == 4
+
+
+def _hours(date):
+    return [_local(*date, h) for h in range(24)]
+
+
+def test_hour_caps_without_a_budget_are_all_four(tmp_path):
+    caps = lb.hour_caps(_hours((2026, 11, 14)), _config(False), tmp_path / "s.json")
+    assert set(caps.values()) == {4}
+
+
+def test_hour_caps_hold_the_sauna_evening_down(tmp_path):
+    caps = lb.hour_caps(_hours((2026, 11, 14)), _config(), tmp_path / "none.json")
+    assert all(caps[_local(2026, 11, 14, h)] < 4 for h in range(17, 22))
+    assert caps[_local(2026, 11, 14, 12)] == 4 and caps[_local(2026, 11, 14, 23)] == 4
+
+
+def test_hour_caps_close_the_boost_slot_with_the_planner_link(tmp_path):
+    """The first expiry after the 2026-11-27 anchor is 2026-12-11 22:00 local."""
+    config = _config(False)
+    config.hot_water_section = {**HOT_WATER_OFF, "planner_link": True}
+    caps = lb.hour_caps(_hours((2026, 12, 11)), config, tmp_path / "s.json")
+    assert caps[_local(2026, 12, 11, 22)] == 0 and caps[_local(2026, 12, 11, 21)] == 4
+
+
 def test_a_missing_state_plans_at_the_floor(tmp_path):
     day = _day((2026, 11, 14), [0.10] * 24)
     budgeted = lb.budget_priorities(

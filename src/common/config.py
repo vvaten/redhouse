@@ -261,6 +261,11 @@ class Config:
     def evuoff_max_continuous_hours(self) -> int:
         return int(self._require_yaml("heating.evuoff_max_continuous_hours"))
 
+    @property
+    def max_off_h(self) -> float:
+        """The longest stretch without pump ON, in hours."""
+        return float(self._require_yaml("heating.max_off_h"))
+
     # Spot price configuration (from config.yaml)
     @property
     def spot_prices_config(self) -> dict[str, float]:

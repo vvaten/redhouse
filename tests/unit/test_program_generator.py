@@ -2,16 +2,21 @@
 
 import datetime
 import json
+import tempfile
 import unittest
 from unittest.mock import ANY, MagicMock, patch
 
 import pandas as pd
 
+from src.common.atomic_json import write_json
+from src.common.local_time import HELSINKI, helsinki_date
+from src.control import quarter_program as qprog
 from src.control.evu_optimizer import EvuOptimizer
 from src.control.heating_data_fetcher import HeatingDataUnavailable
 from src.control.heating_optimizer import HeatingOptimizer
 from src.control.program_generator import HeatingProgramGenerator
 from src.control.schedule_builder import ScheduleBuilder
+from src.monitoring.program_check import program_path
 from tests.unit.test_load_budget import HOT_WATER_OFF
 
 # A budget section with every key; tests switch it on or off
@@ -77,6 +82,21 @@ class TestEvuOffPeriodGeneration(unittest.TestCase):
         with patch("src.control.heating_optimizer.HeatingOptimizer"):
             mock_optimizer = MagicMock()
             self.evu_optimizer = EvuOptimizer(mock_optimizer)
+
+    def test_quarter_blocks_skip_on_quarters_and_cap_their_length(self):
+        """Six dear hours 16-22, the 18:15 quarter ON: blocks of at most 4 h."""
+        index = pd.date_range("2026-12-02 00:00", periods=96, freq="15min", tz="Europe/Helsinki")
+        prices = [0.60 if 64 <= i < 88 else 0.10 for i in range(96)]
+        priorities = pd.DataFrame({"price_total": prices}, index=index)
+        keep = index[[73]]
+        self.evu_optimizer.EVU_OFF_THRESHOLD_PRICE = 0.40
+        self.evu_optimizer.EVU_OFF_MAX_CONTINUOUS_HOURS = 4
+        periods = self.evu_optimizer.quarter_periods(priorities, 8, keep)
+        covered = {t for p in periods for t in range(p["start"], p["stop"], 900)}
+        self.assertNotIn(int(index[73].timestamp()), covered)
+        self.assertTrue(all(p["stop"] - p["start"] <= 4 * 3600 for p in periods))
+        self.assertEqual(len(covered), 23)
+        self.assertEqual(self.evu_optimizer.quarter_periods(priorities, 90, keep), [])
 
     def test_optimize_evu_off_groups_single_hour(self):
         """Test EVU-OFF grouping with single hour."""
@@ -623,6 +643,8 @@ class TestGenerateDailyProgram(unittest.TestCase):
         self.mock_config = MagicMock()
         self.mock_config.load_budget_section = {"enabled": False, **BUDGET_VALUES}
         self.mock_config.hot_water_section = HOT_WATER_OFF
+        self.mock_config.max_off_h = 8.0
+        self.program_dir = tempfile.TemporaryDirectory()
         self.mock_data_fetcher = MagicMock()
         self.mock_heating_curve = MagicMock()
         self.mock_optimizer = MagicMock()
@@ -642,7 +664,10 @@ class TestGenerateDailyProgram(unittest.TestCase):
                 return_value=self.mock_optimizer,
             ),
         ):
-            self.generator = HeatingProgramGenerator()
+            self.generator = HeatingProgramGenerator(program_dir=self.program_dir.name)
+
+    def tearDown(self):
+        self.program_dir.cleanup()
 
     def test_generate_daily_program_empty_data(self):
         """Test error handling when no data is available."""
@@ -669,71 +694,44 @@ class TestGenerateDailyProgram(unittest.TestCase):
         )
         self.mock_optimizer.select_cheapest_hours.assert_not_called()
 
-    def test_generate_daily_program_no_priority_data(self):
-        """Test error handling when priority data is empty."""
-        # Mock data fetcher to return data
-        timestamps = pd.date_range(
-            start="2025-01-15 00:00:00", periods=48, freq="H", tz="Europe/Helsinki"
-        )
-        df = pd.DataFrame(
+    def _tomorrow(self, price=0.10, from_today_hour=None):
+        """Data and quarter priorities for tomorrow, the live window; with
+        from_today_hour, from that hour today on, dearer today than tomorrow."""
+        zone = "Europe/Helsinki"
+        start = pd.Timestamp(helsinki_date(1)).tz_localize(zone)
+        if from_today_hour is not None:
+            start = pd.Timestamp(helsinki_date(0)).tz_localize(zone)
+            start += pd.Timedelta(hours=from_today_hour)
+        stop = pd.Timestamp(helsinki_date(2)).tz_localize(zone)
+        quarters = pd.date_range(start, stop, freq="15min", inclusive="left")
+        prices = [price * (3 if t.date() == helsinki_date(0) else 1) for t in quarters]
+        df = pd.DataFrame({"price_total": prices}, index=quarters)
+        priorities = pd.DataFrame(
             {
-                "price_total": [10.0] * 48,
-                "solar_yield_avg_prediction": [0.5] * 48,
-                "Air temperature": [-5.0] * 48,
+                "heating_prio": [p * 3.0 for p in prices],
+                "price_total": prices,
+                "solar_yield_avg_prediction": [0.0] * len(quarters),
             },
-            index=timestamps,
-        )
-
-        self.mock_data_fetcher.fetch_heating_data.return_value = df
-        self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
-        self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
-        self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
-
-        # Mock optimizer to return priorities but filter returns empty
-        priorities_df = pd.DataFrame(
-            {"heating_prio": [5.0] * 48, "base_load": [1.0] * 48}, index=timestamps
-        )
-        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
-        self.mock_optimizer.filter_day_priorities.return_value = pd.DataFrame()
-
-        with self.assertRaises(ValueError) as context:
-            self.generator.generate_daily_program(date_offset=1)
-
-        self.assertIn("No priority data available", str(context.exception))
-
-    def test_with_the_budget_on_the_selection_sees_over_cap_hours(self):
-        """The generator hands the budgeted frame to the hour selection."""
-        timestamps = pd.date_range(
-            start="2025-01-15 00:00:00", periods=48, freq="H", tz="Europe/Helsinki"
-        )
-        df = pd.DataFrame(
-            {
-                "price_total": [10.0] * 48,
-                "solar_yield_avg_prediction": [0.5] * 48,
-                "Air temperature": [-5.0] * 48,
-                "price_sell": [5.0] * 48,
-            },
-            index=timestamps,
+            index=quarters,
         )
         self.mock_data_fetcher.fetch_heating_data.return_value = df
         self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
         self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
         self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
-        priorities_df = pd.DataFrame(
-            {
-                "heating_prio": [5.0] * 48,
-                "base_load": [1.0] * 48,
-                "solar_yield_avg_prediction": [0.5] * 48,
-                "price_total": [10.0] * 48,
-            },
-            index=timestamps,
-        )
-        day_priorities = priorities_df[24:48]
-        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
-        self.mock_optimizer.filter_day_priorities.return_value = day_priorities
-        self.mock_optimizer.select_cheapest_hours.return_value = day_priorities[:8]
+        self.mock_optimizer.calculate_heating_priorities.return_value = priorities
         self.mock_optimizer.base_load_kw = 1.0
         self.mock_optimizer.heating_load_kw = 3.0
+        return priorities
+
+    def test_a_window_quarter_without_a_price_is_an_error(self):
+        priorities = self._tomorrow()
+        self.mock_optimizer.calculate_heating_priorities.return_value = priorities[:40]
+        with self.assertRaises(ValueError) as context:
+            self.generator.generate_daily_program(date_offset=1)
+        self.assertIn("No price for the quarter", str(context.exception))
+
+    def test_with_the_budget_on_the_selection_gets_the_hour_caps(self):
+        self._tomorrow()
         self.mock_config.load_budget_section = {"enabled": True, **BUDGET_VALUES}
         self.mock_config.power_cap_section = {
             "night_factor": 0.8,
@@ -745,106 +743,61 @@ class TestGenerateDailyProgram(unittest.TestCase):
             "tariff_eur_per_kw": 1.97,
             "max_import_kw": 34.5,
         }
-        self.generator.generate_daily_program(date_offset=1, simulation_mode=False)
-        frame = self.mock_optimizer.select_cheapest_hours.call_args.args[0]
-        self.assertIn("over_cap", frame.columns)
+        real = qprog.select
+        with patch.object(qprog, "select", side_effect=real) as select:
+            self.generator.generate_daily_program(date_offset=1)
+        caps = select.call_args.args[2]
+        self.assertEqual(len(caps), 24)
+        self.assertTrue(all(0 <= k <= 4 for k in caps.values()))
 
     def test_generate_daily_program_success(self):
-        """Test successful program generation."""
-        # Mock data fetcher
-        timestamps = pd.date_range(
-            start="2025-01-15 00:00:00", periods=48, freq="H", tz="Europe/Helsinki"
-        )
-        df = pd.DataFrame(
-            {
-                "price_total": [10.0] * 48,
-                "solar_yield_avg_prediction": [0.5] * 48,
-                "Air temperature": [-5.0] * 48,
-                "price_sell": [5.0] * 48,
-            },
-            index=timestamps,
-        )
-
-        self.mock_data_fetcher.fetch_heating_data.return_value = df
-        self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
-        self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
-        self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
-
-        # Mock optimizer
-        priorities_df = pd.DataFrame(
-            {
-                "heating_prio": [5.0] * 48,
-                "base_load": [1.0] * 48,
-                "solar_yield_avg_prediction": [0.5] * 48,
-                "price_total": [10.0] * 48,
-            },
-            index=timestamps,
-        )
-        day_priorities = priorities_df[24:48]
-
-        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
-        self.mock_optimizer.filter_day_priorities.return_value = day_priorities
-        self.mock_optimizer.select_cheapest_hours.return_value = day_priorities[:8]
-        self.mock_optimizer.base_load_kw = 1.0
-        self.mock_optimizer.heating_load_kw = 3.0
-
-        # Generate program
+        self._tomorrow()
         program = self.generator.generate_daily_program(date_offset=1, simulation_mode=False)
-
-        # Verify structure
-        self.assertIn("version", program)
-        self.assertIn("program_date", program)
-        self.assertIn("input_parameters", program)
-        self.assertIn("planning_results", program)
-        self.assertIn("loads", program)
-        self.assertIn("execution_status", program)
-
-        # Verify simulation data is None (not simulation mode)
+        for key in ("version", "program_date", "input_parameters", "planning_results", "loads"):
+            self.assertIn(key, program)
         self.assertIsNone(program["simulation_data"])
+        on = [e for e in program["loads"]["geothermal_pump"]["schedule"] if e["command"] == "ON"]
+        self.assertEqual(sum(e["duration_minutes"] for e in on), 8 * 60)
+        self.assertEqual(program["planning_results"]["max_off_h"], 8.0)
+        self.assertIsNone(self.generator.today_revision)
+
+    def _today_at(self, hour: int) -> int:
+        local = datetime.datetime.combine(helsinki_date(0), datetime.time(hour))
+        return int(HELSINKI.localize(local).timestamp())
+
+    def test_a_live_run_replans_the_rest_of_today_with_tomorrow(self):
+        """Today's 22:00 hour is dearer than tomorrow: it moves into tomorrow,
+        and the two days still hold today's 4 quarters plus tomorrow's 32."""
+        self._tomorrow(from_today_hour=16)
+        today = helsinki_date(0)
+        schedule = [
+            {"timestamp": self._today_at(h), "command": c, "duration_minutes": m, "local_time": ""}
+            for h, c, m in ((22, "ON", 60), (23, "ALE", None))
+        ]
+        program = {
+            "version": "2.0.0",
+            "program_date": today.isoformat(),
+            "loads": {"geothermal_pump": {"schedule": schedule}},
+        }
+        write_json(program_path(today, self.program_dir.name), program)
+        now = self._today_at(16) + 360
+        with patch("src.control.program_generator.time.time", return_value=now):
+            tomorrow = self.generator.generate_daily_program(date_offset=1)
+        revised = self.generator.today_revision
+        self.assertIsNotNone(revised)
+        today_on = [
+            e for e in revised["loads"]["geothermal_pump"]["schedule"] if e["command"] == "ON"
+        ]
+        day_on = [
+            e for e in tomorrow["loads"]["geothermal_pump"]["schedule"] if e["command"] == "ON"
+        ]
+        self.assertEqual(sum(e["duration_minutes"] for e in today_on + day_on), (4 + 32) * 15)
+        self.assertEqual(tomorrow["planning_results"]["carried_on_quarters"], 4)
+        self.assertFalse(any(e["timestamp"] == self._today_at(22) for e in today_on))
 
     def test_generate_daily_program_simulation_mode(self):
-        """Test program generation in simulation mode."""
-        # Mock data fetcher
-        timestamps = pd.date_range(
-            start="2025-01-15 00:00:00", periods=48, freq="H", tz="Europe/Helsinki"
-        )
-        df = pd.DataFrame(
-            {
-                "price_total": [10.0] * 48,
-                "solar_yield_avg_prediction": [0.5] * 48,
-                "Air temperature": [-5.0] * 48,
-                "price_sell": [5.0] * 48,
-            },
-            index=timestamps,
-        )
-
-        self.mock_data_fetcher.fetch_heating_data.return_value = df
-        self.mock_data_fetcher.get_day_average_temperature.return_value = -5.0
-        self.mock_heating_curve.calculate_heating_hours.return_value = 8.0
-        self.mock_heating_curve.get_curve_points.return_value = {"-10": 12, "0": 6, "10": 0}
-
-        # Mock optimizer
-        priorities_df = pd.DataFrame(
-            {
-                "heating_prio": [5.0] * 48,
-                "base_load": [1.0] * 48,
-                "solar_yield_avg_prediction": [0.5] * 48,
-                "price_total": [10.0] * 48,
-            },
-            index=timestamps,
-        )
-        day_priorities = priorities_df[24:48]
-
-        self.mock_optimizer.calculate_heating_priorities.return_value = priorities_df
-        self.mock_optimizer.filter_day_priorities.return_value = day_priorities
-        self.mock_optimizer.select_cheapest_hours.return_value = day_priorities[:8]
-        self.mock_optimizer.base_load_kw = 1.0
-        self.mock_optimizer.heating_load_kw = 3.0
-
-        # Generate program in simulation mode
+        self._tomorrow()
         program = self.generator.generate_daily_program(date_offset=1, simulation_mode=True)
-
-        # Verify simulation data is present
         self.assertIsNotNone(program["simulation_data"])
         self.assertEqual(program["simulation_data"]["mode"], "live")
 

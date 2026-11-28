@@ -89,7 +89,7 @@ def _fake_influx(spike):
     return influx
 
 
-def _generate(day, spike):
+def _generate(day, spike, program_dir):
     """Run the generator at 16:06 local on the eve of the day, as the timer does."""
     eve = HELSINKI.localize(
         datetime.datetime.combine(day - datetime.timedelta(days=1), datetime.time(16, 6))
@@ -101,14 +101,15 @@ def _generate(day, spike):
         patch.object(hdf, "InfluxClient", return_value=influx),
         freeze_time(eve.astimezone(pytz.utc).replace(tzinfo=None), tz_offset=offset_hours),
     ):
-        return pg.HeatingProgramGenerator().generate_daily_program(date_offset=1)
+        generator = pg.HeatingProgramGenerator(program_dir=str(program_dir))
+        return generator.generate_daily_program(date_offset=1)
 
 
 @pytest.mark.parametrize("spike", [False, True], ids=["cheap-nights", "evening-spike"])
 @pytest.mark.parametrize("day_text", DAYS)
-def test_a_program_is_sound_on_and_around_dst_changes(day_text, spike):
+def test_a_program_is_sound_on_and_around_dst_changes(day_text, spike, tmp_path):
     day = datetime.date.fromisoformat(day_text)
-    program = _generate(day, spike)
+    program = _generate(day, spike, tmp_path)
     assert program["program_date"] == day_text
 
     hours = hdf.local_day_hours(day)
@@ -121,7 +122,7 @@ def test_a_program_is_sound_on_and_around_dst_changes(day_text, spike):
         assert entry["local_time"] == label, entry
 
     on = [e for e in schedule if e["command"] == "ON"]
-    assert on and all((e["timestamp"] - hours[0]) % 3600 == 0 for e in on), "whole hours"
+    assert on and all((e["timestamp"] - hours[0]) % 900 == 0 for e in on), "whole quarters"
     for entry in on + [e for e in schedule if e["command"] == "EVU"]:
         assert entry["timestamp"] + entry["duration_minutes"] * 60 in set(stamps), entry
     needed = program["planning_results"]["total_heating_hours_needed"]

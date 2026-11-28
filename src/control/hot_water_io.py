@@ -155,15 +155,15 @@ def command_at(entries: list, t: int) -> Optional[str]:
     return due[-1] if due else None
 
 
-def hour_program(entries: list, start: int, hours: int) -> dict:
-    """{hour start: command one minute into the hour}."""
+def quarter_program(entries: list, start: int, hours: int) -> dict:
+    """{quarter start: command one minute into the quarter}, from the hour of start."""
     first = start - start % 3600
     out = {}
-    for k in range(hours):
-        h = first + k * 3600
-        command = command_at(entries, h + 60)
+    for k in range(hours * 4):
+        q = first + k * 900
+        command = command_at(entries, q + 60)
         if command is not None:
-            out[h] = command
+            out[q] = command
     return out
 
 

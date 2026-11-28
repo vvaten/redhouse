@@ -147,7 +147,10 @@ class HeatingOptimizer:
             DataFrame with time_resolution column added
         """
         time_col: Union[pd.Series, pd.DatetimeIndex]
-        if "time_floor_local" in df.columns:
+        # local_time is the point's own time; time_floor_local is cut to the hour
+        if "local_time" in df.columns:
+            time_col = df["local_time"]
+        elif "time_floor_local" in df.columns:
             time_col = df["time_floor_local"]
         else:
             time_col = df.index  # type: ignore[assignment]

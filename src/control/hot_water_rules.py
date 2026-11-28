@@ -20,6 +20,7 @@ IDLE_FALL_C_PER_H = 0.45
 # A cycle this close before a rule's ON still counts as started by it
 START_SLACK_S = 300
 HOUR_S = 3600
+QUARTER_S = 900
 WEEKDAY_SLOTS = {4: "fri", 5: "sat"}
 DONE = ":done"
 
@@ -53,7 +54,7 @@ class Context:
     last_cycle_start: Optional[int]
     # {hour start epoch: EUR/kWh}
     prices: dict
-    # {hour start epoch: ON, ALE or EVU} from the heating program
+    # {quarter start epoch: ON, ALE or EVU} from the heating program
     program: dict
     settings: dict
 
@@ -137,10 +138,16 @@ def flush(ctx: Context, state: RuleState) -> Optional[Want]:
     return None
 
 
+def command_in_force(ctx: Context, t: int) -> Optional[str]:
+    """The program's command at t: the last key at or before it."""
+    keys = [k for k in ctx.program if k <= t]
+    return ctx.program[max(keys)] if keys else None
+
+
 def _dear(ctx: Context, h: int) -> bool:
     limit = float(ctx.settings["preheat"]["price_c_kwh"])
     p = price_c(ctx, h)
-    in_evu = h in ctx.program and ctx.program[h] == "EVU"
+    in_evu = any(command_in_force(ctx, h + k * QUARTER_S) == "EVU" for k in range(4))
     return in_evu or (p is not None and p > limit)
 
 
@@ -186,11 +193,15 @@ def preheat(ctx: Context, state: RuleState) -> Optional[Want]:
 
 
 def on_block_start(ctx: Context) -> Optional[int]:
-    """The start of a program ON block at the next full hour, or None."""
-    h = hour_of(ctx.now) + HOUR_S
-    on_next = h in ctx.program and ctx.program[h] == "ON"
-    on_now = hour_of(ctx.now) in ctx.program and ctx.program[hour_of(ctx.now)] == "ON"
-    return h if on_next and not on_now else None
+    """The start of a program ON block at a quarter within the next hour,
+    while the pump is not ON now, or None."""
+    if command_in_force(ctx, ctx.now) == "ON":
+        return None
+    first = ctx.now - ctx.now % QUARTER_S + QUARTER_S
+    for q in range(first, ctx.now + HOUR_S + 1, QUARTER_S):
+        if command_in_force(ctx, q) == "ON":
+            return q
+    return None
 
 
 def pre_on(ctx: Context, state: RuleState) -> Optional[Want]:
@@ -204,7 +215,9 @@ def pre_on(ctx: Context, state: RuleState) -> Optional[Want]:
     if _held(state, "pre_on", ctx, lambda since: block):
         return Want("pre_on", "regular run before an ON block")
     lead = int(cfg["lead_min"]) * 60
-    before, during = price_c(ctx, block - HOUR_S), price_c(ctx, block)
+    before, during = price_c(ctx, hour_of(block - lead)), price_c(ctx, hour_of(block))
+    if hour_of(block - lead) == hour_of(block):
+        before = price_c(ctx, hour_of(block) - HOUR_S)
     extra = float(cfg["max_extra_c_kwh"])
     cheap = before is not None and during is not None and before - during <= extra
     reach = float(ctx.settings["preheat"]["reach_c"])

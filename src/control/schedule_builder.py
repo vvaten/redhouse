@@ -136,10 +136,18 @@ class ScheduleBuilder:
         Returns:
             List of schedule entry dicts
         """
+        # Quarter runs carry their own price, solar and cost; hours look them up
+        if "cost_eur" in selected_hours.columns:
+            day_priorities = selected_hours
         entries = []
         for hour in heating_hours:
             timestamp = int(hour.timestamp())
             priority_score = selected_hours.loc[hour, "heating_prio"]
+            cost = (
+                selected_hours.loc[hour, "cost_eur"]
+                if "cost_eur" in selected_hours.columns
+                else priority_score
+            )
 
             entry = {
                 "timestamp": timestamp,
@@ -169,7 +177,7 @@ class ScheduleBuilder:
                     2,
                 ),
                 "priority_score": round(priority_score / load_config["power_kw"] * 100, 2),
-                "estimated_cost_eur": round(priority_score, 3),
+                "estimated_cost_eur": round(cost, 3),
             }
             entries.append(entry)
         return entries

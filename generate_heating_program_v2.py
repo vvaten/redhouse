@@ -33,8 +33,10 @@ Examples:
 """
 
 import argparse
+import datetime
 import sys
 
+from src.common.atomic_json import write_json
 from src.common.local_time import helsinki_date
 from src.common.logger import setup_logger
 from src.control.program_fallback import is_fallback_copy, load_valid_program
@@ -120,7 +122,9 @@ def _log_program_generation_info(program: dict, args):
     logger.info(
         f"Required heating hours: {program['planning_results']['total_heating_hours_needed']:.2f}h"
     )
-    logger.info(f"Estimated cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR")
+    logger.info(
+        f"Estimated cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR"
+    )
 
 
 def _save_program_files(generator, program: dict, output_dir: str, dry_run: bool):
@@ -142,15 +146,26 @@ def _save_program_files(generator, program: dict, output_dir: str, dry_run: bool
     return json_path
 
 
+def _save_today_revision(generator, output_dir: str, dry_run: bool) -> None:
+    """Write today's re-planned program atomically; the executor re-reads it.
+    InfluxDB gets it as "adjusted", so the first plan stays comparable."""
+    revision = generator.today_revision
+    if revision is None:
+        return
+    path = program_path(datetime.date.fromisoformat(revision["program_date"]), output_dir)
+    write_json(path, revision)
+    logger.info(f"Re-planned the rest of today: {path}")
+    if not dry_run:
+        generator.save_program_influxdb(revision, data_type="adjusted")
+
+
 def _print_program_summary(program: dict, json_path: str):
     """Print comprehensive program summary."""
     print("\n" + "=" * 60)
     print(f"Heating Program for {program['program_date']}")
     print("=" * 60)
     print(f"Average Temperature: {program['input_parameters']['avg_temperature_c']:.1f}C")
-    print(
-        f"Heating Hours Needed: {program['planning_results']['total_heating_hours_needed']:.2f}h"
-    )
+    print(f"Heating Hours Needed: {program['planning_results']['total_heating_hours_needed']:.2f}h")
     print(f"EVU-OFF Intervals: {program['planning_results']['total_evu_off_intervals']}")
     print(f"Estimated Cost: {program['planning_results']['estimated_total_cost_eur']:.2f} EUR")
     print(
@@ -173,8 +188,7 @@ def _print_load_schedules(program: dict):
             print(f"\n  Schedule ({len(load_data['schedule'])} entries):")
             for entry in load_data["schedule"]:
                 print(
-                    f"    {entry['local_time'][:19]} -> {entry['command']} "
-                    f"({entry['reason']})"
+                    f"    {entry['local_time'][:19]} -> {entry['command']} " f"({entry['reason']})"
                 )
 
 
@@ -195,7 +209,7 @@ def main():
             return 0
 
     try:
-        generator = HeatingProgramGenerator()
+        generator = HeatingProgramGenerator(program_dir=args.output_dir)
 
         # Generate program
         logger.info(f"Generating program for date_offset={args.date_offset}")
@@ -210,8 +224,9 @@ def main():
 
         _log_program_generation_info(program, args)
 
-        # Save program
+        # Save program, then today's program re-planned with it
         json_path = _save_program_files(generator, program, args.output_dir, args.dry_run)
+        _save_today_revision(generator, args.output_dir, args.dry_run)
 
         # Print summary
         _print_program_summary(program, json_path)
