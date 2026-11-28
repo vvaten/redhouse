@@ -392,6 +392,54 @@ class TestHeatingOptimizer(unittest.TestCase):
         self.assertTrue({0, 1, 2, 3}.issubset(hourly_hours))
         self.assertTrue({0, 1, 2, 3}.issubset(quarterly_hours))
 
+    def test_quarters_take_their_hours_solar(self):
+        """The fetch shape: 5-min rows, prices at :05/:20/:35/:50, temperature at
+        :00 and one solar value per hour at :35. Each quarter gets its hour's."""
+        times = pd.date_range("2025-01-15 00:00", periods=36, freq="5min", tz="Europe/Helsinki")
+        hour_solar = [0.0, 0.0, 0.5]
+        rows = []
+        for t in times:
+            row = {"price_total": None, "price_sell": None, "Air temperature": None}
+            row["solar_yield_avg_prediction"] = None
+            if t.minute % 15 == 5:
+                row["price_total"] = 0.10 + 0.001 * t.minute
+                row["price_sell"] = 0.04
+            if t.minute == 0:
+                row["Air temperature"] = -5.0
+            if t.minute == 35:
+                row["solar_yield_avg_prediction"] = hour_solar[t.hour]
+            rows.append(row)
+        df = pd.DataFrame(rows)
+        df["local_time"] = times
+        df["time_floor_local"] = times.floor("h")
+
+        result = HeatingOptimizer(resolution_minutes=15).calculate_heating_priorities(df)
+
+        self.assertEqual(len(result), 12)
+        expected = [hour_solar[t.hour] * 3.6 for t in result.index]
+        self.assertEqual(list(result["solar_yield_avg_prediction"]), expected)
+        night = result.iloc[:8]
+        pd.testing.assert_series_equal(
+            night["heating_prio"], night["price_total"] * 3.0, check_names=False
+        )
+
+    def test_hour_without_solar_costs_price_total(self):
+        """An hour with no solar value at all counts as no solar, not full solar."""
+        times = pd.date_range("2025-01-15 00:00", periods=3, freq="h", tz="Europe/Helsinki")
+        df = pd.DataFrame(
+            {
+                "solar_yield_avg_prediction": [0.0, None, 0.0],
+                "price_total": [0.10, 0.11, 0.12],
+                "price_sell": [0.04] * 3,
+                "Air temperature": [-5.0] * 3,
+            },
+            index=times,
+        )
+
+        result = HeatingOptimizer(resolution_minutes=60).calculate_heating_priorities(df)
+
+        self.assertAlmostEqual(result["heating_prio"].iloc[1], 0.11 * 3.0)
+
     def test_calculate_heating_priorities_without_solar_prediction(self):
         """Test that heating priorities can be calculated without solar_yield_avg_prediction column."""
         # Create DataFrame WITHOUT solar_yield_avg_prediction column

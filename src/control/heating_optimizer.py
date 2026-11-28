@@ -182,6 +182,14 @@ class HeatingOptimizer:
 
         grouped = df.groupby("time_resolution")[required_cols + optional_cols].mean()
 
+        # One solar prediction per hour: each interval takes its hour's value,
+        # else zero, as a NaN would count as full solar below
+        hour = pd.Timedelta(hours=1)
+        solar = df.groupby(floor_in_utc(df["time_resolution"], hour))
+        by_hour = solar["solar_yield_avg_prediction"].mean()
+        own_hour = by_hour.reindex(floor_in_utc(grouped.index, hour))
+        grouped["solar_yield_avg_prediction"] = own_hour.fillna(0.0).to_numpy()
+
         # Convert solar prediction from W to kWh
         grouped["solar_yield_avg_prediction"] = grouped["solar_yield_avg_prediction"] * 3.6
 
