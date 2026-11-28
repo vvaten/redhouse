@@ -32,9 +32,14 @@ def _hours(start, n=26):
     return [start + datetime.timedelta(hours=i) for i in range(n)]
 
 
+def _quarters(start, hours=26):
+    return [start + i * ct.QUARTER for i in range(4 * hours)]
+
+
 def _prices(cheap=(), cheap_price=0.02, dear=0.15, start=None):
+    """Quarter prices; a quarter is cheap when its hour is in cheap."""
     start = start or _local(2026, 11, 14, 16)
-    return {t: cheap_price if t in cheap else dear for t in _hours(start)}
+    return {t: cheap_price if ct.floor_hour(t) in cheap else dear for t in _quarters(start)}
 
 
 def _ctx(other=3.1, month=None, start=None):
@@ -53,23 +58,28 @@ NIGHT = {_local(2026, 11, 14, h) for h in (22, 23)} | {_local(2026, 11, 15, h) f
 HIGH_BASE = {_local(2026, 11, 2, h): 9.0 for h in (8, 9, 10)}
 
 
-def test_a_session_splits_into_full_hours_and_a_rest():
-    assert ct._hour_loads(5.5, 45.0) == [5.5] * 8 + [pytest.approx(1.0)]
+def test_a_session_splits_into_full_quarters_and_a_rest():
+    assert ct._quarter_loads(5.5, 45.0) == [1.375] * 32 + [pytest.approx(1.0)]
+    assert ct._quarter_loads(4.0, 2.0) == [1.0, 1.0]
 
 
-def test_every_start_ends_by_the_deadline():
+def test_every_quarter_start_ends_by_the_deadline():
+    """45 kWh at 5.5 kW takes 33 quarters, so the last start is 22:45."""
     starts = ct.candidates(NOW, 5.5, SETTINGS)
-    assert starts[0] == _local(2026, 11, 14, 17)
-    assert starts[-1] == _local(2026, 11, 14, 22)
+    assert starts[0] == _local(2026, 11, 14, 16) + datetime.timedelta(minutes=45)
+    assert starts[1] - starts[0] == ct.QUARTER
+    assert starts[-1] == _local(2026, 11, 14, 22) + datetime.timedelta(minutes=45)
 
 
 @pytest.mark.parametrize(
     "now, count",
     [
         # Autumn: the night from the 24th to the 25th has 25 hours
-        (_local(2026, 10, 24, 16) + datetime.timedelta(minutes=35), 7),
+        (_local(2026, 10, 24, 16) + datetime.timedelta(minutes=35), 29),
         # Spring: the night from the 28th to the 29th has 23 hours
-        (_local(2026, 3, 28, 16) + datetime.timedelta(minutes=35), 5),
+        (_local(2026, 3, 28, 16) + datetime.timedelta(minutes=35), 21),
+        # A normal night
+        (NOW, 25),
     ],
 )
 def test_the_clock_change_nights_have_the_right_starts(now, count):
@@ -84,7 +94,7 @@ def test_a_morning_catch_up_run_without_the_night_prices_sends_no_tip():
     """At 10:30 the 17:00 session runs past the prices that exist."""
     now = _local(2026, 11, 14, 10) + datetime.timedelta(minutes=30)
     start = _local(2026, 11, 14, 10)
-    prices = {t: 0.10 for t in _hours(start, 13)}
+    prices = {t: 0.10 for t in _quarters(start, 13)}
     result, reason = ct.tip(prices, now, SETTINGS, CAP, _ctx(start=start))
     assert result is None and "missing" in reason
 
@@ -130,8 +140,8 @@ def test_a_window_that_raises_the_base_moves_to_the_night():
     prices = _prices(EVENING, cheap_price=0.10, dear=0.12)
     result, _ = ct.tip(prices, NOW, SETTINGS, CAP, _ctx())
     low, plug_in, _ = result
-    # Two day hours do not move the third-highest hour; five do
-    assert low.start.astimezone(HELSINKI).hour >= 20 and low.charge_rise_eur == 0.0
+    # Few day hours do not move the third-highest hour; five do
+    assert low.start > plug_in.start and low.charge_rise_eur == 0.0
     assert plug_in.charge_rise_eur > 0.0
 
 
@@ -142,7 +152,7 @@ def test_a_rise_in_the_power_charge_counts_against_the_window():
     prices = _prices(cheap, cheap_price=0.10, dear=0.15)
     result, _ = ct.tip(prices, NOW, SETTINGS, CAP, _ctx(other=6.0, month=month))
     low, plug_in, _ = result
-    assert low.start.astimezone(HELSINKI).hour >= 20
+    assert low.start > plug_in.start
     assert low.energy_eur > plug_in.energy_eur
     assert low.charge_rise_eur < plug_in.charge_rise_eur
 
@@ -156,6 +166,36 @@ def test_the_rise_uses_the_third_highest_hour():
 def test_the_counted_peak_uses_the_night_factor_and_the_other_load():
     window = ct.window_at(_prices(), _local(2026, 11, 14, 23), 5.5, SETTINGS, CAP, _ctx())
     assert window.peak_kw == pytest.approx((3.1 + 5.5) * 0.8)
+
+
+def test_a_cheap_quarter_inside_a_dear_hour_moves_the_start():
+    """Only the 23:45 quarter is cheap: a 1-quarter session starts there."""
+    short = ct.TipSettings(1.375, 5.5, 11.2, 7, 17, 0.0)
+    prices = _prices()
+    prices[_local(2026, 11, 14, 23) + datetime.timedelta(minutes=45)] = 0.01
+    low = ct.best(prices, NOW, 5.5, short, CAP, _ctx(month=HIGH_BASE))
+    assert low.start == _local(2026, 11, 14, 23) + datetime.timedelta(minutes=45)
+    assert low.energy_eur == pytest.approx(1.375 * 0.01)
+
+
+def test_a_start_off_the_hour_counts_each_hour_by_its_share():
+    """From 22:30 the first hour holds two car quarters, 2.75 kWh."""
+    window = ct.window_at(
+        _prices(),
+        _local(2026, 11, 14, 22) + datetime.timedelta(minutes=30),
+        5.5,
+        SETTINGS,
+        CAP,
+        _ctx(),
+    )
+    assert window.counted[_local(2026, 11, 14, 22)] == pytest.approx((3.1 + 2.75) * 0.8)
+    assert window.counted[_local(2026, 11, 14, 23)] == pytest.approx((3.1 + 5.5) * 0.8)
+
+
+def test_a_missing_quarter_price_leaves_the_window_out():
+    prices = _prices()
+    del prices[_local(2026, 11, 14, 23) + datetime.timedelta(minutes=15)]
+    assert ct.window_at(prices, _local(2026, 11, 14, 22), 5.5, SETTINGS, CAP, _ctx()) is None
 
 
 def test_the_mail_names_the_start_and_the_saving():
@@ -180,6 +220,18 @@ def _wrapper():
     return module
 
 
+def test_a_pump_entry_over_the_hour_edge_splits_by_its_share():
+    """ON at 22:45 for 30 min: 15 min in each hour at 2.4 kW."""
+    start = _local(2026, 11, 14, 22) + datetime.timedelta(minutes=45)
+    entry = {"command": "ON", "timestamp": int(start.timestamp()), "duration_minutes": 30}
+    program = {"loads": {"geothermal_pump": {"schedule": [entry]}}}
+    planned = _wrapper().planned_pump_kw([program, None], 2.4)
+    assert planned == {
+        _local(2026, 11, 14, 22): pytest.approx(0.6),
+        _local(2026, 11, 14, 23): pytest.approx(0.6),
+    }
+
+
 class TestMain:
     @pytest.fixture
     def run(self, monkeypatch):
@@ -192,7 +244,7 @@ class TestMain:
         monkeypatch.setattr(module.lb, "load_budget_settings", Mock())
         monkeypatch.setattr(module.ct, "load_tip_settings", Mock())
         monkeypatch.setattr(module.pc, "load_cap_settings", Mock())
-        monkeypatch.setattr(module, "hour_prices", Mock(return_value={}))
+        monkeypatch.setattr(module, "quarter_prices", Mock(return_value={}))
         monkeypatch.setattr(module, "context", Mock(return_value={}))
         window = Mock(start=_local(2026, 11, 14, 17))
         monkeypatch.setattr(module.ct, "tip", Mock(return_value=((window, window, None), "")))

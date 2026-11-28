@@ -2,8 +2,9 @@
 """Build the offline simulation dataset from InfluxDB (read only).
 
 Writes gzipped CSV files to E:/redhouse_data/sim/data (or --out): hourly
-and quarter-hour analytics, raw garage and tank temperatures, the 3EM
-minute data, the CheckWatt battery minutes and the executed pump commands.
+and quarter-hour analytics, the spot prices, raw garage and tank
+temperatures, the 3EM minute data, the CheckWatt battery minutes and the
+executed pump commands.
 Queries run one month (minute data: one day) at a time.
 
 Usage: python scripts/sim/build_dataset.py [--out DIR] [--only NAME ...]
@@ -121,6 +122,9 @@ def build(name, client, now):
     if name == "quarter":
         flux = pivoted("analytics_15min", "analytics", ANALYTICS_FIELDS)
         return collect(client, months(HISTORY_START, now), flux, name)
+    if name == "spot":
+        flux = pivoted("spotprice", "spot", ["price_total"])
+        return collect(client, months(HISTORY_START, now), flux, name)
     if name == "garage_raw":
         flux = pivoted("temperatures", "temperatures", ["Autotalli"])
         return collect(client, months(HISTORY_START, now), flux, name)
@@ -141,7 +145,16 @@ def build(name, client, now):
     raise SystemExit(f"Unknown dataset {name}")
 
 
-NAMES = ["hourly", "quarter", "garage_raw", "tank", "em3_minute", "battery_minute", "pump_commands"]
+NAMES = [
+    "hourly",
+    "quarter",
+    "spot",
+    "garage_raw",
+    "tank",
+    "em3_minute",
+    "battery_minute",
+    "pump_commands",
+]
 
 
 def main():
