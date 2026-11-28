@@ -9,9 +9,11 @@ HOUR = datetime.timedelta(hours=1)
 PRICE_LOOKBACK = HOUR
 # Prices are per quarter from local midnight 2025-09-30, per hour before
 QUARTER_PRICES_FROM = datetime.datetime(2025, 9, 29, 21, tzinfo=datetime.timezone.utc)
-# The house meter nets import and export per hour until it is replaced;
-# the replacement time must be a whole hour, such as local midnight
-QUARTER_NETTING_FROM: Optional[datetime.datetime] = None
+# The meter nets import and export per hour before this time and per quarter
+# from local midnight 2025-10-29 (Fingrid Datahub BN02); it must be a whole hour
+QUARTER_NETTING_FROM: Optional[datetime.datetime] = datetime.datetime(
+    2025, 10, 28, 22, tzinfo=datetime.timezone.utc
+)
 PRICE_FIELDS = ("price_total", "price_sell", "price_withtax")
 
 

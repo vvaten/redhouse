@@ -142,7 +142,7 @@ class TestAnalyticsAggregatorBase:
             aggregator._fetch_emeters_5min_data(window_start, window_end)
 
     def test_a_quarter_window_reads_its_whole_hour_for_the_bill_price(
-        self, aggregator, time_window
+        self, aggregator, time_window, hour_netting
     ):
         window_start, window_end = time_window
         records = []
@@ -469,24 +469,30 @@ SOLAR_THEN_USE = [_energy(10, 5 * i, 0.0, 100.0) for i in range(3)] + [
 
 
 @pytest.fixture
+def hour_netting(monkeypatch):
+    """A meter that nets by the hour at all times."""
+    monkeypatch.setattr(quarter_prices_module, "QUARTER_NETTING_FROM", None)
+
+
+@pytest.fixture
 def quarter_netting(monkeypatch):
     monkeypatch.setattr(quarter_prices_module, "QUARTER_NETTING_FROM", _at(0))
 
 
 class TestBillPeriods:
-    """While the meter nets by the hour, the bill prices the whole hour."""
+    """The bill prices the whole hour under hour netting, each quarter else."""
 
-    def test_an_hour_is_one_period_at_its_mean_quarter_price(self):
+    def test_an_hour_is_one_period_at_its_mean_quarter_price(self, hour_netting):
         periods = bill_periods(QUARTER_SPOTS, _at(10), _at(11))
         assert [(p["start"], p["stop"]) for p in periods] == [(_at(10), _at(11))]
         assert periods[0]["price_total"] == pytest.approx(0.25)
 
-    def test_a_quarter_window_gets_the_price_of_its_hour(self):
+    def test_a_quarter_window_gets_the_price_of_its_hour(self, hour_netting):
         periods = bill_periods(QUARTER_SPOTS, _at(10, 15), _at(10, 30))
         assert [(p["start"], p["stop"]) for p in periods] == [(_at(10, 15), _at(10, 30))]
         assert periods[0]["price_total"] == pytest.approx(0.25)
 
-    def test_an_hour_with_a_missing_quarter_price_has_no_price(self):
+    def test_an_hour_with_a_missing_quarter_price_has_no_price(self, hour_netting):
         periods = bill_periods(QUARTER_SPOTS[:3], _at(10), _at(11))
         assert periods[0]["price_total"] is None
 
@@ -495,11 +501,27 @@ class TestBillPeriods:
         assert [p["start"] for p in periods] == [_at(10, m) for m in (0, 15, 30, 45)]
         assert [p["price_total"] for p in periods] == [0.10, 0.20, 0.30, 0.40]
 
+    def test_a_window_over_the_change_has_an_hour_part_then_quarters(self, monkeypatch):
+        monkeypatch.setattr(quarter_prices_module, "QUARTER_NETTING_FROM", _at(10))
+        spots = [_spot(9, 15 * i, 0.10) for i in range(4)] + QUARTER_SPOTS
+        periods = bill_periods(spots, _at(9, 30), _at(10, 30))
+        assert [(p["start"], p["stop"]) for p in periods] == [
+            (_at(9, 30), _at(10)),
+            (_at(10), _at(10, 15)),
+            (_at(10, 15), _at(10, 30)),
+        ]
+        assert [p["price_total"] for p in periods] == pytest.approx([0.10, 0.10, 0.20])
+
+    def test_the_meter_nets_by_quarter_from_local_midnight_2025_10_29(self):
+        midnight = pytz.timezone("Europe/Helsinki").localize(datetime.datetime(2025, 10, 29))
+        assert quarter_prices_module.nets_by_hour(midnight - datetime.timedelta(hours=1))
+        assert not quarter_prices_module.nets_by_hour(midnight)
+
 
 class TestPricesAndCosts:
     """The costs of a window are the sum of its bill periods' costs."""
 
-    def test_hourly_netting_offsets_solar_and_use_within_the_hour(self, aggregator):
+    def test_hourly_netting_offsets_solar_and_use_within_the_hour(self, aggregator, hour_netting):
         periods = bill_periods(QUARTER_SPOTS, _at(10), _at(11))
         result = aggregator._prices_and_costs(SOLAR_THEN_USE, periods)
         assert result["grid_import_cost"] == pytest.approx(0.0)
@@ -512,7 +534,7 @@ class TestPricesAndCosts:
         assert result["grid_import_cost"] == pytest.approx(0.3 * 0.20)
         assert result["solar_export_revenue"] == pytest.approx(0.3 * 0.02)
 
-    def test_a_period_with_energy_but_no_price_leaves_out_all_costs(self, aggregator):
+    def test_a_period_with_energy_but_no_price_leaves_out_all_costs(self, aggregator, hour_netting):
         periods = bill_periods(QUARTER_SPOTS[:3], _at(10), _at(11))
         emeters = [_energy(10, 5 * i, 100.0) for i in range(12)]
         assert aggregator._prices_and_costs(emeters, periods) == {}

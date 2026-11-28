@@ -43,10 +43,14 @@ def planned_pump_kw(programs: list, pump_on_kw: float) -> dict:
             if entry["command"] != "ON":
                 continue
             minutes = entry["duration_minutes"] if entry["duration_minutes"] else 60
-            hour = datetime.datetime.fromtimestamp(entry["timestamp"], UTC)
-            hour = hour.replace(minute=0, second=0, microsecond=0)
-            earlier = planned[hour] if hour in planned else 0.0
-            planned[hour] = earlier + pump_on_kw * minutes / 60
+            start = datetime.datetime.fromtimestamp(entry["timestamp"], UTC)
+            stop = start + datetime.timedelta(minutes=minutes)
+            while start < stop:
+                hour = ct.floor_hour(start)
+                part = min(stop, hour + datetime.timedelta(hours=1)) - start
+                earlier = planned[hour] if hour in planned else 0.0
+                planned[hour] = earlier + pump_on_kw * part.total_seconds() / 3600
+                start += part
     return planned
 
 
@@ -67,14 +71,14 @@ def context(now: datetime.datetime, budget, cap) -> dict:
     return {"other_kw": other, "month_counted": month_counted}
 
 
-def hour_prices(influx, bucket: str, start: datetime.datetime) -> dict:
-    """Hourly mean price_total (EUR/kWh) from start for HORIZON_H hours."""
+def quarter_prices(influx, bucket: str, start: datetime.datetime) -> dict:
+    """{quarter start: price_total EUR/kWh} from start for HORIZON_H hours."""
     stop = start + datetime.timedelta(hours=HORIZON_H)
     flux = f"""
         from(bucket: "{bucket}")
           |> range(start: {start.strftime("%Y-%m-%dT%H:%M:%SZ")}, stop: {stop.strftime("%Y-%m-%dT%H:%M:%SZ")})
           |> filter(fn: (r) => r._measurement == "spot" and r._field == "price_total")
-          |> aggregateWindow(every: 1h, fn: mean, createEmpty: false, timeSrc: "_start")
+          |> aggregateWindow(every: 15m, fn: mean, createEmpty: false, timeSrc: "_start")
     """
     prices = {}
     for table in influx.query_with_retry(flux):
@@ -100,7 +104,7 @@ def main() -> int:
     now = datetime.datetime.now(UTC)
     start = now.replace(minute=0, second=0, microsecond=0)
     try:
-        prices = hour_prices(InfluxClient(config), config.influxdb_bucket_spotprice, start)
+        prices = quarter_prices(InfluxClient(config), config.influxdb_bucket_spotprice, start)
     except Exception as e:
         logger.error(f"Prices unavailable, no tip: {e}")
         return 1
