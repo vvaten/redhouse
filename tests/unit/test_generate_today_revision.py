@@ -9,6 +9,7 @@ import pytest
 
 import generate_heating_program_v2 as gen
 from src.common.atomic_json import write_json
+from src.control.quarter_program import MOVED_KEY, TodayPart
 from src.monitoring.program_check import program_path
 
 DAY = datetime.date(2026, 12, 1)
@@ -33,10 +34,8 @@ def _program(entries):
     }
 
 
-def _generator(part):
-    return SimpleNamespace(
-        today_part=(part, START), today_revision={"program_date": DAY.isoformat()}
-    )
+def _generator(part, moved=0):
+    return SimpleNamespace(today_part=TodayPart(part, START, DAY.isoformat(), moved))
 
 
 def test_the_revision_keeps_what_the_executor_wrote_meanwhile(tmp_path):
@@ -45,9 +44,9 @@ def test_the_revision_keeps_what_the_executor_wrote_meanwhile(tmp_path):
     write_json(path, _program([done, _entry(START - 1800, "ALE"), _entry(START + 3600, "ON", 60)]))
     part = [_entry(START + 900, "ON", 15), _entry(START + 1800, "ALE")]
     with patch.object(gen.time, "time", return_value=START - 600):
-        revision = gen._save_today_revision(_generator(part), str(tmp_path))
+        revision = gen._save_today_revision(_generator(part, moved=3), str(tmp_path))
     saved = json.loads(path.read_text())
-    assert saved == revision
+    assert saved == revision and saved[MOVED_KEY] == 3
     schedule = saved["loads"]["geothermal_pump"]["schedule"]
     assert schedule[0]["executed_at"] == START - 3600
     assert [e["timestamp"] for e in schedule] == [

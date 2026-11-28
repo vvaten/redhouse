@@ -304,6 +304,11 @@ restore_timers() {
     echo ""
     echo "Restarting the timers that were running before the deploy..."
     for timer in $RUNNING_TIMERS; do
+        # The pre-pulse drives the pump only for the executor's program
+        if [ "$timer" = "redhouse-pre-pulse.timer" ] \
+            && ! systemctl is-active -q redhouse-execute-program.timer; then
+            continue
+        fi
         if ! systemctl is-active -q "$timer"; then
             systemctl start "$timer" && echo "  [OK] $timer"
         fi

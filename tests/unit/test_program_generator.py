@@ -772,7 +772,7 @@ class TestGenerateDailyProgram(unittest.TestCase):
         on = [e for e in program["loads"]["geothermal_pump"]["schedule"] if e["command"] == "ON"]
         self.assertEqual(sum(e["duration_minutes"] for e in on), 8 * 60)
         self.assertEqual(program["planning_results"]["max_off_h"], 8.0)
-        self.assertIsNone(self.generator.today_revision)
+        self.assertIsNone(self.generator.today_part)
 
     def _today_at(self, hour: int) -> int:
         local = datetime.datetime.combine(helsinki_date(0), datetime.time(hour))
@@ -797,21 +797,34 @@ class TestGenerateDailyProgram(unittest.TestCase):
             "program_date": today.isoformat(),
             "loads": {"geothermal_pump": {"schedule": schedule}},
         }
-        write_json(program_path(today, self.program_dir.name), program)
+        path = program_path(today, self.program_dir.name)
+        write_json(path, program)
+        tomorrow, revised = self._plan_at(path, program)
+        today_on = self._on(revised)
+        self.assertEqual(sum(e["duration_minutes"] for e in today_on + self._on(tomorrow)), 540)
+        self.assertEqual(tomorrow["planning_results"]["carried_on_quarters"], 4)
+        self.assertFalse(any(e["timestamp"] == self._today_at(22) for e in today_on))
+        self.assertEqual(revised[qprog.MOVED_KEY], 4 - len(today_on))
+        # A retry after today's file was saved still plans 4 + 32 quarters in all
+        again, revised_again = self._plan_at(path, revised)
+        total = sum(e["duration_minutes"] for e in self._on(revised_again) + self._on(again))
+        self.assertEqual(total, 540)
+
+    @staticmethod
+    def _on(program: dict) -> list:
+        return [e for e in program["loads"]["geothermal_pump"]["schedule"] if e["command"] == "ON"]
+
+    def _plan_at(self, path, today: dict) -> tuple:
+        """Plan at 16:06 and lay the re-plan onto today's file, as the caller does."""
+        write_json(path, today)
         now = self._today_at(16) + 360
         with patch("src.control.program_generator.time.time", return_value=now):
             tomorrow = self.generator.generate_daily_program(date_offset=1)
-        revised = self.generator.today_revision
-        self.assertIsNotNone(revised)
-        today_on = [
-            e for e in revised["loads"]["geothermal_pump"]["schedule"] if e["command"] == "ON"
-        ]
-        day_on = [
-            e for e in tomorrow["loads"]["geothermal_pump"]["schedule"] if e["command"] == "ON"
-        ]
-        self.assertEqual(sum(e["duration_minutes"] for e in today_on + day_on), (4 + 32) * 15)
-        self.assertEqual(tomorrow["planning_results"]["carried_on_quarters"], 4)
-        self.assertFalse(any(e["timestamp"] == self._today_at(22) for e in today_on))
+        part = self.generator.today_part
+        self.assertIsNotNone(part)
+        revised = qprog.revise_today(today, "geothermal_pump", part.entries, part.start, part.moved)
+        write_json(path, revised)
+        return tomorrow, revised
 
     def test_generate_daily_program_simulation_mode(self):
         self._tomorrow()

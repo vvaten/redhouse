@@ -158,18 +158,18 @@ def _save_today_revision(generator, output_dir: str) -> Optional[dict]:
     """Lay the re-planned rest of today onto a fresh read of today's file,
     under the control lock the executor holds while it writes the file.
     Raises when the window start is too near: the next run re-plans."""
-    if generator.today_part is None:
+    part = generator.today_part
+    if part is None:
         return None
-    part, start = generator.today_part
-    day = datetime.date.fromisoformat(generator.today_revision["program_date"])
-    path = program_path(day, output_dir)
+    start = part.start
+    path = program_path(datetime.date.fromisoformat(part.program_date), output_dir)
     with control_lock(REVISION_LOCK_TIMEOUT_S):
         if time.time() > start - REVISION_MARGIN_S:
             raise RuntimeError("Too late to re-plan the rest of today; the next run re-plans")
         fresh = load_valid_program(path)
         if fresh is None:
             raise RuntimeError(f"Today's program {path} is gone or unusable")
-        revision = revise_today(fresh, PUMP_LOAD, part, start)
+        revision = revise_today(fresh, PUMP_LOAD, part.entries, start, part.moved)
         write_json(path, revision)
     logger.info(f"Re-planned the rest of today: {path}")
     return revision

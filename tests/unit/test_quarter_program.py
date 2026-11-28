@@ -64,6 +64,17 @@ def test_the_window_knows_the_on_quarters_and_evu_before_it():
     assert w2.evu_from == start - 2 * 3600 and w2.lead_on == 0
 
 
+def test_a_run_of_touching_evu_entries_counts_from_its_first():
+    """EVU 14:00-16:15 cut by a re-plan, then 16:15-18:00: one block from 14:00."""
+    t = DAY_S - 10 * 3600
+    entries = [
+        {"timestamp": t, "command": "EVU", "duration_minutes": 135},
+        {"timestamp": t + 135 * 60, "command": "EVU", "duration_minutes": 105},
+    ]
+    assert qprog.running_evu_start(entries, t + 3 * 3600) == t
+    assert qprog.running_evu_start(entries, t + 5 * 3600) is None
+
+
 def test_revise_today_refuses_a_program_without_the_load():
     with pytest.raises(ValueError):
         qprog.revise_today({"loads": {}}, "geothermal_pump", [], DAY_S)

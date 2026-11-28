@@ -62,8 +62,7 @@ class HeatingProgramGenerator:
         self.program_dir = program_dir
         settings: Any = self.config
         self.max_off_h = float(settings.max_off_h)
-        self.today_revision: Optional[dict] = None
-        self.today_part: Optional[tuple] = None
+        self.today_part: Optional[qprog.TodayPart] = None
         self.influx = InfluxClient(self.config)
         self.data_fetcher = HeatingDataFetcher()
         self.heating_curve = HeatingCurve()
@@ -169,19 +168,24 @@ class HeatingProgramGenerator:
 
     def _split_today(self, loads_schedules: dict, window: qprog.Window, program_date) -> dict:
         """Cut the pump schedule at the day start. today_part keeps the part
-        before with the window start, to lay onto a fresh read of today's file;
-        today_revision is that applied to the copy read for the plan."""
-        self.today_revision = None
+        before, to lay onto a fresh read of today's file at the caller."""
         self.today_part = None
         if window.today is None:
             return loads_schedules
-        day_start = HELSINKI.localize(
-            datetime.datetime.combine(program_date.date(), datetime.time())
+        day_start = int(
+            HELSINKI.localize(
+                datetime.datetime.combine(program_date.date(), datetime.time())
+            ).timestamp()
         )
         pump = loads_schedules[PUMP_LOAD]
-        today_part, day_part = qprog.split_at(pump["schedule"], int(day_start.timestamp()))
-        self.today_part = (today_part, window.start)
-        self.today_revision = qprog.revise_today(window.today, PUMP_LOAD, today_part, window.start)
+        today_part, day_part = qprog.split_at(pump["schedule"], day_start)
+        kept = len(qprog.on_quarters(today_part, window.start, day_start))
+        self.today_part = qprog.TodayPart(
+            entries=today_part,
+            start=window.start,
+            program_date=window.today["program_date"],
+            moved=window.carried - kept,
+        )
         return dict(loads_schedules, **{PUMP_LOAD: qprog.with_schedule(pump, day_part)})
 
     def _comfort_results(self, selection: qprog.Selection, window: qprog.Window) -> dict:

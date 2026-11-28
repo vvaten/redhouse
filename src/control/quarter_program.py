@@ -30,6 +30,17 @@ class Selection:
 
 
 @dataclass(frozen=True)
+class TodayPart:
+    """The re-planned rest of today: entries from start, the day's program
+    date, and the ON quarters the re-plan moved into the next day."""
+
+    entries: list
+    start: int
+    program_date: str
+    moved: int
+
+
+@dataclass(frozen=True)
 class Window:
     """Epoch [start, stop) to plan; carried: ON quarters of the day before
     that the window takes over; lead_on: ON quarters of the start's hour
@@ -51,13 +62,12 @@ def next_quarter(now: int) -> int:
 def plan_window(day_start: int, day_stop: int, before: Optional[dict], load_id: str, now) -> Window:
     """The window for a day's program. With now (a live run) and the day
     before's program, the rest of that day is planned too."""
-    entries = []
-    if before is not None and load_id in before["loads"]:
-        entries = before["loads"][load_id]["schedule"]
+    program = before if before is not None and load_id in before["loads"] else None
+    entries = [] if program is None else program["loads"][load_id]["schedule"]
     start, carried, today = day_start, 0, None
-    if now is not None and entries and next_quarter(now) < day_start:
-        start, today = next_quarter(now), before
-        carried = len(on_quarters(entries, start, day_start))
+    if now is not None and program is not None and next_quarter(now) < day_start:
+        start, today = next_quarter(now), program
+        carried = len(on_quarters(entries, start, day_start)) + moved_to_next_day(program)
     hour_start = start - start % 3600
     return Window(
         start=start,
@@ -70,13 +80,30 @@ def plan_window(day_start: int, day_stop: int, before: Optional[dict], load_id: 
     )
 
 
+MOVED_KEY = "moved_to_next_day"
+
+
+def moved_to_next_day(program: dict) -> int:
+    """ON quarters an earlier re-plan of the day moved into the next day; a
+    later plan of the next day must count them again."""
+    return int(program[MOVED_KEY]) if MOVED_KEY in program else 0
+
+
 def running_evu_start(entries: list, at: int) -> Optional[int]:
-    """The start of the EVU block that runs up to at, or None."""
-    for e in entries:
-        t = int(e["timestamp"])
-        if e["command"] == "EVU" and t < at <= t + _minutes(e) * 60:
-            return t
-    return None
+    """The start of the run of touching EVU entries that reaches at, or None."""
+    evu = {
+        int(e["timestamp"]): int(e["timestamp"]) + _minutes(e) * 60
+        for e in entries
+        if e["command"] == "EVU"
+    }
+    ends = {stop: t for t, stop in evu.items()}
+    covering = [t for t, stop in evu.items() if t < at <= stop]
+    if not covering:
+        return None
+    start = covering[0]
+    while start in ends:
+        start = ends[start]
+    return start
 
 
 def _minutes(entry: dict) -> int:
@@ -210,9 +237,12 @@ def split_at(entries: list, boundary: int) -> tuple:
     return before, after
 
 
-def revise_today(program: dict, load_id: str, new_entries: list, start: int) -> dict:
+def revise_today(
+    program: dict, load_id: str, new_entries: list, start: int, moved: int = 0
+) -> dict:
     """Today's program with its schedule from start replaced by new_entries.
-    Entries before start stay, executed or not; a block over start is cut."""
+    Entries before start stay, executed or not; a block over start is cut.
+    moved: ON quarters this re-plan shifted into the next day."""
     if load_id not in program["loads"]:
         raise ValueError(f"Today's program has no {load_id} load to re-plan")
     revised = copy.deepcopy(program)
@@ -225,6 +255,7 @@ def revise_today(program: dict, load_id: str, new_entries: list, start: int) -> 
         new_entries = [_stamp(ale, start)] + new_entries
     revised["loads"][load_id] = with_schedule(load, kept + new_entries)
     revised["revised_at"] = datetime.datetime.now(HELSINKI).isoformat()
+    revised[MOVED_KEY] = moved
     return revised
 
 
